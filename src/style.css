@@ -1,0 +1,612 @@
+:root {
+  --paper: #e8dcbd;
+  --paper-deep: #d8c8a2;
+  --ink: #3f3122;
+  --ink-soft: rgba(63, 49, 34, 0.72);
+  --ink-faint: rgba(63, 49, 34, 0.24);
+  --bloom: #b94a62;
+  --water-hue: #2f7488;
+  --sun: #b07c22;
+  font-family: 'Inter', 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
+  font-weight: 400;
+  color: var(--ink);
+  font-synthesis-weight: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* A single, quiet button style: hairline box, letter-spaced small caps. */
+.btn {
+  border: 1px solid var(--ink-faint);
+  border-radius: 2px;
+  padding: 7px 13px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.btn:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.btn.active {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn.primary {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.btn.danger:hover:not(:disabled) {
+  color: var(--bloom);
+  border-color: var(--bloom);
+}
+
+.btn.tiny {
+  padding: 5px 9px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.btn.wide {
+  width: 100%;
+  text-align: center;
+}
+
+/* Menu --------------------------------------------------------------------- */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  display: flex;
+}
+
+.menu {
+  align-items: center;
+  justify-content: center;
+  gap: 7vw;
+  padding: 5vw;
+}
+
+.menu-art {
+  width: min(52vh, 44vw);
+  aspect-ratio: 1;
+  opacity: 0.9;
+}
+
+.tree-art {
+  width: 100%;
+  height: 100%;
+}
+
+.menu-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.logo {
+  margin: 0;
+  font-size: clamp(44px, 6.5vw, 78px);
+  font-weight: 300;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.tagline {
+  margin: 0 0 32px;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+.menu-column .btn {
+  min-width: 220px;
+  padding: 12px 18px;
+  text-align: left;
+}
+
+/* Level select ------------------------------------------------------------- */
+
+.levels {
+  flex-direction: column;
+  padding: 7vh 8vw;
+  gap: 48px;
+}
+
+.levels-header {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+}
+
+.levels-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 300px));
+  gap: 1px;
+  background: var(--ink-faint);
+  border: 1px solid var(--ink-faint);
+  width: fit-content;
+}
+
+.level-card {
+  text-align: left;
+  background: var(--paper);
+  padding: 26px 24px 22px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background 0.2s ease;
+}
+
+.level-card:hover {
+  background: var(--paper-deep);
+}
+
+.level-number {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.level-name {
+  font-size: 24px;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+}
+
+.level-blurb {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.level-goals {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Game --------------------------------------------------------------------- */
+
+.game-root {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+}
+
+.game-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 272px;
+}
+
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hud-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 272px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 20px;
+  pointer-events: none;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hud-group {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  pointer-events: auto;
+}
+
+.game-root.night .hud-top {
+  --paper: #171d2b;
+  --ink: #eee6d2;
+  --ink-soft: rgba(238, 230, 210, 0.76);
+  --ink-faint: rgba(238, 230, 210, 0.28);
+  color: var(--ink);
+}
+
+.hud-title {
+  letter-spacing: 0.24em;
+}
+
+.hud-note {
+  color: var(--ink-soft);
+}
+
+.hud-sep {
+  width: 1px;
+  height: 11px;
+  background: var(--ink-faint);
+}
+
+.speed {
+  display: flex;
+  gap: 1px;
+  background: var(--ink-faint);
+  border: 1px solid var(--ink-faint);
+}
+
+.speed .btn {
+  border: none;
+  background: var(--paper);
+  padding: 4px 9px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* Resource readouts: a numeral with a hairline bar beneath it. */
+.resources {
+  display: flex;
+  gap: 22px;
+  pointer-events: auto;
+}
+
+.res {
+  min-width: 92px;
+}
+
+.res-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.res-name {
+  color: var(--ink-soft);
+}
+
+.res-value {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.res-track {
+  margin-top: 5px;
+  height: 5px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink-faint) 0,
+    var(--ink-faint) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+.res-fill {
+  height: 5px;
+  width: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink) 0,
+    var(--ink) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  transition: width 0.2s ease;
+}
+
+.res.water .res-fill {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--water-hue) 0,
+    var(--water-hue) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+.res.light .res-fill {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--sun) 0,
+    var(--sun) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+/* Panel -------------------------------------------------------------------- */
+
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 272px;
+  border-left: 1px solid var(--ink-faint);
+  background: var(--paper);
+  padding: 22px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--ink-faint);
+}
+
+.section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.row > .btn {
+  flex: 1 1 0;
+  text-align: center;
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.limb-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.selected-name {
+  font-size: 20px;
+  font-weight: 300;
+  letter-spacing: 0.1em;
+  margin: 0;
+}
+
+.selected-note {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.selected-note.warn {
+  color: var(--bloom);
+}
+
+/* Readouts: label left, value right, hairline bar underneath. */
+.gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.gauge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.gauge-label {
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.gauge-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-track {
+  height: 3px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink-faint) 0,
+    var(--ink-faint) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+.gauge-fill {
+  height: 3px;
+  width: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink-soft) 0,
+    var(--ink-soft) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  transition: width 0.2s ease;
+}
+
+.gauge.alert .gauge-fill {
+  background: var(--bloom);
+}
+
+.gauge.alert .gauge-value {
+  color: var(--bloom);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.fact {
+  display: flex;
+  justify-content: space-between;
+}
+
+.fact span:last-child {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Overlays ----------------------------------------------------------------- */
+
+.toast {
+  position: absolute;
+  bottom: 26px;
+  left: calc((100% - 272px) / 2);
+  transform: translate(-50%, 8px);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink-faint);
+  padding: 9px 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  max-width: 54vw;
+  text-align: center;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(232, 220, 189, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+  max-width: 420px;
+  padding: 40px 44px;
+  border: 1px solid var(--ink-faint);
+  background: var(--paper);
+}
+
+.overlay-card h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 300;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.overlay-card p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
