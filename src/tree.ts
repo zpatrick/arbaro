@@ -1,5 +1,5 @@
-import { type Controls, LIMB, Limb, UPRIGHT } from './limb';
-import { at, clamp, Rng } from './util';
+import { type Controls, LIMB, Limb, UPRIGHT } from "./limb";
+import { at, clamp, Rng } from "./util";
 
 export const FLARE = {
   /** How far the root flare reaches along the ground past the trunk, in base radii. */
@@ -82,7 +82,10 @@ export class Tree {
     const parentHeading = parent.pointAt(forkS).heading;
     const heading = this.forkHeading(parent, forkS, side);
     const parentRadius = parent.radiusAt(forkS);
-    const size = Math.max(1, (this.reach(parent) - parent.length + forkS) / LIMB.steadyLength);
+    const size = Math.max(
+      1,
+      (this.reach(parent) - parent.length + forkS) / LIMB.steadyLength,
+    );
     const child = new Limb(
       { parent, s: forkS, angle: heading - parentHeading },
       parentRadius * FORK_STRAIGHT,
@@ -108,13 +111,21 @@ export class Tree {
   /** Starting heading of an offshoot forked from `limb` at `s` toward `side`. */
   forkHeading(limb: Limb, s: number, side: 1 | -1): number {
     const limit = LIMB.maxLean + FORK_LEAN_ALLOWANCE;
-    return clamp(limb.pointAt(s).heading + side * LIMB.forkAngle, UPRIGHT - limit, UPRIGHT + limit);
+    return clamp(
+      limb.pointAt(s).heading + side * LIMB.forkAngle,
+      UPRIGHT - limit,
+      UPRIGHT + limit,
+    );
   }
 
   /** Distance from the ground to the limb's tip, measured along the wood. */
   reach(limb: Limb): number {
     let distance = limb.length;
-    for (let attachment = limb.attachment; attachment !== undefined; attachment = attachment.parent.attachment) {
+    for (
+      let attachment = limb.attachment;
+      attachment !== undefined;
+      attachment = attachment.parent.attachment
+    ) {
       distance += attachment.s;
     }
     return distance;
@@ -150,7 +161,10 @@ export class Tree {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const lengthSq = dx * dx + dy * dy;
-        const t = lengthSq > 0 ? clamp(((x - a.x) * dx + (y - a.y) * dy) / lengthSq, 0, 1) : 0;
+        const t =
+          lengthSq > 0
+            ? clamp(((x - a.x) * dx + (y - a.y) * dy) / lengthSq, 0, 1)
+            : 0;
         const px = a.x + dx * t;
         const py = a.y + dy * t;
         const distance = Math.hypot(x - px, y - py);
@@ -161,10 +175,17 @@ export class Tree {
         if (distance > limb.radiusAt(s) + tolerance) {
           continue;
         }
-        best = { limb, s, side: dx * (y - py) - dy * (x - px) >= 0 ? 1 : -1, distance };
+        best = {
+          limb,
+          s,
+          side: dx * (y - py) - dy * (x - px) >= 0 ? 1 : -1,
+          distance,
+        };
       }
     }
-    return best === undefined ? undefined : { limb: best.limb, s: best.s, side: best.side };
+    return best === undefined
+      ? undefined
+      : { limb: best.limb, s: best.s, side: best.side };
   }
 
   private rebuild(): void {
@@ -179,7 +200,11 @@ export class Tree {
         limb.rebuild({ x: this.baseX, y: 0, heading: UPRIGHT });
       } else {
         const fork = limb.attachment.parent.pointAt(limb.attachment.s);
-        limb.rebuild({ x: fork.x, y: fork.y, heading: fork.heading + limb.attachment.angle });
+        limb.rebuild({
+          x: fork.x,
+          y: fork.y,
+          heading: fork.heading + limb.attachment.angle,
+        });
       }
     }
   }
