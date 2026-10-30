@@ -15,24 +15,49 @@ if (!name) {
 const root = fileURLToPath(new URL('..', import.meta.url));
 const outDir = fileURLToPath(new URL(`../baselines/${name}/`, import.meta.url));
 
-const S_CURVE = [[3.5, true, 0], [1.4, true, 1], [1, true, 0], [2.2, true, -1], [1.5, true, 0]];
+/** Holds the grow control, and optionally a steering direction, for `seconds`. */
+const grow = (seconds, steer = 0) => ({ seconds, grow: true, steer });
+const S_CURVE = [grow(3.5), grow(1.4, 1), grow(1), grow(2.2, -1), grow(1.5)];
+const TREE_OF_LIFE = [
+  grow(4.2),
+  { fork: 0, at: 0.96, side: 1 },
+  grow(0.7, -1),
+  grow(2.6),
+  { select: 0 },
+  grow(0.6, 1),
+  grow(2.8),
+  { fork: 1, at: 0.55, side: 1 },
+  grow(0.5, -1),
+  grow(1.6),
+  { fork: 0, at: 0.75, side: -1 },
+  grow(0.5, 1),
+  grow(1.6),
+  { fork: 1, at: 0.97, side: -1 },
+  grow(1.8),
+  { fork: 0, at: 0.97, side: 1 },
+  grow(1.8),
+];
 
 /**
- * Each step is [seconds, grow, steer], replayed at 60 Hz through the dev-only debug hook on a
- * freshly loaded page, so every scene starts from the same seed.
+ * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
+ * fraction of its length, or selects a limb, all through the dev-only debug hook on a freshly
+ * loaded page so every scene starts from the same seed. `crop` frames a close-up around the
+ * trunk's base, the active tip, or where limb 1 forks off.
  */
 const SCENES = [
-  { file: '01-sprout', steps: [] },
-  { file: '02-unsteered', steps: [[13, true, 0]] },
-  { file: '03-s-curve', steps: S_CURVE },
-  { file: '04-lean-limit', steps: [[1.5, true, 0], [6, true, -1]] },
-  {
-    file: '05-full-height',
-    steps: [...S_CURVE, [3, true, 0], [1.5, true, 1], [2.5, true, -1], [8, true, 0]],
-  },
-  { file: '06-portrait', viewport: { width: 600, height: 900 }, steps: [[4, true, 0], [2, true, 1], [3, true, -1], [2, true, 0]] },
-  { file: '07-flare-detail', scale: 3, crop: 'base', steps: S_CURVE },
-  { file: '08-tip-detail', scale: 3, crop: 'tip', steps: S_CURVE },
+  { file: '01-sprout', actions: [] },
+  { file: '02-unsteered', actions: [grow(13)] },
+  { file: '03-s-curve', actions: S_CURVE },
+  { file: '04-lean-limit', actions: [grow(1.5), grow(6, -1)] },
+  { file: '05-full-height', actions: [...S_CURVE, grow(3), grow(1.5, 1), grow(2.5, -1), grow(8)] },
+  { file: '06-portrait', viewport: { width: 600, height: 900 }, actions: [grow(4), grow(2, 1), grow(3, -1), grow(2)] },
+  { file: '07-flare-detail', scale: 3, crop: 'base', actions: S_CURVE },
+  { file: '08-tip-detail', scale: 3, crop: 'tip', actions: S_CURVE },
+  { file: '09-first-fork', actions: [grow(5), { fork: 0, at: 0.55, side: -1 }, grow(2.5)] },
+  { file: '10-fork-detail', scale: 3, crop: 'fork', actions: [grow(5), { fork: 0, at: 0.55, side: -1 }, grow(2.5)] },
+  { file: '11-tip-elbow', actions: [grow(4), { fork: 0, at: 1, side: 1 }, grow(3)] },
+  { file: '12-tree-of-life', actions: TREE_OF_LIFE },
+  { file: '13-tree-of-life-detail', scale: 2, crop: 'fork', actions: TREE_OF_LIFE },
 ];
 
 const server = await createServer({ root, logLevel: 'error' });
@@ -55,26 +80,41 @@ try {
     page.on('pageerror', (error) => errors.push(error));
     await page.goto(url);
     await page.waitForFunction(() => window.__arbaro !== undefined);
-    const anchors = await page.evaluate((steps) => {
+    const anchors = await page.evaluate((actions) => {
       const debug = window.__arbaro;
-      for (const [seconds, grow, steer] of steps) {
-        debug.simulate(seconds, { grow, steer });
+      for (const action of actions) {
+        if (action.fork !== undefined) {
+          debug.fork(action.fork, action.at, action.side);
+        } else if (action.select !== undefined) {
+          debug.select(action.select);
+        } else {
+          debug.simulate(action.seconds, { grow: action.grow, steer: action.steer });
+        }
       }
       // Let growth coast to a full stop so nothing moves between here and the capture.
       debug.simulate(2, { grow: false, steer: 0 });
+      const tree = debug.tree();
       const camera = debug.camera();
-      const tip = debug.trunk().tip;
-      const toScreen = (x, y) => ({
-        x: camera.width / 2 + (x - camera.centerX) * camera.scale,
-        y: camera.groundY - y * camera.scale,
-      });
-      return { base: toScreen(debug.trunk().baseX, 0), tip: toScreen(tip.x, tip.y) };
-    }, scene.steps);
+      const screen = (p) => camera.toScreen(p.x, p.y);
+      const forked = tree.limbs[1]?.attachment;
+      return {
+        base: screen(tree.root.points[0]),
+        tip: screen(tree.active.tip),
+        fork: forked === undefined ? undefined : screen(forked.parent.pointAt(forked.s)),
+      };
+    }, scene.actions);
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     if (errors.length > 0) {
       throw new Error(`Scene ${scene.file} raised: ${errors.map((e) => e.message).join('; ')}`);
     }
-    const clip = scene.crop ? cropAround(anchors[scene.crop], scene.crop === 'tip' ? 0.25 : 0.6) : undefined;
+    let clip;
+    if (scene.crop !== undefined) {
+      const anchor = anchors[scene.crop];
+      if (anchor === undefined) {
+        throw new Error(`Scene ${scene.file} has no ${scene.crop} to crop around.`);
+      }
+      clip = cropAround(anchor, scene.crop === 'tip' ? 0.25 : 0.6);
+    }
     await page.screenshot({ path: `${outDir}${scene.file}.jpg`, type: 'jpeg', quality: 90, clip });
     await page.close();
     console.log(`baselines/${name}/${scene.file}.jpg`);

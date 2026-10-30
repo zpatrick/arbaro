@@ -1,4 +1,4 @@
-import type { Bounds } from './trunk';
+import type { Bounds } from './tree';
 import { approach } from './util';
 
 /** Where the ground line sits, as a fraction of the view height from the top. */
@@ -44,7 +44,15 @@ export class Camera {
     this.centerX = target.centerX;
   }
 
-  /** Canvas transform that draws world coordinates directly. */
+  toScreen(x: number, y: number): { x: number; y: number } {
+    return { x: this.width / 2 + (x - this.centerX) * this.scale, y: this.groundY - y * this.scale };
+  }
+
+  toWorld(x: number, y: number): { x: number; y: number } {
+    return { x: this.centerX + (x - this.width / 2) / this.scale, y: (this.groundY - y) / this.scale };
+  }
+
+  /** Canvas transform that draws world coordinates directly, in device pixels. */
   worldTransform(): DOMMatrix {
     const s = this.scale * this.dpr;
     return new DOMMatrix([s, 0, 0, -s, (this.width / 2 - this.centerX * this.scale) * this.dpr, this.groundY * this.dpr]);

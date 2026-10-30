@@ -19,6 +19,11 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+export function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
 /**
  * Eases `current` toward `target` with time constant `tau` seconds. Frame-rate independent,
  * so the motion feels the same at 30 and 120 fps.

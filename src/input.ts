@@ -1,4 +1,4 @@
-import type { Controls } from './trunk';
+import type { Controls } from './limb';
 
 const GROW = ['ArrowUp', 'KeyW', 'Space'];
 const LEFT = ['ArrowLeft', 'KeyA'];
