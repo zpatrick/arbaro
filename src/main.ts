@@ -63,6 +63,7 @@ interface DebugHandle {
   simulate(seconds: number, controls: Controls): void;
   replant(): void;
   trunk(): Trunk;
+  camera(): Camera;
 }
 
 declare global {
@@ -84,5 +85,6 @@ if (import.meta.env.DEV) {
       camera.snap(trunk.bounds());
     },
     trunk: () => trunk,
+    camera: () => camera,
   };
 }
