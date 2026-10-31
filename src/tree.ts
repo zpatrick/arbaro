@@ -23,6 +23,11 @@ const TIP_SNAP = 0.6;
 const FORK_STRAIGHT = 1.2;
 /** A new offshoot starts out this many parent radii long, plus a short stem before scaling, so it shows at once. */
 const FORK_SPROUT = { radii: 1.6, stem: 0.15 } as const;
+/**
+ * Length the whole flow grows per second at a flow rate of one, in world units, shared out among
+ * the tips. Unlike a held key it does not speed up as the tree grows, so a big tree grows slowly.
+ */
+const FLOW_GROWTH = 0.4;
 /** Shortest stump the trunk can be cut or broken down to, in world units. */
 const STUMP = 0.3;
 /** Shortest piece worth cutting off, in world units. */
@@ -39,7 +44,7 @@ export type GrowthMode = "steer" | "flow";
 
 export interface Growth {
   mode: GrowthMode;
-  /** Nutrients rising from the roots in flow mode, as a multiple of the speed a held key grows a limb. */
+  /** Nutrients rising from the roots in flow mode, as a multiple of the usual flow. */
   flowRate: number;
 }
 
@@ -130,7 +135,7 @@ export class Tree {
         invariant(share !== undefined, "Every limb gets a share of the flow.");
         const reach = this.reach(limb);
         const size = Math.max(1, reach / LIMB.steadyLength);
-        const speed = growth.flowRate * share * LIMB.growSpeed * size;
+        const speed = growth.flowRate * share * FLOW_GROWTH;
         const steer = limb === this.active ? controls.steer : 0;
         const moved = limb.update(dt, steer, speed, size, LIMB.maxReach - reach);
         changed = changed || moved;

@@ -7,7 +7,7 @@ import { MAX_WIND_SPEED, WIND_MODELS, type WindModel, type WindSettings } from '
 const STORAGE_KEY = 'arbaro.debug.v3';
 /** Strength sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
-/** Fastest flow the slider allows, as a multiple of the speed a held key grows a limb. */
+/** Fastest flow the slider allows, as a multiple of the usual flow. */
 const MAX_FLOW_RATE = 3;
 
 const GROWTH_MODES: readonly { id: GrowthMode; name: string; description: string }[] = [
