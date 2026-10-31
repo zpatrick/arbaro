@@ -42,12 +42,38 @@ const FLOWER_CHOICES: readonly { id: FlowerChoice; name: string }[] = [
   { id: "mixed", name: "Mixed" },
 ];
 
-/** Speeds the simulation can run at, as multiples of real time. */
-const SPEEDS: readonly { speed: number; name: string }[] = [
-  { speed: 0, name: "Pause" },
-  { speed: 1, name: "1×" },
-  { speed: 2, name: "2×" },
-  { speed: 4, name: "4×" },
+/**
+ * Speeds the simulation can run at, as multiples of real time, each shown as an icon: pause, play,
+ * and one more fast-forward arrow for each doubling.
+ */
+const SPEEDS: readonly {
+  speed: number;
+  name: string;
+  icon: { viewBox: string; path: string };
+}[] = [
+  {
+    speed: 0,
+    name: "Pause",
+    icon: { viewBox: "0 0 8 10", path: "M1 1h2v8H1z M5 1h2v8H5z" },
+  },
+  {
+    speed: 1,
+    name: "Play",
+    icon: { viewBox: "0 0 8 10", path: "M1.2 1 7 5 1.2 9z" },
+  },
+  {
+    speed: 2,
+    name: "Fast forward, 2×",
+    icon: { viewBox: "0 0 13 10", path: "M1 1 6.5 5 1 9z M6.5 1 12 5 6.5 9z" },
+  },
+  {
+    speed: 4,
+    name: "Fast forward, 4×",
+    icon: {
+      viewBox: "0 0 18.5 10",
+      path: "M1 1 6.5 5 1 9z M6.5 1 12 5 6.5 9z M12 1 17.5 5 12 9z",
+    },
+  },
 ];
 
 /** Names for the time of year, from where each begins on the season slider. */
@@ -262,8 +288,16 @@ export class DebugPanel {
     const time = element("section", "debug-section", card);
     element("h2", "debug-title", time, "Time");
     const speedRow = element("div", "chips", time);
-    for (const { speed, name } of SPEEDS) {
-      const chip = element("div", "chip", speedRow, name);
+    for (const { speed, name, icon } of SPEEDS) {
+      const chip = element("div", "chip", speedRow);
+      chip.title = name;
+      chip.setAttribute("aria-label", name);
+      const svg = shape(
+        "svg",
+        { viewBox: icon.viewBox, class: "chip-icon", "aria-hidden": "true" },
+        chip,
+      );
+      shape("path", { d: icon.path }, svg);
       chip.addEventListener("click", () => this.setSimulationSpeed(speed));
       this.speeds.set(speed, chip);
     }

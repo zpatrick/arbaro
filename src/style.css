@@ -353,6 +353,17 @@ body,
   cursor: pointer;
 }
 
+/* An icon in place of a chip's label, drawn in the chip's text color with softened corners. */
+.chip-icon {
+  display: block;
+  height: 10px;
+  margin: 1px auto;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+
 .chip.selected {
   color: var(--paper);
   background: var(--ink);
