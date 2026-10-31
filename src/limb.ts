@@ -37,9 +37,16 @@ export const LIMB = {
   bendRate: 4,
   /** Turn rate per radian of lean, before scaling, that rights the tip while it is not steered. */
   uprightPull: 0.12,
-  /** Furthest a tip may be steered from vertical. */
-  maxLean: 1.0,
-  /** Steering eases off over this many radians before the lean limit. */
+  /**
+   * Steering turns a tip freely until it leans this far from vertical, easing off over `leanEase`
+   * before it. Past it a tip still turns, at `slowSteer` of the usual rate, out to `maxLean`.
+   */
+  freeLean: 1.0,
+  /** Past the free lean, steering turns a tip at this fraction of the usual rate. */
+  slowSteer: 0.25,
+  /** Furthest a tip may be steered from vertical: a little past level, so a limb can droop. */
+  maxLean: 1.75,
+  /** Steering eases off over this many radians before each lean limit. */
   leanEase: 0.35,
   /**
    * Wood relaxes any bend tighter than this ratio of its radius to its bend radius. Thickening
@@ -504,7 +511,15 @@ export class Limb {
         (-this.steering * LIMB.maxCurvature * (growing ? 1 : LIMB.idleBend)) /
         size;
       if (target * lean > 0) {
-        target *= clamp((LIMB.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
+        const free = clamp(
+          (LIMB.freeLean - Math.abs(lean)) / LIMB.leanEase,
+          0,
+          1,
+        );
+        const slow =
+          LIMB.slowSteer *
+          clamp((LIMB.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
+        target *= Math.max(free, slow);
       }
     } else {
       const meander = LIMB.wander * valueNoise(this.wanderPhase, this.seed);

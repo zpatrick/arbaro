@@ -11,7 +11,10 @@ export const FLARE = {
   rise: 2.6,
 } as const;
 
-/** A new offshoot may start leaning past the steering limit, so it always parts visibly from its parent. */
+/**
+ * A new offshoot may start leaning this much past the free lean, or past its parent's own lean if
+ * that leans further, so it always parts visibly from its parent.
+ */
 const FORK_LEAN_ALLOWANCE = 0.35;
 /**
  * Forks this close to a tip, before scaling, move to the tip itself. There the parent's rounded
@@ -137,7 +140,13 @@ export class Tree {
         const size = Math.max(1, reach / LIMB.steadyLength);
         const speed = growth.flowRate * share * FLOW_GROWTH;
         const steer = limb === this.active ? controls.steer : 0;
-        const moved = limb.update(dt, steer, speed, size, LIMB.maxReach - reach);
+        const moved = limb.update(
+          dt,
+          steer,
+          speed,
+          size,
+          LIMB.maxReach - reach,
+        );
         changed = changed || moved;
       }
     }
@@ -159,7 +168,9 @@ export class Tree {
     const shares = new Map<Limb, number>();
     const pass = (limb: Limb, arriving: number): void => {
       let remaining = arriving;
-      const forks = [...limb.children].sort((a, b) => forkedAt(a) - forkedAt(b));
+      const forks = [...limb.children].sort(
+        (a, b) => forkedAt(a) - forkedAt(b),
+      );
       for (const child of forks) {
         pass(child, remaining * child.spout);
         remaining *= 1 - child.spout;
@@ -368,9 +379,14 @@ export class Tree {
 
   /** Starting heading, in the grown shape, of an offshoot forked from `limb` at `s` toward `side`. */
   forkHeading(limb: Limb, s: number, side: 1 | -1): number {
-    const limit = LIMB.maxLean + FORK_LEAN_ALLOWANCE;
+    const heading = limb.restPointAt(s).heading;
+    const lean = Math.min(
+      LIMB.maxLean,
+      Math.max(LIMB.freeLean, Math.abs(heading - UPRIGHT)),
+    );
+    const limit = lean + FORK_LEAN_ALLOWANCE;
     return clamp(
-      limb.restPointAt(s).heading + side * LIMB.forkAngle,
+      heading + side * LIMB.forkAngle,
       UPRIGHT - limit,
       UPRIGHT + limit,
     );
