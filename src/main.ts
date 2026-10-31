@@ -4,6 +4,7 @@ import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
+import { advanceDay, type SkyLight, skyAt, type TimeSettings } from "./sky";
 import { Keyboard } from "./input";
 import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
@@ -75,6 +76,8 @@ const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
 let shiftHeld = false;
+/** Seconds of simulated time so far, which set the stars twinkling and the sun's rays turning. */
+let clock = 0;
 /**
  * A press that pans the view as it drags: where the pointer was last, and whether it has moved
  * far enough to count as a drag yet.
@@ -184,7 +187,12 @@ function tendFlowers(standing: Tree, x: number, y: number): void {
 }
 
 /** What a shift-click at (x, y) in CSS pixels would do to the flowers. */
-function flowerHoverAt(standing: Tree, x: number, y: number): FlowerHover {
+function flowerHoverAt(
+  standing: Tree,
+  x: number,
+  y: number,
+  light: SkyLight,
+): FlowerHover {
   const world = camera.toWorld(x, y);
   return flowers.hover(
     standing,
@@ -192,7 +200,14 @@ function flowerHoverAt(standing: Tree, x: number, y: number): FlowerHover {
     world.y,
     pickAt(standing, x, y),
     panel.flowers,
+    panel.time.season,
+    isDay(light),
   );
+}
+
+/** Whether there is light enough that flowers open. */
+function isDay(light: SkyLight): boolean {
+  return light.daylight > 0.5;
 }
 
 /** Cuts `limb` at `s` and lets everything beyond fall, keeping the motion it had. */
@@ -296,14 +311,15 @@ function step(dt: number, controls: Controls): void {
       giveWay(standing, failure);
     }
   }
-  flowers.update(
-    dt,
-    tree,
-    panel.flowers,
+  advanceDay(panel.time, dt);
+  clock += dt;
+  flowers.update(dt, tree, panel.flowers, {
+    season: panel.time.season,
+    day: isDay(skyAt(panel.time.timeOfDay)),
     wind,
-    panel.strength.flowers,
-    growth.mode === "flow",
-  );
+    hold: panel.strength.flowers,
+    flowing: growth.mode === "flow",
+  });
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -459,12 +475,16 @@ function frame(now: number): void {
   if (view !== undefined) {
     camera.follow(view, dt);
   }
+  const light = skyAt(panel.time.timeOfDay);
+  if (panel.time.dayRunning) {
+    panel.showTimeOfDay();
+  }
   const flowing = tree !== undefined && panel.growth.mode === "flow";
   const flowerHover =
     tree !== undefined &&
     pointer !== undefined &&
     placingFlowers({ shiftKey: shiftHeld })
-      ? flowerHoverAt(tree, pointer.x, pointer.y)
+      ? flowerHoverAt(tree, pointer.x, pointer.y, light)
       : undefined;
   const hoveredSpout =
     flowing &&
@@ -504,11 +524,13 @@ function frame(now: number): void {
     }
   }
   renderer.draw(camera, {
+    light,
+    clock,
     tree,
     debris,
     hover,
     strain: panel.showStrain,
-    flowers: flowers.views(panel.flowers),
+    flowers: flowers.views(panel.flowers, panel.time.season),
     flowerHover,
     flow: flowing
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }
@@ -545,6 +567,8 @@ interface DebugHandle {
   spout(index: number, share: number): void;
   /** Changes the flowers, as the debug panel would. */
   flowers(settings: Partial<FlowerSettings>): void;
+  /** Changes the time of day and of year, as the debug panel would. */
+  time(settings: Partial<TimeSettings>): void;
   /**
    * Grows a flower by hand at `fraction` of limb `index`'s length, on its `side` (1 left, -1
    * right), like a shift-click.
@@ -617,6 +641,9 @@ if (import.meta.env.DEV) {
     },
     flowers(settings) {
       panel.setFlowers(settings);
+    },
+    time(settings) {
+      panel.setTime(settings);
     },
     placeFlower(index, fraction, side) {
       const limb = at(standing().limbs, index);

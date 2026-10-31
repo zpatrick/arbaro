@@ -6,6 +6,7 @@ import type { FlowerHover, FlowerView } from "./flowers";
 import type { Limb } from "./limb";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
+import { css, type Rgb, type SkyBody, type SkyLight } from "./sky";
 import { FLARE, type Pick, type Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 
@@ -59,9 +60,34 @@ const DOT_FILL = 0.42;
 const DOT_MIN_PX = 0.9;
 /** Width of a flower's stalk as a fraction of the flower's size, and its limits in CSS pixels. */
 const STALK = { width: 0.06, min: 0.9, max: 2.4 } as const;
+/** Stars in the night sky, and how many of them are bright enough to sparkle. */
+const STARS = { count: 170, bright: 14 } as const;
+/** Radius of the sun, as a fraction of the view's height. The moon is a little smaller. */
+const SUN_SIZE = 0.022;
+/** Highest the sun and moon climb, as a fraction of the view's height below its top. */
+const SKY_TOP = 0.075;
+/** How far apart the sun rises and sets, as a fraction of the view's width. */
+const SKY_SPAN = 0.88;
+/**
+ * How far right of center the sun and moon are at their highest, as a fraction of the view's
+ * width, so they pass beside the top of the tree rather than behind it.
+ */
+const SKY_LEAN = 0.13;
+/** Flame-like rays around the sun. */
+const SUN_RAYS = 14;
+/** Turns of the sun's rays per second of simulated time. */
+const SUN_SPIN = 0.008;
+const STARLIGHT: Rgb = [240, 236, 222];
+const MOONLIGHT: Rgb = [238, 233, 214];
+/** The haze around the moon, a touch bluer than the moon itself. */
+const MOON_HAZE: Rgb = [214, 222, 242];
 
 /** Everything drawn in one frame. */
 export interface Scene {
+  /** The light at this time of day. */
+  light: SkyLight;
+  /** Seconds of simulated time, which set the stars twinkling and the sun's rays turning. */
+  clock: number;
   /** The standing tree, if there is one. */
   tree: Tree | undefined;
   /** Pieces that broke or were cut off, falling or lying on the ground. */
@@ -93,6 +119,20 @@ export function minimumRadius(camera: Camera): number {
 interface Vec {
   x: number;
   y: number;
+}
+
+/** A star, placed across the sky as fractions of the view's width and of the height of its sky. */
+interface Star {
+  x: number;
+  y: number;
+  /** Radius in CSS pixels. */
+  size: number;
+  brightness: number;
+  /** How fast it twinkles, in radians per second, and where in its twinkle it starts. */
+  rate: number;
+  phase: number;
+  /** Whether it is one of the few bright enough to sparkle. */
+  sparkles: boolean;
 }
 
 interface EdgePoint extends Vec {
@@ -129,7 +169,12 @@ export class Renderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly grain: CanvasPattern;
-  private sky: CanvasGradient | undefined;
+  private resized = false;
+  private readonly stars: Star[];
+  /** Ink of the wood and ground in this frame's light. */
+  private inkColor: string = PALETTE.ink;
+  /** Ink of the guides drawn over the scene in this frame's light. */
+  private guideColor: string = PALETTE.ink;
   /** Where the strain veins are drawn before they are laid into the wood with their glow. */
   private readonly veins: HTMLCanvasElement;
   private readonly veinCtx: CanvasRenderingContext2D;
@@ -159,6 +204,16 @@ export class Renderer {
       "Canvas 2D is not available for the strain glow.",
     );
     this.glowCtx = glowCtx;
+    const rng = new Rng(11);
+    this.stars = Array.from({ length: STARS.count }, (_, i) => ({
+      x: rng.next(),
+      y: Math.pow(rng.next(), 1.3),
+      size: 0.5 + 0.8 * Math.pow(rng.next(), 3),
+      brightness: 0.6 + 0.4 * rng.next(),
+      rate: 0.6 + 1.8 * rng.next(),
+      phase: rng.next() * Math.PI * 2,
+      sparkles: i < STARS.bright,
+    }));
   }
 
   resize(camera: Camera): void {
@@ -168,33 +223,19 @@ export class Renderer {
     this.veins.height = this.canvas.height;
     this.glow.width = Math.ceil(this.canvas.width * GLOW_SCALE);
     this.glow.height = Math.ceil(this.canvas.height * GLOW_SCALE);
-    const cx = camera.width * camera.dpr * 0.5;
-    const cy = camera.groundY * camera.dpr;
-    const sky = this.ctx.createRadialGradient(
-      cx,
-      cy,
-      0,
-      cx,
-      cy,
-      Math.hypot(cx, cy) * 1.05,
-    );
-    sky.addColorStop(0, PALETTE.paperGlow);
-    sky.addColorStop(0.55, PALETTE.paper);
-    sky.addColorStop(1, PALETTE.paperShade);
-    this.sky = sky;
+    this.resized = true;
   }
 
   /** Draws in device pixels throughout so every ink shape shares one grain. */
   draw(camera: Camera, scene: Scene): void {
-    const ctx = this.ctx;
-    invariant(this.sky !== undefined, "Renderer.resize must run before draw.");
+    invariant(this.resized, "Renderer.resize must run before draw.");
     const width = this.canvas.width;
     // The ground begins wherever height zero falls, which moves as the view pans.
     const ground = clamp(camera.groundRow * camera.dpr, 0, this.canvas.height);
+    this.inkColor = css(scene.light.ink);
+    this.guideColor = css(scene.light.guide);
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = this.sky;
-    ctx.fillRect(0, 0, width, ground);
+    this.drawSky(camera, scene.light, scene.clock, ground);
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
     // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
@@ -238,7 +279,7 @@ export class Renderer {
       }
     }
     for (const flower of scene.flowers) {
-      this.drawFlower(camera, flower);
+      this.drawFlower(camera, flower, scene.light.flowerLight);
     }
     if (scene.tree !== undefined) {
       if (scene.flow !== undefined) {
@@ -252,7 +293,7 @@ export class Renderer {
       this.drawGuides(camera, scene.tree, scene.hover);
     }
     if (scene.flowerHover?.ghost !== undefined) {
-      this.drawFlower(camera, scene.flowerHover.ghost);
+      this.drawFlower(camera, scene.flowerHover.ghost, scene.light.flowerLight);
     }
     if (scene.flowerHover?.target !== undefined) {
       const { target } = scene.flowerHover;
@@ -266,8 +307,220 @@ export class Renderer {
     }
   }
 
-  /** Draws a flower on its stalk, if it has one. */
-  private drawFlower(camera: Camera, flower: FlowerView): void {
+  /**
+   * Fills the sky above `ground`, in device pixels, for the time of day: a glow over the middle of
+   * the horizon, warm light on the sun's side at sunrise and sunset, and the stars, moon and sun.
+   */
+  private drawSky(
+    camera: Camera,
+    light: SkyLight,
+    clock: number,
+    ground: number,
+  ): void {
+    const ctx = this.ctx;
+    const width = this.canvas.width;
+    const cx = width * 0.5;
+    const cy = camera.groundRow * camera.dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const sky = ctx.createRadialGradient(
+      cx,
+      cy,
+      0,
+      cx,
+      cy,
+      Math.hypot(cx, camera.groundY * camera.dpr) * 1.05,
+    );
+    sky.addColorStop(0, css(light.sky.glow));
+    sky.addColorStop(0.55, css(light.sky.middle));
+    sky.addColorStop(1, css(light.sky.edge));
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, width, ground);
+
+    if (light.twilight > 0) {
+      const rising = light.sun.along < 0.5 || light.sun.along > 1.5;
+      const x = cx + (rising ? -1 : 1) * cx * SKY_SPAN;
+      const radius = width * 0.9;
+      const glow = ctx.createRadialGradient(x, cy, 0, x, cy, radius);
+      glow.addColorStop(0, css(light.twilightColor, 0.75 * light.twilight));
+      glow.addColorStop(1, css(light.twilightColor, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, width, ground);
+      const band = ctx.createLinearGradient(
+        0,
+        cy,
+        0,
+        cy - this.canvas.height * 0.4,
+      );
+      band.addColorStop(0, css(light.twilightColor, 0.35 * light.twilight));
+      band.addColorStop(1, css(light.twilightColor, 0));
+      ctx.fillStyle = band;
+      ctx.fillRect(0, 0, width, ground);
+    }
+
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    if (light.daylight < 1) {
+      this.drawStars(camera, 1 - light.daylight, clock);
+    }
+    const radius = SUN_SIZE * camera.height;
+    if (light.moon.height > -0.2) {
+      this.drawMoon(this.bodyAt(camera, light.moon), radius * 0.85, light);
+    }
+    if (light.sun.height > -0.2) {
+      this.drawSun(this.bodyAt(camera, light.sun), radius, light, clock);
+    }
+  }
+
+  /** Where the sun or moon is on screen, in CSS pixels, on its arc from horizon to horizon. */
+  private bodyAt(camera: Camera, body: SkyBody): Vec {
+    const angle = Math.PI * (1 - body.along);
+    const rise = camera.groundY - SKY_TOP * camera.height;
+    return {
+      x:
+        camera.width *
+        (0.5 + 0.5 * SKY_SPAN * Math.cos(angle) + SKY_LEAN * Math.sin(angle)),
+      y: camera.groundRow - rise * Math.sin(angle),
+    };
+  }
+
+  /** Stars fading in as the light goes, dimmer toward the horizon, each twinkling at its own pace. */
+  private drawStars(camera: Camera, darkness: number, clock: number): void {
+    const ctx = this.ctx;
+    for (const star of this.stars) {
+      const x = star.x * camera.width;
+      const y = star.y * camera.groundY;
+      const horizon = smoothstep(
+        camera.groundRow,
+        camera.groundRow - 0.35 * camera.groundY,
+        y,
+      );
+      const twinkle = 0.7 + 0.3 * Math.sin(clock * star.rate + star.phase);
+      const alpha = darkness * horizon * twinkle * star.brightness;
+      if (alpha <= 0.01) {
+        continue;
+      }
+      ctx.fillStyle = css(STARLIGHT, alpha);
+      ctx.beginPath();
+      ctx.arc(x, y, star.size, 0, Math.PI * 2);
+      ctx.fill();
+      if (star.sparkles) {
+        const reach = star.size * 4.5;
+        ctx.strokeStyle = css(STARLIGHT, alpha * 0.6);
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(x - reach, y);
+        ctx.lineTo(x + reach, y);
+        ctx.moveTo(x, y - reach);
+        ctx.lineTo(x, y + reach);
+        ctx.stroke();
+      }
+    }
+  }
+
+  /** A crescent moon in a soft haze, fading as the day comes. */
+  private drawMoon(center: Vec, radius: number, light: SkyLight): void {
+    const ctx = this.ctx;
+    const fade = 1 - 0.7 * light.daylight;
+    const haze = ctx.createRadialGradient(
+      center.x,
+      center.y,
+      radius * 0.6,
+      center.x,
+      center.y,
+      radius * 4,
+    );
+    haze.addColorStop(0, css(MOON_HAZE, 0.22 * fade));
+    haze.addColorStop(1, css(MOON_HAZE, 0));
+    ctx.fillStyle = haze;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius * 4, 0, Math.PI * 2);
+    ctx.fill();
+    // The dark of the moon still shows faintly.
+    ctx.fillStyle = css(MOONLIGHT, 0.1 * fade);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    // The lit crescent lies between the moon's edge and the edge of the shadow over it.
+    const offset = radius * 0.62;
+    const half = Math.sqrt(radius * radius - (offset / 2) * (offset / 2));
+    const outer = Math.atan2(half, offset / 2);
+    const inner = Math.atan2(half, -offset / 2);
+    ctx.fillStyle = css(MOONLIGHT, fade);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, -outer, outer, true);
+    ctx.arc(center.x + offset, center.y, radius, inner, -inner, false);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /**
+   * The sun, after the sand drawings: a disc carved with rings inside a ring of flame-like rays
+   * that turn slowly, in a warm glow. It reddens toward the horizon.
+   */
+  private drawSun(
+    center: Vec,
+    radius: number,
+    light: SkyLight,
+    clock: number,
+  ): void {
+    const ctx = this.ctx;
+    const color = light.sunColor;
+    const glow = ctx.createRadialGradient(
+      center.x,
+      center.y,
+      radius * 0.8,
+      center.x,
+      center.y,
+      radius * 4,
+    );
+    glow.addColorStop(0, css(color, 0.32));
+    glow.addColorStop(1, css(color, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius * 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = css(color, 0.85);
+    const spin = clock * SUN_SPIN * Math.PI * 2;
+    for (let i = 0; i < SUN_RAYS; i += 1) {
+      const length = radius * (i % 2 === 0 ? 1.05 : 0.7);
+      const sway = (i % 4 < 2 ? 1 : -1) * 0.16 * length;
+      const base = radius * 1.12;
+      const half = radius * 0.14;
+      ctx.save();
+      ctx.translate(center.x, center.y);
+      ctx.rotate(spin + (i * Math.PI * 2) / SUN_RAYS);
+      ctx.beginPath();
+      ctx.moveTo(base, -half);
+      ctx.quadraticCurveTo(
+        base + 0.55 * length,
+        -0.3 * half + sway,
+        base + length,
+        1.3 * sway,
+      );
+      ctx.quadraticCurveTo(base + 0.5 * length, 0.7 * half + sway, base, half);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = css(color);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = css(
+      [color[0] * 0.8, color[1] * 0.78, color[2] * 0.75],
+      0.5,
+    );
+    ctx.lineWidth = 1;
+    for (const ring of [0.72, 0.48]) {
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius * ring, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  /** Draws a flower on its stalk, if it has one, in the light of `light`. */
+  private drawFlower(camera: Camera, flower: FlowerView, light: Rgb): void {
     const ctx = this.ctx;
     const size = flower.size * camera.scale;
     const base = camera.toScreen(flower.x, flower.y);
@@ -279,7 +532,7 @@ export class Renderer {
       );
       ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
       ctx.globalAlpha = flower.alpha;
-      ctx.strokeStyle = PALETTE.ink;
+      ctx.strokeStyle = this.inkColor;
       ctx.lineWidth = clamp(size * STALK.width, STALK.min, STALK.max);
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -298,6 +551,7 @@ export class Renderer {
       age: flower.age,
       alpha: flower.alpha,
       variant: flower.variant,
+      light,
     });
   }
 
@@ -368,10 +622,12 @@ export class Renderer {
     }
   }
 
+  /** Fills `path`, given in device pixels, with ink and its grain. */
   private fillInk(path: Path2D, alpha: number): void {
     const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = PALETTE.ink;
+    ctx.fillStyle = this.inkColor;
     ctx.fill(path);
     ctx.globalCompositeOperation = "screen";
     ctx.globalAlpha = INK_GRAIN * alpha;
@@ -514,7 +770,7 @@ export class Renderer {
       from.heading -
       hover.limb.restPointAt(s).heading;
     const start = camera.toScreen(from.x, from.y);
-    ctx.strokeStyle = PALETTE.ink;
+    ctx.strokeStyle = this.guideColor;
     ctx.globalAlpha = 0.45;
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
@@ -533,7 +789,7 @@ export class Renderer {
 
   private ring(center: Vec, alpha: number, radius = TIP_RING_PX): void {
     const ctx = this.ctx;
-    ctx.strokeStyle = PALETTE.ink;
+    ctx.strokeStyle = this.guideColor;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);

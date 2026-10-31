@@ -1,16 +1,15 @@
 import type { FlowerKind } from "./flowers";
-import { PALETTE } from "./palette";
+import type { Rgb } from "./sky";
 import { clamp, lerp, smoothstep } from "./util";
-
-type Rgb = readonly [number, number, number];
 
 /**
  * Outline around every petal, as a fraction of the flower's size, and its limits in CSS pixels.
  * A small flower gets a fine outline so its color still reads.
  */
 const OUTLINE = { width: 0.04, min: 0.45, max: 1.1 } as const;
-/** Ink of the outlines, a little softer than the wood. */
-const OUTLINE_INK = "rgba(42, 33, 26, 0.85)";
+/** Ink of the sepals and outlines: the wood's ink, with the outlines a little softer. */
+const INK: Rgb = [42, 33, 26];
+const OUTLINE_ALPHA = 0.85;
 /** Fine lines inside the petals, in CSS pixels. */
 const VEIN_PX = 0.7;
 /** The fine lines fade in as a flower is drawn between these sizes, in CSS pixels. */
@@ -81,6 +80,14 @@ interface Vein {
   alpha: number;
 }
 
+/** The colors a flower is drawn in, already lit: its petals at their base and tip, and its inks. */
+interface Paint {
+  base: Rgb;
+  tip: Rgb;
+  ink: string;
+  outline: string;
+}
+
 /** How to draw one flower. Positions and sizes are in CSS pixels. */
 export interface FlowerLook {
   kind: FlowerKind;
@@ -97,6 +104,8 @@ export interface FlowerLook {
   alpha: number;
   /** Fixed for each flower, from 0 to 1, for the small differences between flowers of a kind. */
   variant: number;
+  /** Multipliers on every color, for the light at this time of day. */
+  light: Rgb;
 }
 
 /** Draws a flower. Sets the transform itself, so the caller's is lost. */
@@ -123,6 +132,13 @@ export function drawFlower(
     alpha: smoothstep(DETAIL_PX.from, DETAIL_PX.to, size),
   };
   const colors = petalColors(look.kind, look.age);
+  const ink = lit(INK, look.light);
+  const paint: Paint = {
+    base: lit(colors.base, look.light),
+    tip: lit(colors.tip, look.light),
+    ink: css(ink),
+    outline: `rgba(${Math.round(ink[0])}, ${Math.round(ink[1])}, ${Math.round(ink[2])}, ${OUTLINE_ALPHA})`,
+  };
   const wilt = smoothstep(WILT.from, WILT.to, look.age);
   const open = easeInOut(look.openness);
   ctx.globalAlpha = look.alpha;
@@ -130,13 +146,13 @@ export function drawFlower(
   ctx.lineCap = "round";
   switch (look.kind) {
     case "lotus":
-      drawLotus(ctx, open, wilt, colors, line, vein);
+      drawLotus(ctx, open, wilt, paint, line, vein);
       break;
     case "cloud":
-      drawCloud(ctx, open, wilt, colors, line, vein);
+      drawCloud(ctx, open, wilt, paint, line, vein);
       break;
     case "star":
-      drawStar(ctx, open, wilt, colors, line, vein, look.variant);
+      drawStar(ctx, open, wilt, paint, line, vein, look.variant);
       break;
     default: {
       const unknown: never = look.kind;
@@ -164,12 +180,12 @@ function drawLotus(
   ctx: CanvasRenderingContext2D,
   open: number,
   wilt: number,
-  colors: { base: Rgb; tip: Rgb },
+  paint: Paint,
   line: number,
   vein: Vein,
 ): void {
   // Two sepals and a cup at the base, in the same ink as the wood.
-  ctx.fillStyle = PALETTE.ink;
+  ctx.fillStyle = paint.ink;
   for (const side of [-1, 1]) {
     ctx.save();
     ctx.translate(0, 0.05);
@@ -215,11 +231,11 @@ function drawLotus(
       );
       ctx.closePath();
       const fill = ctx.createLinearGradient(0, 0, 0, length);
-      fill.addColorStop(0, css(colors.base, petal.shade));
-      fill.addColorStop(1, css(colors.tip, petal.shade));
+      fill.addColorStop(0, css(paint.base, petal.shade));
+      fill.addColorStop(1, css(paint.tip, petal.shade));
       ctx.fillStyle = fill;
       ctx.fill();
-      ctx.strokeStyle = OUTLINE_INK;
+      ctx.strokeStyle = paint.outline;
       ctx.lineWidth = line;
       ctx.stroke();
       // A carved midrib, with two fainter veins beside it on the broad front petals.
@@ -254,7 +270,7 @@ function drawCloud(
   ctx: CanvasRenderingContext2D,
   open: number,
   wilt: number,
-  colors: { base: Rgb; tip: Rgb },
+  paint: Paint,
   line: number,
   vein: Vein,
 ): void {
@@ -268,7 +284,7 @@ function drawCloud(
   const lowest = Math.min(...lobes.map((lobe) => lobe.y - lobe.r));
 
   // A small cup of ink where the cluster sits on its stalk.
-  ctx.fillStyle = PALETTE.ink;
+  ctx.fillStyle = paint.ink;
   ctx.beginPath();
   ctx.moveTo(-0.03, 0);
   ctx.quadraticCurveTo(-0.11, lowest + 0.02, -0.06, lowest + 0.08);
@@ -279,7 +295,7 @@ function drawCloud(
 
   // The outline is stroked twice as wide as it shows; filling the lobes over it leaves only
   // their shared outer edge.
-  ctx.strokeStyle = OUTLINE_INK;
+  ctx.strokeStyle = paint.outline;
   ctx.lineWidth = line * 2;
   for (const lobe of lobes) {
     ctx.beginPath();
@@ -294,8 +310,8 @@ function drawCloud(
     middle,
     0.62 * gather,
   );
-  fill.addColorStop(0, css(colors.base));
-  fill.addColorStop(1, css(colors.tip));
+  fill.addColorStop(0, css(paint.base));
+  fill.addColorStop(1, css(paint.tip));
   ctx.fillStyle = fill;
   ctx.beginPath();
   for (const lobe of lobes) {
@@ -327,7 +343,7 @@ function drawStar(
   ctx: CanvasRenderingContext2D,
   open: number,
   wilt: number,
-  colors: { base: Rgb; tip: Rgb },
+  paint: Paint,
   line: number,
   vein: Vein,
   variant: number,
@@ -372,11 +388,11 @@ function drawStar(
     );
     ctx.closePath();
     const fill = ctx.createLinearGradient(0, 0, 0, length);
-    fill.addColorStop(0, css(colors.base));
-    fill.addColorStop(0.7, css(colors.tip));
+    fill.addColorStop(0, css(paint.base));
+    fill.addColorStop(0.7, css(paint.tip));
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.strokeStyle = OUTLINE_INK;
+    ctx.strokeStyle = paint.outline;
     ctx.lineWidth = line;
     ctx.stroke();
     ctx.lineWidth = vein.width;
@@ -392,7 +408,7 @@ function drawStar(
     ctx.stroke();
     ctx.restore();
   }
-  ctx.fillStyle = PALETTE.ink;
+  ctx.fillStyle = paint.ink;
   ctx.globalAlpha *= 0.6;
   ctx.beginPath();
   ctx.arc(0, center, 0.03, 0, Math.PI * 2);
@@ -414,6 +430,11 @@ function leaf(
 
 function easeInOut(t: number): number {
   return t * t * (3 - 2 * t);
+}
+
+/** A color under a light, as multipliers on each channel. */
+function lit(color: Rgb, light: Rgb): Rgb {
+  return [color[0] * light[0], color[1] * light[1], color[2] * light[2]];
 }
 
 function mix(a: Rgb, b: Rgb, t: number): Rgb {

@@ -44,11 +44,12 @@ const TREE_OF_LIFE = [
 const blow = (model, strength, direction = 0) => ({
   wind: { model, strength, direction },
 });
-/** The tree-of-life, flowering on its own with `settings`, given time to bloom. */
-const flowering = (settings) => [
+/** The tree-of-life, flowering on its own with `settings` at `time`, given time to bloom. */
+const flowering = (settings, time = {}) => [
   ...TREE_OF_LIFE,
   still(2),
   { flowers: { placement: "tree", ...settings } },
+  { time },
   still(4),
 ];
 
@@ -212,20 +213,21 @@ const SCENES = [
     crop: "tip5",
     actions: flowering({ kind: "mixed" }),
   },
+  // At night the flowers close into buds.
   {
-    file: "31-closed-at-night",
-    actions: flowering({ kind: "mixed", open: false }),
+    file: "31-night",
+    actions: flowering({ kind: "mixed" }, { timeOfDay: 0 }),
   },
-  { file: "32-fall", actions: flowering({ kind: "mixed", season: 0.5 }) },
+  { file: "32-fall", actions: flowering({ kind: "mixed" }, { season: 0.5 }) },
   {
     file: "33-late-fall",
-    actions: flowering({ kind: "mixed", season: 0.76 }),
+    actions: flowering({ kind: "mixed" }, { season: 0.76 }),
   },
   {
     file: "34-winter",
     actions: [
       ...flowering({ kind: "mixed" }),
-      { flowers: { season: 1 } },
+      { time: { season: 1 } },
       still(9),
     ],
   },
@@ -256,6 +258,14 @@ const SCENES = [
       still(1.2),
     ],
   },
+  {
+    file: "37-dawn",
+    actions: flowering({ kind: "mixed" }, { timeOfDay: 0.255 }),
+  },
+  {
+    file: "38-dusk",
+    actions: flowering({ kind: "mixed" }, { timeOfDay: 0.745 }),
+  },
 ];
 
 const server = await createServer({ root, logLevel: "error" });
@@ -283,6 +293,8 @@ try {
     await page.addStyleTag({ content: ".debug { display: none !important; }" });
     const anchors = await page.evaluate((actions) => {
       const debug = window.__arbaro;
+      // Every scene is at noon in midsummer, held there, unless it says otherwise.
+      debug.time({ timeOfDay: 0.5, dayRunning: false, season: 0 });
       // Let growth coast to a full stop before any wind, so every scene settles the same way.
       let settled = false;
       for (const action of actions) {
@@ -300,6 +312,8 @@ try {
           debug.spout(action.spout, action.share);
         } else if (action.flowers !== undefined) {
           debug.flowers(action.flowers);
+        } else if (action.time !== undefined) {
+          debug.time(action.time);
         } else if (action.flower !== undefined) {
           debug.placeFlower(action.flower, action.at, action.side);
         } else if (action.wind !== undefined) {

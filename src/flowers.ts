@@ -24,12 +24,21 @@ export const FLOWER_KINDS: readonly FlowerKind[] = ["lotus", "cloud", "star"];
 export interface FlowerSettings {
   placement: FlowerPlacement;
   kind: FlowerChoice;
-  /** Open, as by day, or closed, as at night. Flowers take a couple of seconds to change. */
-  open: boolean;
   /** Multiplier on the size of every flower. */
   size: number;
+}
+
+/** What the flowers live through. */
+export interface Conditions {
   /** Time of year, from midsummer at 0 to winter at 1. Flowers turn, wilt and drop as it passes. */
   season: number;
+  /** Whether it is day. Flowers open by day and close at night, taking a few seconds to change. */
+  day: boolean;
+  wind: Wind;
+  /** Multiplier on how hard flower stems hold. */
+  hold: number;
+  /** Whether the tree grows in flow mode, where better-fed limbs grow stronger stems. */
+  flowing: boolean;
 }
 
 export const FLOWERS = {
@@ -267,17 +276,13 @@ export class Flowers {
 
   /**
    * Grows, opens, ages and drops the flowers, tears loose any the wind pulls too hard, and moves
-   * those that came off. With no standing tree, every flower still on it falls. `hold` is the
-   * multiplier on how hard the stems hold, and `flowing` is whether the tree grows in flow mode,
-   * where better-fed limbs grow stronger stems.
+   * those that came off. With no standing tree, every flower still on it falls.
    */
   update(
     dt: number,
     tree: Tree | undefined,
     settings: FlowerSettings,
-    wind: Wind,
-    hold: number,
-    flowing: boolean,
+    conditions: Conditions,
   ): void {
     this.time += dt;
     if (tree === undefined) {
@@ -289,10 +294,10 @@ export class Flowers {
       if (settings.placement === "tree") {
         this.growOwn(tree, settings);
       }
-      this.tend(dt, tree, settings, wind, hold, flowing);
+      this.tend(dt, tree, settings, conditions);
     }
     for (const flower of this.falling) {
-      fall(flower, dt, wind);
+      fall(flower, dt, conditions.wind);
     }
     this.falling = this.falling.filter((flower) => flower.alpha > 0);
   }
@@ -332,17 +337,22 @@ export class Flowers {
     return true;
   }
 
-  /** What shift-clicking at (x, y), over `pick`, would do. */
+  /**
+   * What shift-clicking at (x, y), over `pick`, would do, with the flowers drawn as they look at
+   * this `season` and by day or night.
+   */
   hover(
     tree: Tree,
     x: number,
     y: number,
     pick: Pick | undefined,
     settings: FlowerSettings,
+    season: number,
+    day: boolean,
   ): FlowerHover {
     const target = this.flowerAt(tree, x, y, settings);
     if (target !== undefined) {
-      return { ghost: undefined, target: this.view(target, settings) };
+      return { ghost: undefined, target: this.view(target, settings, season) };
     }
     const spot = pick === undefined ? undefined : this.spot(pick);
     if (pick === undefined || spot === undefined) {
@@ -363,8 +373,8 @@ export class Flowers {
       ghost: {
         kind,
         ...pose,
-        openness: settings.open ? 1 : 0,
-        age: settings.season,
+        openness: day ? 1 : 0,
+        age: season,
         alpha: 0.45,
         variant: TYPICAL.variant,
       },
@@ -372,12 +382,12 @@ export class Flowers {
     };
   }
 
-  /** Every flower to draw: those on the tree, then those that came off. */
-  views(settings: FlowerSettings): FlowerView[] {
+  /** Every flower to draw, as it looks at this `season`: those on the tree, then those that came off. */
+  views(settings: FlowerSettings, season: number): FlowerView[] {
     const views: FlowerView[] = [];
     for (const flower of this.flowers) {
       if (flower.dropped === undefined && flower.grown > 0) {
-        views.push(this.view(flower, settings));
+        views.push(this.view(flower, settings, season));
       }
     }
     for (const flower of this.falling) {
@@ -388,7 +398,7 @@ export class Flowers {
         angle: flower.angle,
         size: flower.size,
         openness: flower.openness,
-        age: ageOf(flower.traits, settings.season),
+        age: ageOf(flower.traits, season),
         alpha: flower.alpha,
         variant: flower.traits.variant,
         stalk: undefined,
@@ -489,11 +499,9 @@ export class Flowers {
     dt: number,
     tree: Tree,
     settings: FlowerSettings,
-    wind: Wind,
-    hold: number,
-    flowing: boolean,
+    conditions: Conditions,
   ): void {
-    const shares = flowing ? tree.flowShares() : undefined;
+    const shares = conditions.flowing ? tree.flowShares() : undefined;
     const fed = (limb: Limb): number => {
       if (shares === undefined) {
         return 1;
@@ -515,7 +523,7 @@ export class Flowers {
         continue;
       }
       flower.s = s;
-      const age = ageOf(flower.traits, settings.season);
+      const age = ageOf(flower.traits, conditions.season);
       if (flower.dropped === "season" && age < flower.traits.dropsAt) {
         regrow(flower);
       }
@@ -541,7 +549,7 @@ export class Flowers {
         1,
       );
       flower.opened = clamp(
-        flower.opened + (settings.open ? dt : -dt) / flower.traits.opening,
+        flower.opened + (conditions.day ? dt : -dt) / flower.traits.opening,
         0,
         1,
       );
@@ -551,8 +559,8 @@ export class Flowers {
               flower,
               dt,
               settings,
-              wind,
-              hold * fed(flower.limb),
+              conditions.wind,
+              conditions.hold * fed(flower.limb),
               age,
             )
           : undefined;
@@ -677,12 +685,16 @@ export class Flowers {
     );
   }
 
-  private view(flower: Flower, settings: FlowerSettings): FlowerView {
+  private view(
+    flower: Flower,
+    settings: FlowerSettings,
+    season: number,
+  ): FlowerView {
     return {
       kind: flower.kind,
       ...this.poseOf(flower, settings),
       openness: flower.opened,
-      age: ageOf(flower.traits, settings.season),
+      age: ageOf(flower.traits, season),
       alpha: 1,
       variant: flower.traits.variant,
     };

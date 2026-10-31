@@ -1,5 +1,6 @@
 import type { FlowerChoice, FlowerPlacement, FlowerSettings } from "./flowers";
 import type { Strength } from "./physics";
+import type { TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
 import { draggable, element, shape, Slider } from "./ui";
 import { invariant } from "./util";
@@ -10,11 +11,20 @@ import {
   type WindSettings,
 } from "./wind";
 
-const STORAGE_KEY = "arbaro.debug.v5";
+const STORAGE_KEY = "arbaro.debug.v6";
 /** Strength and flower size sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
 /** Fastest flow the slider allows, as a multiple of the usual flow. */
 const MAX_FLOW_RATE = 3;
+
+/** The panel's pages, each opened by its own tab down the panel's left edge. */
+type Tab = "weather" | "tree" | "flowers";
+
+const TABS: readonly { id: Tab; name: string }[] = [
+  { id: "weather", name: "Weather" },
+  { id: "tree", name: "Tree" },
+  { id: "flowers", name: "Flowers" },
+];
 
 const FLOWER_PLACEMENTS: readonly {
   id: FlowerPlacement;
@@ -76,6 +86,17 @@ const SPEEDS: readonly {
   },
 ];
 
+/** Names for the time of day, from where each begins, in fractions of a day from midnight. */
+const TIMES_OF_DAY: readonly (readonly [number, string])[] = [
+  [0, "Night"],
+  [0.2, "Dawn"],
+  [0.29, "Morning"],
+  [0.46, "Noon"],
+  [0.54, "Afternoon"],
+  [0.71, "Dusk"],
+  [0.8, "Night"],
+];
+
 /** Names for the time of year, from where each begins on the season slider. */
 const SEASONS: readonly (readonly [number, string])[] = [
   [0, "Summer"],
@@ -133,13 +154,31 @@ const HEADINGS = [
   "down and right",
 ];
 
-interface Saved {
-  open: boolean;
+/** Every setting the panel controls. */
+interface Settings {
   growth: Growth;
   wind: WindSettings;
   strength: Strength;
   showStrain: boolean;
   flowers: FlowerSettings;
+  time: TimeSettings;
+}
+
+interface Saved extends Settings {
+  open: boolean;
+  tab: Tab;
+}
+
+/** Every setting as it starts, and as the reset button puts it back. */
+function defaults(): Settings {
+  return {
+    growth: { mode: "steer", flowRate: 1 },
+    wind: { direction: 0, strength: 0, model: "steady" },
+    strength: { wood: 1, roots: 1, flowers: 1 },
+    showStrain: false,
+    flowers: { placement: "hand", kind: "lotus", size: 1 },
+    time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
+  };
 }
 
 /** Maps a strength multiplier onto a slider position and back. */
@@ -151,73 +190,71 @@ function sliderToStrength(value: number): number {
   return Math.pow(STRENGTH_RANGE, 2 * value - 1);
 }
 
+/** A time of day as a 12-hour clock reading, such as "6:30 am". */
+function clockTime(timeOfDay: number): string {
+  const minutes = Math.floor(timeOfDay * 24 * 60) % (24 * 60);
+  const hours = Math.floor(minutes / 60);
+  const hour = hours % 12 === 0 ? 12 : hours % 12;
+  const minute = String(minutes % 60).padStart(2, "0");
+  return `${hour}:${minute} ${hours < 12 ? "am" : "pm"}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number";
+}
+
+function isSaved(saved: unknown): saved is Saved {
+  if (!isRecord(saved)) {
+    return false;
+  }
+  const { growth, wind, strength, flowers, time } = saved;
+  return (
+    typeof saved.open === "boolean" &&
+    TABS.some((t) => t.id === saved.tab) &&
+    typeof saved.showStrain === "boolean" &&
+    isRecord(growth) &&
+    GROWTH_MODES.some((m) => m.id === growth.mode) &&
+    isNumber(growth.flowRate) &&
+    isRecord(wind) &&
+    isNumber(wind.direction) &&
+    isNumber(wind.strength) &&
+    WIND_MODELS.some((m) => m.id === wind.model) &&
+    isRecord(strength) &&
+    isNumber(strength.wood) &&
+    isNumber(strength.roots) &&
+    isNumber(strength.flowers) &&
+    isRecord(flowers) &&
+    FLOWER_PLACEMENTS.some((p) => p.id === flowers.placement) &&
+    FLOWER_CHOICES.some((c) => c.id === flowers.kind) &&
+    isNumber(flowers.size) &&
+    isRecord(time) &&
+    isNumber(time.timeOfDay) &&
+    typeof time.dayRunning === "boolean" &&
+    isNumber(time.season)
+  );
+}
+
 function load(): Saved | undefined {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (raw === null) {
     return undefined;
   }
   const saved: unknown = JSON.parse(raw);
-  const isNumber = (value: unknown): value is number =>
-    typeof value === "number";
   invariant(
-    typeof saved === "object" &&
-      saved !== null &&
-      "open" in saved &&
-      typeof saved.open === "boolean" &&
-      "showStrain" in saved &&
-      typeof saved.showStrain === "boolean" &&
-      "growth" in saved &&
-      typeof saved.growth === "object" &&
-      saved.growth !== null &&
-      "mode" in saved.growth &&
-      GROWTH_MODES.some(
-        (m) => m.id === (saved.growth as { mode: unknown }).mode,
-      ) &&
-      "flowRate" in saved.growth &&
-      isNumber(saved.growth.flowRate) &&
-      "wind" in saved &&
-      typeof saved.wind === "object" &&
-      saved.wind !== null &&
-      "direction" in saved.wind &&
-      isNumber(saved.wind.direction) &&
-      "strength" in saved.wind &&
-      isNumber(saved.wind.strength) &&
-      "model" in saved.wind &&
-      WIND_MODELS.some(
-        (m) => m.id === (saved.wind as { model: unknown }).model,
-      ) &&
-      "strength" in saved &&
-      typeof saved.strength === "object" &&
-      saved.strength !== null &&
-      "wood" in saved.strength &&
-      isNumber(saved.strength.wood) &&
-      "roots" in saved.strength &&
-      isNumber(saved.strength.roots) &&
-      "flowers" in saved.strength &&
-      isNumber(saved.strength.flowers) &&
-      "flowers" in saved &&
-      typeof saved.flowers === "object" &&
-      saved.flowers !== null &&
-      "placement" in saved.flowers &&
-      FLOWER_PLACEMENTS.some(
-        (p) => p.id === (saved.flowers as { placement: unknown }).placement,
-      ) &&
-      "kind" in saved.flowers &&
-      FLOWER_CHOICES.some(
-        (c) => c.id === (saved.flowers as { kind: unknown }).kind,
-      ) &&
-      "open" in saved.flowers &&
-      typeof saved.flowers.open === "boolean" &&
-      "size" in saved.flowers &&
-      isNumber(saved.flowers.size) &&
-      "season" in saved.flowers &&
-      isNumber(saved.flowers.season),
+    isSaved(saved),
     `Saved debug settings under ${STORAGE_KEY} are malformed: ${raw}`,
   );
-  return saved as Saved;
+  return saved;
 }
 
-/** Collapsible panel on the right edge for poking at the simulation. */
+/**
+ * Collapsible panel on the right edge for poking at the simulation, with a page each for the
+ * weather, the tree and its flowers, opened by tabs down its left edge.
+ */
 export class DebugPanel {
   /** Live growth settings, read every frame. */
   readonly growth: Growth;
@@ -229,6 +266,8 @@ export class DebugPanel {
   showStrain: boolean;
   /** Live flower settings, read every frame. */
   readonly flowers: FlowerSettings;
+  /** Live time of day and of year. The day moves the time of day on while it runs. */
+  readonly time: TimeSettings;
   /**
    * How fast the simulation runs, as a multiple of real time; 0 pauses it. Not saved, so the game
    * never loads paused.
@@ -237,52 +276,51 @@ export class DebugPanel {
   /** Called whenever the growth mode changes. */
   onGrowthMode: (mode: GrowthMode) => void = () => {};
   private open: boolean;
+  private tab: Tab;
   private readonly root: HTMLElement;
+  private readonly tabs = new Map<Tab, HTMLElement>();
+  private readonly pages = new Map<Tab, HTMLElement>();
+  private readonly speeds = new Map<number, HTMLElement>();
+  private readonly timeOfDay: Slider;
+  private readonly dayToggle: HTMLElement;
+  private readonly season: Slider;
+  private readonly arrow: SVGPathElement;
+  private readonly heading: HTMLElement;
+  private readonly windSpeed: Slider;
+  private readonly models = new Map<WindModel, HTMLElement>();
+  private readonly description: HTMLElement;
   private readonly modes = new Map<GrowthMode, HTMLElement>();
   private readonly modeDescription: HTMLElement;
   private readonly flowRate: Slider;
   private readonly flowRateRow: HTMLElement;
-  private readonly arrow: SVGPathElement;
-  private readonly heading: HTMLElement;
-  private readonly speed: Slider;
-  private readonly models = new Map<WindModel, HTMLElement>();
-  private readonly description: HTMLElement;
   private readonly wood: Slider;
   private readonly roots: Slider;
-  private readonly flowerHold: Slider;
   private readonly strainToggle: HTMLElement;
   private readonly placements = new Map<FlowerPlacement, HTMLElement>();
   private readonly placementDescription: HTMLElement;
   private readonly kinds = new Map<FlowerChoice, HTMLElement>();
-  private readonly openToggle: HTMLElement;
   private readonly flowerSize: Slider;
-  private readonly season: Slider;
-  private readonly speeds = new Map<number, HTMLElement>();
+  private readonly flowerHold: Slider;
 
   constructor(host: HTMLElement) {
     const saved = load();
-    this.growth =
-      saved === undefined
-        ? { mode: "steer", flowRate: 1 }
-        : { ...saved.growth };
-    this.wind =
-      saved === undefined
-        ? { direction: 0, strength: 0, model: "steady" }
-        : { ...saved.wind };
-    this.strength =
-      saved === undefined
-        ? { wood: 1, roots: 1, flowers: 1 }
-        : { ...saved.strength };
-    this.flowers =
-      saved === undefined
-        ? { placement: "hand", kind: "lotus", open: true, size: 1, season: 0 }
-        : { ...saved.flowers };
-    this.showStrain = saved?.showStrain ?? false;
+    const settings = saved ?? defaults();
+    this.growth = { ...settings.growth };
+    this.wind = { ...settings.wind };
+    this.strength = { ...settings.strength };
+    this.showStrain = settings.showStrain;
+    this.flowers = { ...settings.flowers };
+    this.time = { ...settings.time };
     this.open = saved?.open ?? false;
+    this.tab = saved?.tab ?? "weather";
 
     this.root = element("aside", "debug", host);
-    const tab = element("div", "debug-tab", this.root, "Debug");
-    tab.addEventListener("click", () => this.toggle());
+    const tabs = element("div", "debug-tabs", this.root);
+    for (const { id, name } of TABS) {
+      const tab = element("div", "debug-tab", tabs, name);
+      tab.addEventListener("click", () => this.choose(id));
+      this.tabs.set(id, tab);
+    }
     const card = element("div", "debug-card", this.root);
 
     const time = element("section", "debug-section", card);
@@ -302,25 +340,22 @@ export class DebugPanel {
       this.speeds.set(speed, chip);
     }
 
-    const growth = element("section", "debug-section", card);
-    element("h2", "debug-title", growth, "Growth");
-    const modeList = element("div", "models", growth);
-    for (const mode of GROWTH_MODES) {
-      const row = element("div", "model", modeList);
-      element("span", "model-mark", row);
-      element("span", "", row, mode.name);
-      row.addEventListener("click", () => this.setGrowth({ mode: mode.id }));
-      this.modes.set(mode.id, row);
-    }
-    this.modeDescription = element("p", "model-description", growth);
-    this.flowRateRow = element("div", "", growth);
-    this.flowRate = new Slider(this.flowRateRow, "Flow rate", (value) =>
-      this.setGrowth({ flowRate: value * MAX_FLOW_RATE }),
+    const weather = this.page("weather", card);
+    const day = element("section", "debug-section", weather);
+    element("h2", "debug-title", day, "Day");
+    this.timeOfDay = new Slider(day, "Time of day", (value) =>
+      this.setTime({ timeOfDay: Math.min(value, 0.9999) }),
     );
-
-    const wind = element("section", "debug-section", card);
+    this.dayToggle = this.toggleRow(day, "Play the day", () =>
+      this.setTime({ dayRunning: !this.time.dayRunning }),
+    );
+    const year = element("section", "debug-section", weather);
+    element("h2", "debug-title", year, "Season");
+    this.season = new Slider(year, "Time of year", (value) =>
+      this.setTime({ season: value }),
+    );
+    const wind = element("section", "debug-section", weather);
     element("h2", "debug-title", wind, "Wind");
-
     const compass = shape(
       "svg",
       { viewBox: "-70 -70 140 140", class: "compass" },
@@ -363,22 +398,39 @@ export class DebugPanel {
       }
     });
     this.heading = element("div", "compass-readout", wind);
-    this.speed = new Slider(wind, "Strength", (value) =>
+    this.windSpeed = new Slider(wind, "Strength", (value) =>
       this.set({ strength: value }),
     );
-
     element("div", "debug-label", wind, "Model");
-    const list = element("div", "models", wind);
+    const windModels = element("div", "models", wind);
     for (const model of WIND_MODELS) {
-      const row = element("div", "model", list);
-      element("span", "model-mark", row);
-      element("span", "", row, model.name);
-      row.addEventListener("click", () => this.set({ model: model.id }));
-      this.models.set(model.id, row);
+      this.models.set(
+        model.id,
+        this.radioRow(windModels, model.name, () =>
+          this.set({ model: model.id }),
+        ),
+      );
     }
     this.description = element("p", "model-description", wind);
 
-    const strength = element("section", "debug-section", card);
+    const tree = this.page("tree", card);
+    const growth = element("section", "debug-section", tree);
+    element("h2", "debug-title", growth, "Growth");
+    const growthModes = element("div", "models", growth);
+    for (const mode of GROWTH_MODES) {
+      this.modes.set(
+        mode.id,
+        this.radioRow(growthModes, mode.name, () =>
+          this.setGrowth({ mode: mode.id }),
+        ),
+      );
+    }
+    this.modeDescription = element("p", "model-description", growth);
+    this.flowRateRow = element("div", "", growth);
+    this.flowRate = new Slider(this.flowRateRow, "Flow rate", (value) =>
+      this.setGrowth({ flowRate: value * MAX_FLOW_RATE }),
+    );
+    const strength = element("section", "debug-section", tree);
     element("h2", "debug-title", strength, "Strength");
     this.wood = new Slider(strength, "Wood", (value) =>
       this.setStrength({ wood: sliderToStrength(value) }),
@@ -386,52 +438,44 @@ export class DebugPanel {
     this.roots = new Slider(strength, "Roots", (value) =>
       this.setStrength({ roots: sliderToStrength(value) }),
     );
-    this.flowerHold = new Slider(strength, "Flowers", (value) =>
-      this.setStrength({ flowers: sliderToStrength(value) }),
-    );
-    this.strainToggle = element("div", "model debug-toggle", strength);
-    element("span", "model-mark", this.strainToggle);
-    element("span", "", this.strainToggle, "Show strain");
-    this.strainToggle.addEventListener("click", () => {
+    this.strainToggle = this.toggleRow(strength, "Show strain", () => {
       this.showStrain = !this.showStrain;
       this.render();
       this.save();
     });
 
-    const flowers = element("section", "debug-section", card);
+    const flowerPage = this.page("flowers", card);
+    const flowers = element("section", "debug-section", flowerPage);
     element("h2", "debug-title", flowers, "Flowers");
-    const placementList = element("div", "models", flowers);
+    const placements = element("div", "models", flowers);
     for (const placement of FLOWER_PLACEMENTS) {
-      const row = element("div", "model", placementList);
-      element("span", "model-mark", row);
-      element("span", "", row, placement.name);
-      row.addEventListener("click", () =>
-        this.setFlowers({ placement: placement.id }),
+      this.placements.set(
+        placement.id,
+        this.radioRow(placements, placement.name, () =>
+          this.setFlowers({ placement: placement.id }),
+        ),
       );
-      this.placements.set(placement.id, row);
     }
     this.placementDescription = element("p", "model-description", flowers);
     element("div", "debug-label", flowers, "Kind");
-    const kindList = element("div", "models", flowers);
+    const kinds = element("div", "models", flowers);
     for (const kind of FLOWER_CHOICES) {
-      const row = element("div", "model", kindList);
-      element("span", "model-mark", row);
-      element("span", "", row, kind.name);
-      row.addEventListener("click", () => this.setFlowers({ kind: kind.id }));
-      this.kinds.set(kind.id, row);
+      this.kinds.set(
+        kind.id,
+        this.radioRow(kinds, kind.name, () =>
+          this.setFlowers({ kind: kind.id }),
+        ),
+      );
     }
-    this.openToggle = element("div", "model debug-toggle", flowers);
-    element("span", "model-mark", this.openToggle);
-    element("span", "", this.openToggle, "Open");
-    this.openToggle.addEventListener("click", () =>
-      this.setFlowers({ open: !this.flowers.open }),
-    );
     this.flowerSize = new Slider(flowers, "Size", (value) =>
       this.setFlowers({ size: sliderToStrength(value) }),
     );
-    this.season = new Slider(flowers, "Season", (value) =>
-      this.setFlowers({ season: value }),
+    this.flowerHold = new Slider(flowers, "Stem strength", (value) =>
+      this.setStrength({ flowers: sliderToStrength(value) }),
     );
+
+    const reset = element("div", "debug-reset", card, "Reset to defaults");
+    reset.addEventListener("click", () => this.reset());
 
     window.addEventListener("keydown", (event) => {
       if (event.code === "Backquote" && !event.repeat) {
@@ -475,6 +519,12 @@ export class DebugPanel {
     this.save();
   }
 
+  setTime(settings: Partial<TimeSettings>): void {
+    Object.assign(this.time, settings);
+    this.render();
+    this.save();
+  }
+
   setSimulationSpeed(speed: number): void {
     invariant(
       SPEEDS.some((s) => s.speed === speed),
@@ -484,12 +534,112 @@ export class DebugPanel {
     this.render();
   }
 
+  /** Keeps the time of day's slider with the day as it runs. */
+  showTimeOfDay(): void {
+    const { timeOfDay } = this.time;
+    const named = [...TIMES_OF_DAY]
+      .reverse()
+      .find(([from]) => timeOfDay >= from);
+    invariant(named !== undefined, `No name for the time of day ${timeOfDay}.`);
+    this.timeOfDay.show(timeOfDay, `${clockTime(timeOfDay)} · ${named[1]}`);
+  }
+
+  /** Opens the panel on `tab`, or closes it if that page is already showing. */
+  private choose(tab: Tab): void {
+    this.open = !(this.open && this.tab === tab);
+    this.tab = tab;
+    this.render();
+    this.save();
+  }
+
+  /** Puts every setting back as it started, the speed of time included. */
+  private reset(): void {
+    const before = this.growth.mode;
+    const fresh = defaults();
+    Object.assign(this.growth, fresh.growth);
+    Object.assign(this.wind, fresh.wind);
+    Object.assign(this.strength, fresh.strength);
+    Object.assign(this.flowers, fresh.flowers);
+    Object.assign(this.time, fresh.time);
+    this.showStrain = fresh.showStrain;
+    this.simulationSpeed = 1;
+    this.render();
+    this.save();
+    if (this.growth.mode !== before) {
+      this.onGrowthMode(this.growth.mode);
+    }
+  }
+
+  private page(tab: Tab, card: HTMLElement): HTMLElement {
+    const page = element("div", "debug-page", card);
+    this.pages.set(tab, page);
+    return page;
+  }
+
+  /** One choice among several, marked when chosen. */
+  private radioRow(
+    list: HTMLElement,
+    name: string,
+    onClick: () => void,
+  ): HTMLElement {
+    const row = element("div", "model", list);
+    element("span", "model-mark", row);
+    element("span", "", row, name);
+    row.addEventListener("click", onClick);
+    return row;
+  }
+
+  /** A setting that is on or off, marked when on. */
+  private toggleRow(
+    parent: HTMLElement,
+    name: string,
+    onClick: () => void,
+  ): HTMLElement {
+    const row = element("div", "model debug-toggle", parent);
+    element("span", "model-mark", row);
+    element("span", "", row, name);
+    row.addEventListener("click", onClick);
+    return row;
+  }
+
   private render(): void {
     this.root.classList.toggle("open", this.open);
-
+    for (const [id, tab] of this.tabs) {
+      tab.classList.toggle("selected", id === this.tab);
+    }
+    for (const [id, page] of this.pages) {
+      page.hidden = id !== this.tab;
+    }
     for (const [speed, chip] of this.speeds) {
       chip.classList.toggle("selected", speed === this.simulationSpeed);
     }
+
+    this.showTimeOfDay();
+    this.dayToggle.classList.toggle("selected", this.time.dayRunning);
+    const { season } = this.time;
+    const year = [...SEASONS].reverse().find(([from]) => season >= from);
+    invariant(year !== undefined, `No name for the season at ${season}.`);
+    this.season.show(season, year[1]);
+
+    const { direction, strength, model } = this.wind;
+    this.arrow.setAttribute(
+      "transform",
+      `rotate(${(-direction * 180) / Math.PI})`,
+    );
+    const eighth = Math.round(direction / (Math.PI / 4));
+    const heading = HEADINGS[((eighth % 8) + 8) % 8];
+    invariant(heading !== undefined, `No heading for direction ${direction}.`);
+    this.heading.textContent = `Blowing ${heading}`;
+    const speed = strength * MAX_WIND_SPEED;
+    const named = [...BEAUFORT].reverse().find(([from]) => speed >= from);
+    invariant(named !== undefined, `No Beaufort name for ${speed} m/s.`);
+    this.windSpeed.show(strength, `${Math.round(speed)} m/s · ${named[1]}`);
+    for (const [id, row] of this.models) {
+      row.classList.toggle("selected", id === model);
+    }
+    const chosen = WIND_MODELS.find((m) => m.id === model);
+    invariant(chosen !== undefined, `Unknown wind model ${model}.`);
+    this.description.textContent = chosen.description;
 
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);
@@ -502,29 +652,6 @@ export class DebugPanel {
       this.growth.flowRate / MAX_FLOW_RATE,
       `×${this.growth.flowRate.toFixed(2)}`,
     );
-
-    const { direction, strength, model } = this.wind;
-    this.arrow.setAttribute(
-      "transform",
-      `rotate(${(-direction * 180) / Math.PI})`,
-    );
-    const eighth = Math.round(direction / (Math.PI / 4));
-    const heading = HEADINGS[((eighth % 8) + 8) % 8];
-    invariant(heading !== undefined, `No heading for direction ${direction}.`);
-    this.heading.textContent = `Blowing ${heading}`;
-
-    const speed = strength * MAX_WIND_SPEED;
-    const named = [...BEAUFORT].reverse().find(([from]) => speed >= from);
-    invariant(named !== undefined, `No Beaufort name for ${speed} m/s.`);
-    this.speed.show(strength, `${Math.round(speed)} m/s · ${named[1]}`);
-
-    for (const [id, row] of this.models) {
-      row.classList.toggle("selected", id === model);
-    }
-    const chosen = WIND_MODELS.find((m) => m.id === model);
-    invariant(chosen !== undefined, `Unknown wind model ${model}.`);
-    this.description.textContent = chosen.description;
-
     this.wood.show(
       strengthToSlider(this.strength.wood),
       `×${this.strength.wood.toFixed(2)}`,
@@ -533,13 +660,9 @@ export class DebugPanel {
       strengthToSlider(this.strength.roots),
       `×${this.strength.roots.toFixed(2)}`,
     );
-    this.flowerHold.show(
-      strengthToSlider(this.strength.flowers),
-      `×${this.strength.flowers.toFixed(2)}`,
-    );
     this.strainToggle.classList.toggle("selected", this.showStrain);
 
-    const { placement, kind, open, size, season } = this.flowers;
+    const { placement, kind, size } = this.flowers;
     for (const [id, row] of this.placements) {
       row.classList.toggle("selected", id === placement);
     }
@@ -549,21 +672,23 @@ export class DebugPanel {
     for (const [id, row] of this.kinds) {
       row.classList.toggle("selected", id === kind);
     }
-    this.openToggle.classList.toggle("selected", open);
     this.flowerSize.show(strengthToSlider(size), `×${size.toFixed(2)}`);
-    const time = [...SEASONS].reverse().find(([from]) => season >= from);
-    invariant(time !== undefined, `No name for the season at ${season}.`);
-    this.season.show(season, time[1]);
+    this.flowerHold.show(
+      strengthToSlider(this.strength.flowers),
+      `×${this.strength.flowers.toFixed(2)}`,
+    );
   }
 
   private save(): void {
     const saved: Saved = {
       open: this.open,
+      tab: this.tab,
       growth: this.growth,
       wind: this.wind,
       strength: this.strength,
       showStrain: this.showStrain,
       flowers: this.flowers,
+      time: this.time,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   }

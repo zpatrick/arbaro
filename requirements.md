@@ -115,7 +115,7 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one
       crowning each limb long enough to flower and more along the thin wood behind it. The tree
       grows back a flower the wind takes after a while.
-- [x] Flowers open by day and close into buds at night, and are seen opening and closing.
+- [x] Flowers open at sunrise and close into buds at sunset, and are seen opening and closing.
 - [x] Through autumn they turn yellow, then orange, then brown, wilt, and drop.
 - [x] Strong wind tears flowers loose; a typical open flower starts to go in a storm. A larger
       flower grows a stouter stem, but the wind's pull grows a little faster than its hold, so
@@ -183,7 +183,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [ ] Levels with shaped terrain: hills, slopes, rocks underground and solid obstacles above.
 - [ ] Soil holds moisture. Rain wets the top layer, and water drains down, spreads sideways and
       evaporates near the surface. Underground water pockets and a water table stay wet.
-- [ ] A day and night cycle, with the sun crossing the sky and clouds dimming it.
+- [x] A day and night cycle: the sun crosses the sky by day, the moon and stars come out at night,
+      and the light on the sky, the wood and the flowers follows, warm at sunrise and sunset. A
+      day takes three minutes at normal speed.
+- [ ] Clouds dim the sun.
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
 - [ ] Rain showers come and go.
@@ -223,12 +226,15 @@ _Open._ A button flips into a view of the roots:
 
 ## Debug tools
 
-- [x] A collapsible debug panel on the right edge, with sections for different systems.
-- [x] Time section: pause the simulation, or run it at normal, double or quadruple speed.
-- [x] Growth section: switch between steer-and-grow and flow mode, and set the flow rate.
-- [x] Wind section: a compass whose arrow you drag to point where the wind blows toward, a strength
-      slider, and a choice of wind model with a description of each.
-- [x] Strength section: multipliers on how much the wood and the roots can take and how hard
-      flower stems hold, and an overlay showing how close each joint is to breaking.
-- [x] Flowers section: whether flowers are placed by hand or grown by the tree, their kind or a
-      mix, open or closed, one size for all of them, and the season.
+- [x] A collapsible debug panel on the right edge, with a tab down its left edge for each page:
+      weather, the tree, and flowers. Time controls stay at the top of every page, and a button
+      at the bottom puts every setting back to its default.
+- [x] Time controls: pause the simulation, or run it at normal, double or quadruple speed.
+- [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed;
+      the season; and the wind: a compass whose arrow you drag to point where it blows toward, a
+      strength slider, and a choice of wind model with a description of each.
+- [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
+      how much the wood and the roots can take; and an overlay showing how close each joint is to
+      breaking.
+- [x] Flowers page: whether flowers are placed by hand or grown by the tree, their kind or a mix,
+      one size for all of them, and how hard their stems hold.
