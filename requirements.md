@@ -28,7 +28,7 @@ art and tree-of-life drawings.
 - [x] The ground and the tree are the same dark ink. That reads well and should stay the default
       view.
 - [ ] Mountains drawn with flowing organic lines, as in the references.
-- [ ] Lotus flowers as a motif.
+- [x] Lotus flowers as a motif.
 - [ ] A minimal UI drawn from the same language, such as parallel lines of different lengths.
 - [ ] Twigs and root hairs curl into spirals when they reach full length.
 - Translate the references' principles into original procedural art. Never ship the images.
@@ -108,6 +108,20 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 ## Flowers
 
+- [x] Three kinds, drawn from the references: the lotus, the scalloped cloud blossoms of the
+      tree-of-life drawings, and the five-petal star flowers on their mound.
+- [x] Flowers only grow on thin wood, and keep to it as their limb grows, so they ride up with
+      the tip.
+- [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one
+      crowning each limb long enough to flower and more along the thin wood behind it. The tree
+      grows back a flower the wind takes after a while.
+- [x] Flowers open by day and close into buds at night, and are seen opening and closing.
+- [x] Through autumn they turn yellow, then orange, then brown, wilt, and drop.
+- [x] The wind tears flowers loose. Each stem holds against a set pull, and the pull grows with
+      the flower's area, so large flowers go first, open flowers before closed buds, and small
+      ones hold on longest. Stems weaken in autumn. As with the wood, brief gusts are survived
+      and sustained overload is not.
+- [x] A flower falls when the wood it grows on is cut or breaks off, or the tree falls.
 - [ ] Flowers start small and grow larger with light, up to a maximum size.
 - [ ] Larger flowers cost more to maintain, so flowers end up at varied, organic sizes: the ones
       getting the most light grow largest, and an older flower is not necessarily a large one.
@@ -117,8 +131,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
   - Deficit: it dies. The further below maintenance, the faster it changes color and dies.
 - [ ] Dying runs along a color scale, roughly white to yellow to green to dark brown to black. A
       flower that gets back into maintenance slowly returns to white.
-- [ ] A dead flower falls off the tree onto the ground and slowly dissolves or fades away.
-- [ ] Flowers have weight and catch the wind.
+- [x] A dead flower falls off the tree onto the ground and slowly dissolves or fades away.
+- [ ] Flowers have weight, and their weight and the wind they catch load the limbs.
 
 ## Physics
 
@@ -210,5 +224,7 @@ _Open._ A button flips into a view of the roots:
 - [x] Growth section: switch between steer-and-grow and flow mode, and set the flow rate.
 - [x] Wind section: a compass whose arrow you drag to point where the wind blows toward, a strength
       slider, and a choice of wind model with a description of each.
-- [x] Strength section: multipliers on how much the wood and the roots can take, and an overlay
-      showing how close each joint is to breaking.
+- [x] Strength section: multipliers on how much the wood and the roots can take and how hard
+      flower stems hold, and an overlay showing how close each joint is to breaking.
+- [x] Flowers section: whether flowers are placed by hand or grown by the tree, their kind or a
+      mix, open or closed, one size for all of them, and the season.

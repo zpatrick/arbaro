@@ -57,6 +57,8 @@ const RECOIL = 0.45;
 export interface Strength {
   wood: number;
   roots: number;
+  /** How hard flower stems hold against the wind. */
+  flowers: number;
 }
 
 /** A joint that gave way. */

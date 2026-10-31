@@ -1,6 +1,8 @@
 import type { Camera } from "./camera";
 import type { Debris } from "./debris";
 import type { Dot } from "./flow";
+import { drawFlower } from "./flower-art";
+import type { FlowerHover, FlowerView } from "./flowers";
 import type { Limb } from "./limb";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
@@ -55,6 +57,8 @@ const DOT_SIZE = 0.32;
 const DOT_FILL = 0.42;
 /** Smallest energy dot drawn, in CSS pixels. */
 const DOT_MIN_PX = 0.9;
+/** Width of a flower's stalk as a fraction of the flower's size, and its limits in CSS pixels. */
+const STALK = { width: 0.06, min: 0.9, max: 2.4 } as const;
 
 /** Everything drawn in one frame. */
 export interface Scene {
@@ -65,6 +69,10 @@ export interface Scene {
   hover: Pick | undefined;
   /** Whether to mark how close each joint is to breaking. */
   strain: boolean;
+  /** Flowers on the tree, then those that came off it. */
+  flowers: readonly FlowerView[];
+  /** What a shift-click would do to the flowers, while one is being lined up. */
+  flowerHover: FlowerHover | undefined;
   /** In flow mode: the energy dots riding up the wood, and the spouts to mark. */
   flow:
     | {
@@ -226,6 +234,13 @@ export class Renderer {
       }
       if (scene.flow !== undefined) {
         this.drawDots(camera, scene.tree, scene.flow.dots);
+      }
+    }
+    for (const flower of scene.flowers) {
+      this.drawFlower(camera, flower);
+    }
+    if (scene.tree !== undefined) {
+      if (scene.flow !== undefined) {
         this.drawSpouts(
           camera,
           scene.tree,
@@ -235,6 +250,54 @@ export class Renderer {
       }
       this.drawGuides(camera, scene.tree, scene.hover);
     }
+    if (scene.flowerHover?.ghost !== undefined) {
+      this.drawFlower(camera, scene.flowerHover.ghost);
+    }
+    if (scene.flowerHover?.target !== undefined) {
+      const { target } = scene.flowerHover;
+      const middle = camera.toScreen(
+        target.x + Math.cos(target.angle) * 0.5 * target.size,
+        target.y + Math.sin(target.angle) * 0.5 * target.size,
+      );
+      this.ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+      this.ctx.lineWidth = 1.25;
+      this.ring(middle, 0.55, 0.62 * target.size * camera.scale + 3);
+    }
+  }
+
+  /** Draws a flower on its stalk, if it has one. */
+  private drawFlower(camera: Camera, flower: FlowerView): void {
+    const ctx = this.ctx;
+    const size = flower.size * camera.scale;
+    const base = camera.toScreen(flower.x, flower.y);
+    if (flower.stalk !== undefined) {
+      const from = camera.toScreen(flower.stalk.from.x, flower.stalk.from.y);
+      const control = camera.toScreen(
+        flower.stalk.control.x,
+        flower.stalk.control.y,
+      );
+      ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+      ctx.globalAlpha = flower.alpha;
+      ctx.strokeStyle = PALETTE.ink;
+      ctx.lineWidth = clamp(size * STALK.width, STALK.min, STALK.max);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.quadraticCurveTo(control.x, control.y, base.x, base.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    drawFlower(ctx, camera.dpr, {
+      kind: flower.kind,
+      x: base.x,
+      y: base.y,
+      angle: flower.angle,
+      size,
+      openness: flower.openness,
+      age: flower.age,
+      alpha: flower.alpha,
+      variant: flower.variant,
+    });
   }
 
   /** Draws each energy dot as pale light inside the wood it rides in. */
@@ -467,12 +530,12 @@ export class Renderer {
     ctx.stroke();
   }
 
-  private ring(center: Vec, alpha: number): void {
+  private ring(center: Vec, alpha: number, radius = TIP_RING_PX): void {
     const ctx = this.ctx;
     ctx.strokeStyle = PALETTE.ink;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
-    ctx.arc(center.x, center.y, TIP_RING_PX, 0, Math.PI * 2);
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
   }

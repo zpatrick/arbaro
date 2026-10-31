@@ -44,13 +44,21 @@ const TREE_OF_LIFE = [
 const blow = (model, strength, direction = 0) => ({
   wind: { model, strength, direction },
 });
+/** The tree-of-life, flowering on its own with `settings`, given time to bloom. */
+const flowering = (settings) => [
+  ...TREE_OF_LIFE,
+  still(2),
+  { flowers: { placement: "tree", ...settings } },
+  still(4),
+];
 
 /**
  * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
  * fraction of its length, selects a limb, cuts limb `cut` at a fraction of its length, sets the
- * wind, or sets how much the tree can take, all through the dev-only debug hook on a freshly
- * loaded page so every scene starts from the same seed. `crop` frames a close-up around the
- * trunk's base, the active tip, where limb 1 forks off, or the tip of limb N (`tipN`).
+ * wind, sets how much the tree can take, changes the flowers, or grows a flower by hand on limb
+ * `flower` at a fraction of its length, all through the dev-only debug hook on a freshly loaded
+ * page so every scene starts from the same seed. `crop` frames a close-up around the trunk's
+ * base, the active tip, where limb 1 forks off, or the tip of limb N (`tipN`).
  */
 const SCENES = [
   { file: "01-sprout", actions: [] },
@@ -195,6 +203,59 @@ const SCENES = [
       grow(2.5),
     ],
   },
+  { file: "27-lotus", actions: flowering({ kind: "lotus" }) },
+  { file: "28-cloud-blossoms", actions: flowering({ kind: "cloud" }) },
+  { file: "29-star-flowers", actions: flowering({ kind: "star" }) },
+  {
+    file: "30-flowers-detail",
+    scale: 3,
+    crop: "tip5",
+    actions: flowering({ kind: "mixed" }),
+  },
+  {
+    file: "31-closed-at-night",
+    actions: flowering({ kind: "mixed", open: false }),
+  },
+  { file: "32-fall", actions: flowering({ kind: "mixed", season: 0.5 }) },
+  {
+    file: "33-late-fall",
+    actions: flowering({ kind: "mixed", season: 0.76 }),
+  },
+  {
+    file: "34-winter",
+    actions: [
+      ...flowering({ kind: "mixed" }),
+      { flowers: { season: 1 } },
+      still(9),
+    ],
+  },
+  // Flowers placed by hand keep to the thin wood near the tip as their limb grows on.
+  {
+    file: "35-by-hand",
+    actions: [
+      ...TREE_OF_LIFE,
+      still(2),
+      { flowers: { placement: "hand", kind: "lotus" } },
+      { flower: 3, at: 0.98, side: 1 },
+      { flowers: { kind: "star" } },
+      { flower: 3, at: 0.8, side: -1 },
+      { flowers: { kind: "cloud" } },
+      { flower: 3, at: 0.6, side: 1 },
+      { flower: 2, at: 0.9, side: -1 },
+      still(2),
+      { select: 3 },
+      grow(1.5),
+    ],
+  },
+  // Larger flowers catch more wind, so a gale tears them loose first.
+  {
+    file: "36-gale-strips-flowers",
+    actions: [
+      ...flowering({ kind: "mixed", size: 1.4 }),
+      blow("steady", 0.4),
+      still(1.2),
+    ],
+  },
 ];
 
 const server = await createServer({ root, logLevel: "error" });
@@ -237,6 +298,10 @@ try {
           debug.growth(action.growth);
         } else if (action.spout !== undefined) {
           debug.spout(action.spout, action.share);
+        } else if (action.flowers !== undefined) {
+          debug.flowers(action.flowers);
+        } else if (action.flower !== undefined) {
+          debug.placeFlower(action.flower, action.at, action.side);
         } else if (action.wind !== undefined) {
           if (!settled) {
             debug.simulate(2, { grow: false, steer: 0 });

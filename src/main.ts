@@ -3,6 +3,7 @@ import { Camera } from "./camera";
 import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
+import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
 import { Keyboard } from "./input";
 import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
@@ -58,12 +59,15 @@ const panel = new DebugPanel(element("#app", HTMLDivElement));
 const wind = new Wind(panel.wind);
 const spoutControl = new SpoutControl(element("#app", HTMLDivElement));
 const dots = new FlowDots();
+const flowers = new Flowers();
 
 let seed = 1;
 /** The standing tree. Gone once it falls, until the next one is planted. */
 let tree: Tree | undefined = new Tree(0, seed);
 const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
+/** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
+let shiftHeld = false;
 let messageTimer: number | undefined;
 /**
  * When set, frames still draw but time stands still, so a script can step the simulation exactly.
@@ -84,6 +88,7 @@ function replant(): void {
   tree = new Tree(0, seed);
   spoutControl.close();
   dots.clear();
+  flowers.clear();
 }
 
 function showGrowthMode(mode: GrowthMode): void {
@@ -104,7 +109,10 @@ function spoutAt(standing: Tree, x: number, y: number): Limb | undefined {
     const p = limb.attachment.parent.pointAt(limb.attachment.s);
     const at = camera.toScreen(p.x, p.y);
     const distance = Math.hypot(at.x - x, at.y - y);
-    if (distance <= SPOUT_PICK_PX && (nearest === undefined || distance < nearest.distance)) {
+    if (
+      distance <= SPOUT_PICK_PX &&
+      (nearest === undefined || distance < nearest.distance)
+    ) {
       nearest = { limb, distance };
     }
   }
@@ -124,6 +132,35 @@ function announce(text: string): void {
 function pickAt(standing: Tree, x: number, y: number): Pick | undefined {
   const world = camera.toWorld(x, y);
   return standing.pick(world.x, world.y, PICK_TOLERANCE_PX / camera.scale);
+}
+
+/** Whether a click at the pointer would place or knock off a flower rather than grow the tree. */
+function placingFlowers(event: { shiftKey: boolean }): boolean {
+  return event.shiftKey && panel.flowers.placement === "hand";
+}
+
+/** Knocks off the flower under (x, y) in CSS pixels, or grows one on the thin wood there. */
+function tendFlowers(standing: Tree, x: number, y: number): void {
+  const world = camera.toWorld(x, y);
+  if (flowers.knockOff(standing, world.x, world.y, panel.flowers)) {
+    return;
+  }
+  const pick = pickAt(standing, x, y);
+  if (pick !== undefined && !flowers.place(pick, panel.flowers)) {
+    announce("Flowers only grow on thin wood");
+  }
+}
+
+/** What a shift-click at (x, y) in CSS pixels would do to the flowers. */
+function flowerHoverAt(standing: Tree, x: number, y: number): FlowerHover {
+  const world = camera.toWorld(x, y);
+  return flowers.hover(
+    standing,
+    world.x,
+    world.y,
+    pickAt(standing, x, y),
+    panel.flowers,
+  );
 }
 
 /** Cuts `limb` at `s` and lets everything beyond fall, keeping the motion it had. */
@@ -214,13 +251,20 @@ function step(dt: number, controls: Controls): void {
   const growth: Growth = panel.growth;
   if (tree !== undefined) {
     const standing = tree;
-    for (const failure of standing.update(dt, controls, wind, panel.strength, growth)) {
+    for (const failure of standing.update(
+      dt,
+      controls,
+      wind,
+      panel.strength,
+      growth,
+    )) {
       if (tree !== standing) {
         break;
       }
       giveWay(standing, failure);
     }
   }
+  flowers.update(dt, tree, panel.flowers, wind, panel.strength.flowers);
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -242,6 +286,9 @@ showGrowthMode(panel.growth.mode);
 panel.onGrowthMode = showGrowthMode;
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Shift") {
+    shiftHeld = true;
+  }
   if (event.code === "KeyR" && !event.repeat) {
     replant();
   }
@@ -249,17 +296,31 @@ window.addEventListener("keydown", (event) => {
     spoutControl.close();
   }
 });
+window.addEventListener("keyup", (event) => {
+  if (event.key === "Shift") {
+    shiftHeld = false;
+  }
+});
+window.addEventListener("blur", () => {
+  shiftHeld = false;
+});
 canvas.addEventListener("pointermove", (event) => {
   pointer = { x: event.clientX, y: event.clientY };
+  shiftHeld = event.shiftKey;
 });
 canvas.addEventListener("pointerleave", () => {
   pointer = undefined;
 });
 // Clicking a limb makes it the one that grows and steers. Clicking the limb that already is
 // forks a new offshoot from that spot. In flow mode, clicking a spout opens it; a click anywhere
-// else just closes the open one.
+// else just closes the open one. While flowers are placed by hand, a shift-click places or
+// knocks off a flower instead.
 canvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || tree === undefined) {
+    return;
+  }
+  if (placingFlowers(event)) {
+    tendFlowers(tree, event.clientX, event.clientY);
     return;
   }
   if (panel.growth.mode === "flow") {
@@ -312,20 +373,40 @@ function frame(now: number): void {
     camera.follow(view, dt);
   }
   const flowing = tree !== undefined && panel.growth.mode === "flow";
+  const flowerHover =
+    tree !== undefined &&
+    pointer !== undefined &&
+    placingFlowers({ shiftKey: shiftHeld })
+      ? flowerHoverAt(tree, pointer.x, pointer.y)
+      : undefined;
   const hoveredSpout =
-    flowing && tree !== undefined && pointer !== undefined
+    flowing &&
+    tree !== undefined &&
+    pointer !== undefined &&
+    flowerHover === undefined
       ? spoutAt(tree, pointer.x, pointer.y)
       : undefined;
   const hover =
-    tree === undefined || pointer === undefined || hoveredSpout !== undefined
+    tree === undefined ||
+    pointer === undefined ||
+    hoveredSpout !== undefined ||
+    flowerHover !== undefined
       ? undefined
       : pickAt(tree, pointer.x, pointer.y);
-  canvas.style.cursor =
-    hover === undefined && hoveredSpout === undefined ? "" : "pointer";
+  const pointing =
+    hover !== undefined ||
+    hoveredSpout !== undefined ||
+    flowerHover?.ghost !== undefined ||
+    flowerHover?.target !== undefined;
+  canvas.style.cursor = pointing ? "pointer" : "";
   // The open spout follows its fork as the tree sways, and closes if the fork is gone.
   const open = spoutControl.limb;
   if (open !== undefined) {
-    if (tree === undefined || !tree.has(open) || open.attachment === undefined) {
+    if (
+      tree === undefined ||
+      !tree.has(open) ||
+      open.attachment === undefined
+    ) {
       spoutControl.close();
     } else {
       const p = open.attachment.parent.pointAt(open.attachment.s);
@@ -338,6 +419,8 @@ function frame(now: number): void {
     debris,
     hover,
     strain: panel.showStrain,
+    flowers: flowers.views(panel.flowers),
+    flowerHover,
     flow: flowing
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }
       : undefined,
@@ -371,6 +454,15 @@ interface DebugHandle {
   growth(settings: Partial<Growth>): void;
   /** Sets the share of the flow the spout at limb `index`'s fork sends into it. */
   spout(index: number, share: number): void;
+  /** Changes the flowers, as the debug panel would. */
+  flowers(settings: Partial<FlowerSettings>): void;
+  /**
+   * Grows a flower by hand at `fraction` of limb `index`'s length, on its `side` (1 left, -1
+   * right), like a shift-click.
+   */
+  placeFlower(index: number, fraction: number, side: 1 | -1): void;
+  /** How many flowers are on the tree, and how many have come off and not yet faded. */
+  flowerCount(): { onTree: number; falling: number };
   /** Stops time so frames can be captured exactly as simulated. */
   freeze(): void;
 }
@@ -434,6 +526,17 @@ if (import.meta.env.DEV) {
       invariant(limb.attachment !== undefined, `Limb ${index} has no spout.`);
       limb.spout = clamp(share, 0, 1);
     },
+    flowers(settings) {
+      panel.setFlowers(settings);
+    },
+    placeFlower(index, fraction, side) {
+      const limb = at(standing().limbs, index);
+      invariant(
+        flowers.place({ limb, s: limb.length * fraction, side }, panel.flowers),
+        `No wood on limb ${index} is thin enough for a flower.`,
+      );
+    },
+    flowerCount: () => flowers.count(),
     freeze() {
       frozen = true;
     },
