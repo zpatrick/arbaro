@@ -25,9 +25,9 @@ export class SpoutControl {
     this.slider = new Slider(this.root, "Into this branch", (share) =>
       this.set(share),
     );
-    const row = element("div", "spout-presets", this.root);
+    const row = element("div", "chips", this.root);
     for (const [label, share] of PRESETS) {
-      const chip = element("div", "spout-preset", row, label);
+      const chip = element("div", "chip", row, label);
       chip.addEventListener("click", () => this.set(share));
       this.presets.push([chip, share]);
     }

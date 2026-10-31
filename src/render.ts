@@ -189,17 +189,18 @@ export class Renderer {
     const ctx = this.ctx;
     invariant(this.sky !== undefined, "Renderer.resize must run before draw.");
     const width = this.canvas.width;
-    const groundY = camera.groundY * camera.dpr;
+    // The ground begins wherever height zero falls, which moves as the view pans.
+    const ground = clamp(camera.groundRow * camera.dpr, 0, this.canvas.height);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = this.sky;
-    ctx.fillRect(0, 0, width, groundY);
+    ctx.fillRect(0, 0, width, ground);
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
     // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
     // in, so one lying on the ground merges into it.
     const ink = new Path2D();
-    ink.rect(0, groundY, width, this.canvas.height - groundY);
+    ink.rect(0, ground, width, this.canvas.height - ground);
     const world = camera.worldTransform();
     if (scene.tree !== undefined) {
       for (const shape of treeShapes(scene.tree, minimumRadius(camera))) {

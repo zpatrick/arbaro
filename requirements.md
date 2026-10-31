@@ -117,10 +117,11 @@ switched on in the debug panel beside the original steer-and-grow controls:
       grows back a flower the wind takes after a while.
 - [x] Flowers open by day and close into buds at night, and are seen opening and closing.
 - [x] Through autumn they turn yellow, then orange, then brown, wilt, and drop.
-- [x] The wind tears flowers loose. Each stem holds against a set pull, and the pull grows with
-      the flower's area, so large flowers go first, open flowers before closed buds, and small
-      ones hold on longest. Stems weaken in autumn. As with the wood, brief gusts are survived
-      and sustained overload is not.
+- [x] Strong wind tears flowers loose; a typical open flower starts to go in a storm. A larger
+      flower grows a stouter stem, but the wind's pull grows a little faster than its hold, so
+      larger flowers are somewhat more exposed. Open flowers catch more wind than closed buds.
+      Stems vary at random, grow stronger on limbs that get more of the flow in flow mode, and
+      weaken in autumn. As with the wood, brief gusts are survived and sustained overload is not.
 - [x] A flower falls when the wood it grows on is cut or breaks off, or the tree falls.
 - [ ] Flowers start small and grow larger with light, up to a maximum size.
 - [ ] Larger flowers cost more to maintain, so flowers end up at varied, organic sizes: the ones
@@ -158,8 +159,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
       tree.
 - [x] Limbs break when the bending stress in them stays past what the wood can take; brief peaks
       are survived, sustained overload is not. The broken piece falls with the motion it had,
-      lands, rests, then fades away. A piece that sat on top of its break tips over on the stump
-      before it falls.
+      lands, and always fades away a few seconds later, even if the wind keeps rocking it. A
+      piece that sat on top of its break tips over on the stump before it falls.
 - [x] The tree falls over if the trunk snaps or the roots can no longer hold it upright. Until roots
       exist, a thicker trunk stands for better roots. An uprooted tree tips over on its base, root
       flare and all.
@@ -197,7 +198,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       with 18 flowers.
 - [ ] Win by reaching a level's goals; the result shows the height, flowers and day reached.
 - [ ] Lose if the tree falls, with a hint at what would have kept it standing.
-- [ ] Time controls: pause, normal, double and quadruple speed.
+- [x] Time controls: pause, normal, double and quadruple speed. (In the debug panel for now.)
+- [x] Drag to pan and scroll to zoom around the pointer. The camera then stays where the player
+      left it until F, or planting a new tree, sends it back to following the tree.
 - [ ] An in-game display of resources, goal progress, wind and time of day, plus facts about the
       selected limb: length, thickness, what it carries or anchors, its flowers, how close it is to
       snapping, and what it has stored.
@@ -221,6 +224,7 @@ _Open._ A button flips into a view of the roots:
 ## Debug tools
 
 - [x] A collapsible debug panel on the right edge, with sections for different systems.
+- [x] Time section: pause the simulation, or run it at normal, double or quadruple speed.
 - [x] Growth section: switch between steer-and-grow and flow mode, and set the flow rate.
 - [x] Wind section: a compass whose arrow you drag to point where the wind blows toward, a strength
       slider, and a choice of wind model with a description of each.

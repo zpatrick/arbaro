@@ -33,11 +33,18 @@ const MESSAGE_SECONDS = 2.6;
 const SPOUT_PICK_PX = 10;
 /** How fast energy dots ride up the wood, in CSS pixels per second. */
 const DOT_SPEED_PX = 90;
+/** A press must move this far, in CSS pixels, before it pans the view, so a click stays a click. */
+const PAN_THRESHOLD_PX = 3;
+/**
+ * How far each pixel of scrolling zooms, in natural log of the zoom factor: once for a mouse
+ * wheel, and once for a trackpad pinch, which scrolls far less for the same gesture.
+ */
+const ZOOM_PER_PX = { wheel: 0.0015, pinch: 0.01 } as const;
 /** What the hint under the ground says in each growth mode. */
 const HINTS: Record<GrowthMode, string> = {
   steer:
-    "<span>Hold <kbd>↑</kbd> to grow</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Right-click to cut</span><span><kbd>R</kbd> to replant</span>",
-  flow: "<span>The roots feed every tip</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Click a spout to split the flow</span><span>Right-click to cut</span><span><kbd>R</kbd> to replant</span>",
+    "<span>Hold <kbd>↑</kbd> to grow</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Right-click to cut</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
+  flow: "<span>The roots feed every tip</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Click a spout to split the flow</span><span>Right-click to cut</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
 };
 
 function element<T extends HTMLElement>(
@@ -68,6 +75,12 @@ const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
 let shiftHeld = false;
+/**
+ * A press that pans the view as it drags: where the pointer was last, and whether it has moved
+ * far enough to count as a drag yet.
+ */
+let panning:
+  { pointerId: number; x: number; y: number; dragging: boolean } | undefined;
 let messageTimer: number | undefined;
 /**
  * When set, frames still draw but time stands still, so a script can step the simulation exactly.
@@ -80,7 +93,14 @@ let frozen =
 function resize(): void {
   camera.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio);
   renderer.resize(camera);
-  hint.style.top = `${camera.groundY + (camera.height - camera.groundY) * 0.42}px`;
+}
+
+/** Keeps the hint in the ground, a little below its edge, wherever panning has put the ground. */
+function placeHint(): void {
+  const top = `${camera.groundRow + (camera.height - camera.groundY) * 0.42}px`;
+  if (hint.style.top !== top) {
+    hint.style.top = top;
+  }
 }
 
 function replant(): void {
@@ -89,6 +109,18 @@ function replant(): void {
   spoutControl.close();
   dots.clear();
   flowers.clear();
+  camera.release();
+}
+
+/** Starts a press on the canvas that pans the view once it drags. */
+function startPanning(event: PointerEvent): void {
+  panning = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    dragging: false,
+  };
+  canvas.setPointerCapture(event.pointerId);
 }
 
 function showGrowthMode(mode: GrowthMode): void {
@@ -264,7 +296,14 @@ function step(dt: number, controls: Controls): void {
       giveWay(standing, failure);
     }
   }
-  flowers.update(dt, tree, panel.flowers, wind, panel.strength.flowers);
+  flowers.update(
+    dt,
+    tree,
+    panel.flowers,
+    wind,
+    panel.strength.flowers,
+    growth.mode === "flow",
+  );
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -292,6 +331,9 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyR" && !event.repeat) {
     replant();
   }
+  if (event.code === "KeyF" && !event.repeat) {
+    camera.release();
+  }
   if (event.code === "Escape") {
     spoutControl.close();
   }
@@ -307,16 +349,60 @@ window.addEventListener("blur", () => {
 canvas.addEventListener("pointermove", (event) => {
   pointer = { x: event.clientX, y: event.clientY };
   shiftHeld = event.shiftKey;
+  if (panning === undefined || event.pointerId !== panning.pointerId) {
+    return;
+  }
+  const dx = event.clientX - panning.x;
+  const dy = event.clientY - panning.y;
+  if (!panning.dragging && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) {
+    return;
+  }
+  panning = { ...panning, x: event.clientX, y: event.clientY, dragging: true };
+  camera.pan(dx, dy);
 });
 canvas.addEventListener("pointerleave", () => {
   pointer = undefined;
 });
+for (const type of ["pointerup", "pointercancel"] as const) {
+  canvas.addEventListener(type, (event) => {
+    if (event.pointerId === panning?.pointerId) {
+      panning = undefined;
+    }
+  });
+}
+// Scrolling zooms in and out around the pointer.
+canvas.addEventListener(
+  "wheel",
+  (event) => {
+    event.preventDefault();
+    const pixels =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? event.deltaY * 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? event.deltaY * camera.height
+          : event.deltaY;
+    // A trackpad pinch arrives as a scroll with the control key held.
+    const rate = event.ctrlKey ? ZOOM_PER_PX.pinch : ZOOM_PER_PX.wheel;
+    camera.zoom(Math.exp(-pixels * rate), event.clientX, event.clientY);
+  },
+  { passive: false },
+);
 // Clicking a limb makes it the one that grows and steers. Clicking the limb that already is
 // forks a new offshoot from that spot. In flow mode, clicking a spout opens it; a click anywhere
 // else just closes the open one. While flowers are placed by hand, a shift-click places or
-// knocks off a flower instead.
+// knocks off a flower instead. Dragging from open space, or with the middle button from anywhere,
+// pans the view.
 canvas.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0 || tree === undefined) {
+  if (event.button === 1) {
+    event.preventDefault();
+    startPanning(event);
+    return;
+  }
+  if (event.button !== 0) {
+    return;
+  }
+  if (tree === undefined) {
+    startPanning(event);
     return;
   }
   if (placingFlowers(event)) {
@@ -330,18 +416,16 @@ canvas.addEventListener("pointerdown", (event) => {
       return;
     }
   }
+  const pick = pickAt(tree, event.clientX, event.clientY);
   if (spoutControl.limb !== undefined) {
     spoutControl.close();
-    return;
-  }
-  const pick = pickAt(tree, event.clientX, event.clientY);
-  if (pick === undefined) {
-    return;
-  }
-  if (pick.limb === tree.active) {
+  } else if (pick !== undefined && pick.limb === tree.active) {
     tree.fork(pick.limb, pick.s, pick.side);
-  } else {
+  } else if (pick !== undefined) {
     tree.select(pick.limb);
+  }
+  if (pick === undefined) {
+    startPanning(event);
   }
 });
 // Right-clicking a limb cuts it there, and everything beyond falls.
@@ -366,7 +450,10 @@ function frame(now: number): void {
   last = now;
   const controls = keyboard.controls();
   if (!frozen) {
-    step(dt, controls);
+    // Faster speeds take more steps of the same size, so the simulation behaves the same.
+    for (let i = 0; i < panel.simulationSpeed; i += 1) {
+      step(dt, controls);
+    }
   }
   const view = framing();
   if (view !== undefined) {
@@ -398,7 +485,9 @@ function frame(now: number): void {
     hoveredSpout !== undefined ||
     flowerHover?.ghost !== undefined ||
     flowerHover?.target !== undefined;
-  canvas.style.cursor = pointing ? "pointer" : "";
+  canvas.style.cursor =
+    panning?.dragging === true ? "grabbing" : pointing ? "pointer" : "grab";
+  placeHint();
   // The open spout follows its fork as the tree sways, and closes if the fork is gone.
   const open = spoutControl.limb;
   if (open !== undefined) {

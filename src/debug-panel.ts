@@ -42,6 +42,14 @@ const FLOWER_CHOICES: readonly { id: FlowerChoice; name: string }[] = [
   { id: "mixed", name: "Mixed" },
 ];
 
+/** Speeds the simulation can run at, as multiples of real time. */
+const SPEEDS: readonly { speed: number; name: string }[] = [
+  { speed: 0, name: "Pause" },
+  { speed: 1, name: "1×" },
+  { speed: 2, name: "2×" },
+  { speed: 4, name: "4×" },
+];
+
 /** Names for the time of year, from where each begins on the season slider. */
 const SEASONS: readonly (readonly [number, string])[] = [
   [0, "Summer"],
@@ -195,6 +203,11 @@ export class DebugPanel {
   showStrain: boolean;
   /** Live flower settings, read every frame. */
   readonly flowers: FlowerSettings;
+  /**
+   * How fast the simulation runs, as a multiple of real time; 0 pauses it. Not saved, so the game
+   * never loads paused.
+   */
+  simulationSpeed = 1;
   /** Called whenever the growth mode changes. */
   onGrowthMode: (mode: GrowthMode) => void = () => {};
   private open: boolean;
@@ -218,6 +231,7 @@ export class DebugPanel {
   private readonly openToggle: HTMLElement;
   private readonly flowerSize: Slider;
   private readonly season: Slider;
+  private readonly speeds = new Map<number, HTMLElement>();
 
   constructor(host: HTMLElement) {
     const saved = load();
@@ -244,6 +258,15 @@ export class DebugPanel {
     const tab = element("div", "debug-tab", this.root, "Debug");
     tab.addEventListener("click", () => this.toggle());
     const card = element("div", "debug-card", this.root);
+
+    const time = element("section", "debug-section", card);
+    element("h2", "debug-title", time, "Time");
+    const speedRow = element("div", "chips", time);
+    for (const { speed, name } of SPEEDS) {
+      const chip = element("div", "chip", speedRow, name);
+      chip.addEventListener("click", () => this.setSimulationSpeed(speed));
+      this.speeds.set(speed, chip);
+    }
 
     const growth = element("section", "debug-section", card);
     element("h2", "debug-title", growth, "Growth");
@@ -418,8 +441,21 @@ export class DebugPanel {
     this.save();
   }
 
+  setSimulationSpeed(speed: number): void {
+    invariant(
+      SPEEDS.some((s) => s.speed === speed),
+      `The simulation cannot run at ${speed} times real time.`,
+    );
+    this.simulationSpeed = speed;
+    this.render();
+  }
+
   private render(): void {
     this.root.classList.toggle("open", this.open);
+
+    for (const [speed, chip] of this.speeds) {
+      chip.classList.toggle("selected", speed === this.simulationSpeed);
+    }
 
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);

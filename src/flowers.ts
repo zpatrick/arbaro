@@ -5,6 +5,7 @@ import {
   approach,
   at,
   clamp,
+  invariant,
   Rng,
   smoothstep,
   valueNoise,
@@ -59,15 +60,31 @@ export const FLOWERS = {
   /** Drag coefficient of a flower. */
   drag: 1.2,
   /**
-   * Pull a flower's stem holds against, in newtons. It does not grow with the flower, so a large
-   * flower, catching more wind, is the first to go: at normal strength an average open flower
-   * starts to tear loose at about 15 m/s, and one twice the size at half that.
+   * Pull the stem of a flower of the usual size holds against, in newtons. At normal strength a
+   * typical open flower starts to tear loose in a storm, at about 24 m/s.
    */
-  hold: 30,
+  hold: 78,
+  /**
+   * A larger flower grows a stouter stem, so its hold grows with its size to this power: a little
+   * slower than the pull of the wind, which grows with its area. A flower twice the size holds
+   * 2.8 times as hard against 4 times the pull and starts to go at about 20 m/s; one half the size
+   * holds out until about 28 m/s.
+   */
+  holdGrowth: 1.5,
+  /**
+   * How much stems differ: each flower's hold is the usual times e to this many standard normal
+   * deviations, so most are within a third of it either way and a few are much weaker or stronger.
+   */
+  holdSpread: 0.35,
+  /**
+   * In flow mode a stem holds harder the better its limb is fed: as the square root of the share
+   * of the flow its limb gets against an even share, between these limits.
+   */
+  fed: { min: 0.6, max: 1.5 },
   /** Damage per second while a stem is pulled exactly at its limit. It lets go at 1. */
-  damageAtLimit: 0.5,
+  damageAtLimit: 0.3,
   /** Extra damage per second for each multiple of its limit a stem is pulled past it. */
-  damagePerOverload: 3,
+  damagePerOverload: 2,
   /** Damage healed per second while a stem is under its limit. */
   healing: 0.3,
   /** In autumn a stem's hold weakens to this fraction by the time its flower drops on its own. */
@@ -105,7 +122,7 @@ interface Traits {
   tilt: number;
   /** Seconds it takes to open or close. */
   opening: number;
-  /** Fraction of the usual hold its stem has. */
+  /** Its stem's hold, as a fraction of the usual for its size. */
   hold: number;
   /** How much earlier in the year than the rest it turns. */
   early: number;
@@ -251,7 +268,8 @@ export class Flowers {
   /**
    * Grows, opens, ages and drops the flowers, tears loose any the wind pulls too hard, and moves
    * those that came off. With no standing tree, every flower still on it falls. `hold` is the
-   * multiplier on how hard the stems hold.
+   * multiplier on how hard the stems hold, and `flowing` is whether the tree grows in flow mode,
+   * where better-fed limbs grow stronger stems.
    */
   update(
     dt: number,
@@ -259,6 +277,7 @@ export class Flowers {
     settings: FlowerSettings,
     wind: Wind,
     hold: number,
+    flowing: boolean,
   ): void {
     this.time += dt;
     if (tree === undefined) {
@@ -270,7 +289,7 @@ export class Flowers {
       if (settings.placement === "tree") {
         this.growOwn(tree, settings);
       }
-      this.tend(dt, tree, settings, wind, hold);
+      this.tend(dt, tree, settings, wind, hold, flowing);
     }
     for (const flower of this.falling) {
       fall(flower, dt, wind);
@@ -393,7 +412,7 @@ export class Flowers {
         size: 0.88 + 0.24 * this.rng.next(),
         tilt: (this.rng.next() - 0.5) * 0.3,
         opening: FLOWERS.opening * (0.8 + 0.45 * this.rng.next()),
-        hold: 0.75 + 0.5 * this.rng.next(),
+        hold: Math.exp(FLOWERS.holdSpread * this.normal()),
         early: (this.rng.next() - 0.5) * 0.08,
         dropsAt:
           FLOWERS.drops.from +
@@ -472,7 +491,21 @@ export class Flowers {
     settings: FlowerSettings,
     wind: Wind,
     hold: number,
+    flowing: boolean,
   ): void {
+    const shares = flowing ? tree.flowShares() : undefined;
+    const fed = (limb: Limb): number => {
+      if (shares === undefined) {
+        return 1;
+      }
+      const share = shares.get(limb);
+      invariant(share !== undefined, "Every limb gets a share of the flow.");
+      return clamp(
+        Math.sqrt(share * tree.limbs.length),
+        FLOWERS.fed.min,
+        FLOWERS.fed.max,
+      );
+    };
     const kept: Flower[] = [];
     for (const flower of this.flowers) {
       const s = position(flower, tree);
@@ -514,7 +547,14 @@ export class Flowers {
       );
       const torn =
         flower.grown > 0
-          ? this.weather(flower, dt, settings, wind, hold, age)
+          ? this.weather(
+              flower,
+              dt,
+              settings,
+              wind,
+              hold * fed(flower.limb),
+              age,
+            )
           : undefined;
       if (torn !== undefined) {
         this.drop(flower, tree, settings, torn);
@@ -531,8 +571,8 @@ export class Flowers {
 
   /**
    * Lets the wind pull on a flower: it leans downwind and flutters, and its stem tears loose under
-   * a pull past what it holds for long enough. Returns the push the wind gives a flower it tears
-   * loose.
+   * a pull past what it holds for long enough. `hold` multiplies how hard it holds. Returns the
+   * push the wind gives a flower it tears loose.
    */
   private weather(
     flower: Flower,
@@ -555,7 +595,12 @@ export class Flowers {
     const autumn =
       1 -
       (1 - FLOWERS.autumnHold) * smoothstep(0.5, flower.traits.dropsAt, age);
-    const limit = FLOWERS.hold * hold * flower.traits.hold * autumn;
+    const limit =
+      FLOWERS.hold *
+      Math.pow(pose.size / FLOWERS.size, FLOWERS.holdGrowth) *
+      flower.traits.hold *
+      hold *
+      autumn;
 
     const lean =
       speed > 0
@@ -700,6 +745,11 @@ export class Flowers {
 
   private randomKind(): FlowerKind {
     return at(FLOWER_KINDS, Math.floor(this.rng.next() * FLOWER_KINDS.length));
+  }
+
+  /** A random number with a standard normal distribution, near enough: a sum of three uniforms. */
+  private normal(): number {
+    return (this.rng.next() + this.rng.next() + this.rng.next() - 1.5) * 2;
   }
 }
 

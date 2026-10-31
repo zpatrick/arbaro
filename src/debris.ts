@@ -2,10 +2,15 @@ import { PHYSICS } from "./physics";
 import { clamp } from "./util";
 import type { Wind } from "./wind";
 
-/** Seconds a piece lies still on the ground before it starts to fade. */
+/** Seconds a piece lies on the ground, counted from when it first lands, before it starts to fade. */
 const LINGER = 6;
 /** Seconds a piece takes to fade away. */
 const FADE = 4;
+/**
+ * Seconds after it came off that a piece starts to fade even if it never reached the ground, such
+ * as one left balancing on its stump.
+ */
+const LONGEST = 30;
 /** Simulation steps per second while a piece is moving. */
 const STEPS_PER_SECOND = 240;
 /** Passes over the contacts each step; more makes resting contact firmer. */
@@ -27,8 +32,6 @@ const DRAG = 1.2;
 const HINGE_RELEASE = 0.5;
 /** Spin, in radians per second, a piece starts tipping off its stump with, toward its heavy side. */
 const HINGE_NUDGE = 0.08;
-/** Below these speeds a piece on the ground counts as lying still. */
-const STILL = { speed: 0.05, spin: 0.05 } as const;
 
 /** A point a piece can land on, with the radius of wood around it. */
 export interface Contact {
@@ -58,7 +61,7 @@ export interface Piece {
 
 /**
  * A piece of the tree that broke or was cut off, falling as one rigid body until it lands, lies
- * still a while, and fades away. It keeps the exact shape it had when it came off.
+ * on the ground a while, and fades away. It keeps the exact shape it had when it came off.
  */
 export class Debris {
   /** Outlines in world coordinates as they were when the piece came off. */
@@ -72,7 +75,10 @@ export class Debris {
   private vx: number;
   private vy: number;
   private spin: number;
-  private resting = 0;
+  /** Seconds since the piece came off. */
+  private age = 0;
+  /** Seconds since the piece first touched the ground, once it has. */
+  private landed: number | undefined;
   /** Whether the piece is still tipping over on the stump it sat on. */
   private hinged: boolean;
 
@@ -127,21 +133,25 @@ export class Debris {
       .translate(-center.x, -center.y);
   }
 
+  /**
+   * Moves the piece, and fades it once it has lain on the ground long enough, however much the
+   * wind still rocks it, or once it has been off the tree too long without landing.
+   */
   update(dt: number, wind: Wind): void {
-    if (this.resting >= this.linger) {
-      this.alpha = Math.max(0, this.alpha - dt / FADE);
-      return;
-    }
+    this.age += dt;
     const steps = Math.max(1, Math.ceil(dt * STEPS_PER_SECOND));
-    let touching = false;
+    let touched = false;
     for (let i = 0; i < steps; i += 1) {
-      touching = this.advance(dt / steps, wind);
+      touched = this.advance(dt / steps, wind) || touched;
     }
-    const still =
-      touching &&
-      Math.hypot(this.vx, this.vy) < STILL.speed &&
-      Math.abs(this.spin) < STILL.spin;
-    this.resting = still ? this.resting + dt : 0;
+    if (this.landed !== undefined) {
+      this.landed += dt;
+    } else if (touched) {
+      this.landed = 0;
+    }
+    if ((this.landed ?? 0) >= this.linger || this.age >= LONGEST) {
+      this.alpha = Math.max(0, this.alpha - dt / FADE);
+    }
   }
 
   /** Moves the piece by `h` seconds. Returns whether it is touching the ground. */

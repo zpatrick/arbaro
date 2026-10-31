@@ -247,12 +247,12 @@ const SCENES = [
       grow(1.5),
     ],
   },
-  // Larger flowers catch more wind, so a gale tears them loose first.
+  // A storm tears the flowers loose, the larger ones first.
   {
-    file: "36-gale-strips-flowers",
+    file: "36-storm-strips-flowers",
     actions: [
       ...flowering({ kind: "mixed", size: 1.4 }),
-      blow("steady", 0.4),
+      blow("steady", 0.7),
       still(1.2),
     ],
   },

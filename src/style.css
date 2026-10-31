@@ -330,13 +330,17 @@ body,
   margin-top: 12px;
 }
 
-.spout-presets {
+/* A row of pill buttons, one of which is chosen. */
+.chips {
   display: flex;
   gap: 8px;
+}
+
+.spout .chips {
   margin-top: 12px;
 }
 
-.spout-preset {
+.chip {
   flex: 1;
   padding: 5px 0;
   text-align: center;
@@ -349,7 +353,7 @@ body,
   cursor: pointer;
 }
 
-.spout-preset.selected {
+.chip.selected {
   color: var(--paper);
   background: var(--ink);
   border-color: var(--ink);
