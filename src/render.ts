@@ -137,7 +137,8 @@ export class Renderer {
     }
     const s = tree.forkPoint(hover.limb, hover.s);
     const from = hover.limb.pointAt(s);
-    const heading = tree.forkHeading(hover.limb, s, hover.side);
+    // The fork heading is worked out on the grown shape; turn it by however far the limb has swayed.
+    const heading = tree.forkHeading(hover.limb, s, hover.side) + from.heading - hover.limb.restPointAt(s).heading;
     const start = camera.toScreen(from.x, from.y);
     ctx.strokeStyle = PALETTE.ink;
     ctx.globalAlpha = 0.45;
@@ -214,7 +215,7 @@ function treeShapes(tree: Tree, minRadius: number): Path2D[] {
 function rootOutline(tree: Tree, { left, right }: Edges, minRadius: number): Path2D {
   const trunk = tree.root;
   const baseRadius = Math.max(minRadius, trunk.radiusAt(0));
-  const maxRise = 0.3 * trunk.tip.y;
+  const maxRise = 0.3 * trunk.restTip.y;
   const leftSpread = FLARE.spread * baseRadius * tree.flare.left;
   const rightSpread = FLARE.spread * baseRadius * tree.flare.right;
   const leftJoin = firstAbove(left, Math.min(FLARE.rise * baseRadius * tree.flare.left, maxRise));

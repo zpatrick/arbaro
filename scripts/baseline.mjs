@@ -17,6 +17,8 @@ const outDir = fileURLToPath(new URL(`../baselines/${name}/`, import.meta.url));
 
 /** Holds the grow control, and optionally a steering direction, for `seconds`. */
 const grow = (seconds, steer = 0) => ({ seconds, grow: true, steer });
+/** Lets `seconds` pass without touching the controls. */
+const still = (seconds) => ({ seconds, grow: false, steer: 0 });
 const S_CURVE = [grow(3.5), grow(1.4, 1), grow(1), grow(2.2, -1), grow(1.5)];
 const TREE_OF_LIFE = [
   grow(4.2),
@@ -38,11 +40,14 @@ const TREE_OF_LIFE = [
   grow(1.8),
 ];
 
+/** Sets the wind, as the debug panel would. */
+const blow = (model, strength, direction = 0) => ({ wind: { model, strength, direction } });
+
 /**
  * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
- * fraction of its length, or selects a limb, all through the dev-only debug hook on a freshly
- * loaded page so every scene starts from the same seed. `crop` frames a close-up around the
- * trunk's base, the active tip, or where limb 1 forks off.
+ * fraction of its length, selects a limb, or sets the wind, all through the dev-only debug hook
+ * on a freshly loaded page so every scene starts from the same seed. `crop` frames a close-up
+ * around the trunk's base, the active tip, or where limb 1 forks off.
  */
 const SCENES = [
   { file: '01-sprout', actions: [] },
@@ -58,6 +63,11 @@ const SCENES = [
   { file: '11-tip-elbow', actions: [grow(4), { fork: 0, at: 1, side: 1 }, grow(3)] },
   { file: '12-tree-of-life', actions: TREE_OF_LIFE },
   { file: '13-tree-of-life-detail', scale: 2, crop: 'fork', actions: TREE_OF_LIFE },
+  { file: '14-gale', actions: [...TREE_OF_LIFE, blow('steady', 0.5), still(8)] },
+  { file: '15-hurricane', actions: [...TREE_OF_LIFE, blow('steady', 1), still(8)] },
+  { file: '16-hurricane-detail', scale: 3, crop: 'fork', actions: [...TREE_OF_LIFE, blow('steady', 1), still(8)] },
+  { file: '17-down-and-left', actions: [...TREE_OF_LIFE, blow('steady', 0.8, -Math.PI * 0.75), still(8)] },
+  { file: '18-trunk-in-gale', actions: [...S_CURVE, blow('steady', 0.6), still(8)] },
 ];
 
 const server = await createServer({ root, logLevel: 'error' });
@@ -80,19 +90,28 @@ try {
     page.on('pageerror', (error) => errors.push(error));
     await page.goto(url);
     await page.waitForFunction(() => window.__arbaro !== undefined);
+    // The debug panel is a tool, not part of the picture.
+    await page.addStyleTag({ content: '.debug { display: none !important; }' });
     const anchors = await page.evaluate((actions) => {
       const debug = window.__arbaro;
+      // Let growth coast to a full stop before any wind, so every scene settles the same way.
+      let settled = false;
       for (const action of actions) {
         if (action.fork !== undefined) {
           debug.fork(action.fork, action.at, action.side);
         } else if (action.select !== undefined) {
           debug.select(action.select);
+        } else if (action.wind !== undefined) {
+          debug.simulate(2, { grow: false, steer: 0 });
+          settled = true;
+          debug.wind(action.wind);
         } else {
           debug.simulate(action.seconds, { grow: action.grow, steer: action.steer });
         }
       }
-      // Let growth coast to a full stop so nothing moves between here and the capture.
-      debug.simulate(2, { grow: false, steer: 0 });
+      if (!settled) {
+        debug.simulate(2, { grow: false, steer: 0 });
+      }
       const tree = debug.tree();
       const camera = debug.camera();
       const screen = (p) => camera.toScreen(p.x, p.y);

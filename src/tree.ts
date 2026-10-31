@@ -1,5 +1,7 @@
 import { type Controls, LIMB, Limb, UPRIGHT } from "./limb";
+import { PHYSICS, TreePhysics } from "./physics";
 import { at, clamp, Rng } from "./util";
+import type { Wind } from "./wind";
 
 export const FLARE = {
   /** How far the root flare reaches along the ground past the trunk, in base radii. */
@@ -44,6 +46,7 @@ export class Tree {
   readonly root: Limb;
   /** Parents always come before their offshoots. */
   readonly limbs: Limb[];
+  readonly physics = new TreePhysics();
   active: Limb;
   private readonly seed: number;
 
@@ -59,13 +62,19 @@ export class Tree {
     this.rebuild();
   }
 
-  /** Grows and steers the active limb. Every other limb holds still. */
-  update(dt: number, controls: Controls): void {
+  /**
+   * Grows and steers the active limb while every other limb holds its grown shape, then lets the
+   * wind and gravity move the whole tree.
+   */
+  update(dt: number, controls: Controls, wind: Wind): void {
     const reach = this.reach(this.active);
     const size = Math.max(1, reach / LIMB.steadyLength);
     if (this.active.update(dt, controls, size, LIMB.maxReach - reach)) {
       this.rebuild();
     }
+    wind.advance(dt, this.physics.motion);
+    this.physics.step(dt, this.limbs, wind);
+    this.pose();
   }
 
   /** Makes `limb` the one that grows and steers. The previous one stops where it is. */
@@ -79,7 +88,7 @@ export class Tree {
   /** Starts a new offshoot at distance `s` along `parent` and makes it the active limb. */
   fork(parent: Limb, s: number, side: 1 | -1): Limb {
     const forkS = this.forkPoint(parent, s);
-    const parentHeading = parent.pointAt(forkS).heading;
+    const parentHeading = parent.restPointAt(forkS).heading;
     const heading = this.forkHeading(parent, forkS, side);
     const parentRadius = parent.radiusAt(forkS);
     const size = Math.max(
@@ -108,11 +117,11 @@ export class Tree {
     return Math.max(s, limb.straightBase);
   }
 
-  /** Starting heading of an offshoot forked from `limb` at `s` toward `side`. */
+  /** Starting heading, in the grown shape, of an offshoot forked from `limb` at `s` toward `side`. */
   forkHeading(limb: Limb, s: number, side: 1 | -1): number {
     const limit = LIMB.maxLean + FORK_LEAN_ALLOWANCE;
     return clamp(
-      limb.pointAt(s).heading + side * LIMB.forkAngle,
+      limb.restPointAt(s).heading + side * LIMB.forkAngle,
       UPRIGHT - limit,
       UPRIGHT + limit,
     );
@@ -131,13 +140,14 @@ export class Tree {
     return distance;
   }
 
+  /** Extent of the tree as grown, so the camera holds still while it sways. */
   bounds(): Bounds {
     const baseRadius = this.root.radiusAt(0);
     let minX = this.baseX - baseRadius * (1 + FLARE.spread * this.flare.left);
     let maxX = this.baseX + baseRadius * (1 + FLARE.spread * this.flare.right);
     let maxY = 0;
     for (const limb of this.limbs) {
-      for (const p of limb.points) {
+      for (const p of limb.restPoints) {
         const r = limb.radiusAt(p.s);
         minX = Math.min(minX, p.x - r);
         maxX = Math.max(maxX, p.x + r);
@@ -199,12 +209,30 @@ export class Tree {
       if (limb.attachment === undefined) {
         limb.rebuild({ x: this.baseX, y: 0, heading: UPRIGHT });
       } else {
-        const fork = limb.attachment.parent.pointAt(limb.attachment.s);
+        const fork = limb.attachment.parent.restPointAt(limb.attachment.s);
         limb.rebuild({
           x: fork.x,
           y: fork.y,
           heading: fork.heading + limb.attachment.angle,
         });
+      }
+    }
+    this.physics.invalidate();
+  }
+
+  /** Lays out every drawn centerline from the grown shape plus however far the physics bent it. */
+  private pose(): void {
+    for (const limb of this.limbs) {
+      const bends = this.physics.bends(limb);
+      if (limb.attachment === undefined) {
+        limb.pose({ x: this.baseX, y: 0, heading: UPRIGHT }, bends, PHYSICS.jointSpacing);
+      } else {
+        const fork = limb.attachment.parent.pointAt(limb.attachment.s);
+        limb.pose(
+          { x: fork.x, y: fork.y, heading: fork.heading + limb.attachment.angle },
+          bends,
+          PHYSICS.jointSpacing,
+        );
       }
     }
   }

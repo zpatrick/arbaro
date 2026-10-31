@@ -44,6 +44,28 @@ export function valueNoise(x: number, seed: number): number {
   return lerp(hash(i), hash(i + 1), u) * 2 - 1;
 }
 
+/** Smooth 2D value noise in the range [-1, 1]. */
+export function valueNoise2(x: number, y: number, seed: number): number {
+  const hash = (i: number, j: number): number => {
+    const h = Math.sin(i * 127.1 + j * 311.7 + seed * 74.7) * 43758.5453;
+    return h - Math.floor(h);
+  };
+  const i = Math.floor(x);
+  const j = Math.floor(y);
+  const fx = x - i;
+  const fy = y - j;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const bottom = lerp(hash(i, j), hash(i + 1, j), ux);
+  const top = lerp(hash(i, j + 1), hash(i + 1, j + 1), ux);
+  return lerp(bottom, top, uy) * 2 - 1;
+}
+
+/** Wraps an angle into (-PI, PI]. */
+export function wrapAngle(angle: number): number {
+  return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));
+}
+
 /** Small deterministic random number generator (mulberry32). */
 export class Rng {
   private state: number;

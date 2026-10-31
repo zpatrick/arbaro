@@ -1,10 +1,12 @@
 import './style.css';
 import { Camera } from './camera';
+import { DebugPanel } from './debug-panel';
 import { Keyboard } from './input';
 import type { Controls } from './limb';
 import { Renderer } from './render';
 import { type Pick, Tree } from './tree';
 import { at, invariant } from './util';
+import { Wind, type WindSettings } from './wind';
 
 /** Longest frame step the simulation will take, so a stalled tab does not lurch forward. */
 const MAX_STEP = 1 / 20;
@@ -22,6 +24,8 @@ const hint = element('#hint', HTMLDivElement);
 const camera = new Camera();
 const renderer = new Renderer(canvas);
 const keyboard = new Keyboard(window);
+const panel = new DebugPanel(element('#app', HTMLDivElement));
+const wind = new Wind(panel.wind);
 
 let seed = 1;
 let tree = new Tree(0, seed);
@@ -76,7 +80,7 @@ function frame(now: number): void {
   const dt = Math.min(MAX_STEP, (now - last) / 1000);
   last = now;
   const controls = keyboard.controls();
-  tree.update(dt, controls);
+  tree.update(dt, controls, wind);
   camera.follow(tree.bounds(), dt);
   const hover = pointer === undefined ? undefined : pickAt(pointer.x, pointer.y);
   canvas.style.cursor = hover === undefined ? '' : 'pointer';
@@ -98,6 +102,8 @@ interface DebugHandle {
   fork(index: number, fraction: number, side: 1 | -1): void;
   /** Makes limb `index` the one that grows and steers, like a click. */
   select(index: number): void;
+  /** Changes the wind, as the debug panel would. */
+  wind(settings: Partial<WindSettings>): void;
 }
 
 declare global {
@@ -110,7 +116,7 @@ if (import.meta.env.DEV) {
   window.__arbaro = {
     simulate(seconds, controls) {
       for (let i = 0; i < Math.round(seconds * 60); i += 1) {
-        tree.update(1 / 60, controls);
+        tree.update(1 / 60, controls, wind);
       }
       camera.snap(tree.bounds());
     },
@@ -127,6 +133,9 @@ if (import.meta.env.DEV) {
     },
     select(index) {
       tree.select(at(tree.limbs, index));
+    },
+    wind(settings) {
+      panel.set(settings);
     },
   };
 }

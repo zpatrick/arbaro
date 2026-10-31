@@ -65,3 +65,218 @@ body,
   font: inherit;
   letter-spacing: 0;
 }
+
+/* Debug panel: a paper card on the right edge that slides away behind its tab. */
+.debug {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 248px;
+  max-height: calc(100% - 40px);
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  user-select: none;
+  transform: translateX(calc(100% + 20px));
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.debug.open {
+  transform: none;
+}
+
+.debug-tab,
+.debug-card {
+  background: rgba(243, 236, 223, 0.9);
+  border: 1px solid rgba(42, 33, 26, 0.14);
+  box-shadow: 0 18px 40px -26px rgba(42, 33, 26, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.debug-tab {
+  position: absolute;
+  top: 18px;
+  right: calc(100% + 8px);
+  padding: 14px 7px;
+  border-radius: 8px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.debug-card {
+  overflow-y: auto;
+  padding: 22px 22px 24px;
+  border-radius: 12px;
+}
+
+.debug-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+.debug-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(42, 33, 26, 0.18);
+}
+
+.debug-label {
+  display: flex;
+  justify-content: space-between;
+  margin: 20px 0 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(42, 33, 26, 0.55);
+}
+
+.debug-value {
+  color: var(--ink);
+  letter-spacing: 0.12em;
+}
+
+.compass {
+  display: block;
+  width: 148px;
+  height: 148px;
+  margin: 0 auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.compass:active {
+  cursor: grabbing;
+}
+
+.compass-ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.1;
+}
+
+.compass-ring.faint {
+  stroke-opacity: 0.22;
+  stroke-width: 0.8;
+}
+
+.compass-tick {
+  stroke: var(--ink);
+  stroke-opacity: 0.32;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+}
+
+.compass-tick.major {
+  stroke-opacity: 0.7;
+  stroke-width: 1.1;
+}
+
+.compass-arrow {
+  fill: var(--ink);
+}
+
+.compass-hub {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.1;
+}
+
+.compass-readout {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(42, 33, 26, 0.7);
+}
+
+.slider {
+  position: relative;
+  height: 22px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.slider-track,
+.slider-fill {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+}
+
+.slider-track {
+  right: 6px;
+  height: 1px;
+  background: rgba(42, 33, 26, 0.3);
+}
+
+.slider-fill {
+  height: 2px;
+  margin-top: -0.5px;
+  background: var(--ink);
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.2px solid var(--ink);
+}
+
+.models {
+  display: flex;
+  flex-direction: column;
+}
+
+.model {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(42, 33, 26, 0.55);
+  cursor: pointer;
+}
+
+.model:hover {
+  color: rgba(42, 33, 26, 0.85);
+}
+
+.model.selected {
+  color: var(--ink);
+}
+
+.model-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.1px solid currentColor;
+}
+
+.model.selected .model-mark {
+  background: currentColor;
+}
+
+.model-description {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: rgba(42, 33, 26, 0.78);
+}
