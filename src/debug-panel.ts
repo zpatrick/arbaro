@@ -10,7 +10,7 @@ import {
   type WindSettings,
 } from "./wind";
 
-const STORAGE_KEY = "arbaro.debug.v4";
+const STORAGE_KEY = "arbaro.debug.v5";
 /** Strength and flower size sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
 /** Fastest flow the slider allows, as a multiple of the usual flow. */
