@@ -34,6 +34,15 @@ const MAX_CONTACTS = 90;
 /** A piece rests on its stump if the wood at the cut points within 60 degrees of straight up. */
 const HINGE_UPRIGHTNESS = Math.sin(Math.PI / 6);
 
+/** Steer mode grows the selected limb while a key is held; flow mode grows every tip from the roots. */
+export type GrowthMode = "steer" | "flow";
+
+export interface Growth {
+  mode: GrowthMode;
+  /** Nutrients rising from the roots in flow mode, as a multiple of the speed a held key grows a limb. */
+  flowRate: number;
+}
+
 export interface Bounds {
   minX: number;
   maxX: number;
@@ -83,24 +92,77 @@ export class Tree {
   }
 
   /**
-   * Grows and steers the active limb while every other limb holds its grown shape, then lets the
-   * wind and gravity move the whole tree. Returns the joints that gave way, outermost last.
+   * Grows the tree, then lets the wind and gravity move it. Returns the joints that gave way,
+   * outermost last.
+   *
+   * Steering a limb always steers the active one. In steer mode only the active limb grows, while
+   * the up key is held. In flow mode nutrients rise from the roots, split at every spout, and grow
+   * each tip as fast as its share of the flow allows.
    */
   update(
     dt: number,
     controls: Controls,
     wind: Wind,
     strength: Strength,
+    growth: Growth,
   ): Failure[] {
-    const reach = this.reach(this.active);
-    const size = Math.max(1, reach / LIMB.steadyLength);
-    if (this.active.update(dt, controls, size, LIMB.maxReach - reach)) {
+    let changed = false;
+    if (growth.mode === "steer") {
+      for (const limb of this.limbs) {
+        if (limb !== this.active) {
+          limb.halt();
+        }
+      }
+      const reach = this.reach(this.active);
+      const size = Math.max(1, reach / LIMB.steadyLength);
+      const speed = controls.grow ? LIMB.growSpeed * size : 0;
+      changed = this.active.update(
+        dt,
+        controls.steer,
+        speed,
+        size,
+        LIMB.maxReach - reach,
+      );
+    } else {
+      const shares = this.flowShares();
+      for (const limb of this.limbs) {
+        const share = shares.get(limb);
+        invariant(share !== undefined, "Every limb gets a share of the flow.");
+        const reach = this.reach(limb);
+        const size = Math.max(1, reach / LIMB.steadyLength);
+        const speed = growth.flowRate * share * LIMB.growSpeed * size;
+        const steer = limb === this.active ? controls.steer : 0;
+        const moved = limb.update(dt, steer, speed, size, LIMB.maxReach - reach);
+        changed = changed || moved;
+      }
+    }
+    if (changed) {
       this.rebuild();
     }
     wind.advance(dt, this.physics.motion);
     const failures = this.physics.step(dt, this.limbs, wind, strength);
     this.pose();
     return failures;
+  }
+
+  /**
+   * Share of the nutrient flow that reaches each limb's tip. The whole flow enters the trunk; at
+   * every fork, the spout sends its share of what arrives into the offshoot and the rest carries
+   * on up.
+   */
+  flowShares(): Map<Limb, number> {
+    const shares = new Map<Limb, number>();
+    const pass = (limb: Limb, arriving: number): void => {
+      let remaining = arriving;
+      const forks = [...limb.children].sort((a, b) => forkedAt(a) - forkedAt(b));
+      for (const child of forks) {
+        pass(child, remaining * child.spout);
+        remaining *= 1 - child.spout;
+      }
+      shares.set(limb, remaining);
+    };
+    pass(this.root, 1);
+    return shares;
   }
 
   /**
@@ -262,12 +324,9 @@ export class Tree {
     return { mass, center, inertia, area, contacts, bounds, hinge };
   }
 
-  /** Makes `limb` the one that grows and steers. The previous one stops where it is. */
+  /** Makes `limb` the one that steers, and in steer mode the one that grows. */
   select(limb: Limb): void {
-    if (limb !== this.active) {
-      this.active.halt();
-      this.active = limb;
-    }
+    this.active = limb;
   }
 
   /** Starts a new offshoot at distance `s` along `parent` and makes it the active limb. */

@@ -151,6 +151,40 @@ const SCENES = [
     ],
   },
   {
+    file: "25-flow",
+    actions: [
+      { growth: { mode: "flow", flowRate: 1 } },
+      still(4),
+      { fork: 0, at: 0.55, side: 1 },
+      { seconds: 1.5, grow: false, steer: -1 },
+      still(2),
+      { select: 0 },
+      { fork: 0, at: 0.8, side: -1 },
+      { seconds: 1.5, grow: false, steer: 1 },
+      still(3),
+      { spout: 2, share: 0.3 },
+      still(4),
+    ],
+  },
+  {
+    file: "26-flow-spouts-detail",
+    scale: 3,
+    crop: "fork",
+    actions: [
+      { growth: { mode: "flow", flowRate: 1 } },
+      still(4),
+      { fork: 0, at: 0.55, side: 1 },
+      { seconds: 1.5, grow: false, steer: -1 },
+      still(2),
+      { select: 0 },
+      { fork: 0, at: 0.8, side: -1 },
+      { seconds: 1.5, grow: false, steer: 1 },
+      still(3),
+      { spout: 2, share: 0.3 },
+      still(4),
+    ],
+  },
+  {
     file: "24-regrown",
     actions: [
       ...TREE_OF_LIFE,
@@ -199,6 +233,10 @@ try {
           debug.cut(action.cut, action.at);
         } else if (action.strength !== undefined) {
           debug.strength(action.strength);
+        } else if (action.growth !== undefined) {
+          debug.growth(action.growth);
+        } else if (action.spout !== undefined) {
+          debug.spout(action.spout, action.share);
         } else if (action.wind !== undefined) {
           if (!settled) {
             debug.simulate(2, { grow: false, steer: 0 });

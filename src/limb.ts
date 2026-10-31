@@ -144,6 +144,11 @@ export class Limb {
   readonly straightBase: number;
   /** Cross-section at the base, including everything forked off it. The tree refreshes this on every rebuild. */
   baseArea = 0;
+  /**
+   * For an offshoot, the share of the nutrient flow reaching its fork that the spout there sends
+   * into it, from 0 to 1. The rest carries on along the limb it grows from.
+   */
+  spout = 0.5;
   /** Centerline as grown, before wind or weight moves it. Growth and the camera work from this. */
   restPoints: LimbPoint[] = [];
   /** Centerline as drawn. The same array as `restPoints` whenever the limb is at rest. */
@@ -283,22 +288,25 @@ export class Limb {
   }
 
   /**
-   * Advances growth and steering. `size` scales speed and turning to the tree's current scale,
-   * and `room` is how much further the tip may grow. Returns true if the shape changed.
+   * Advances growth and steering. `steer` is -1 for left, 1 for right and 0 to let the tip drift
+   * back upright. The tip eases toward growing at `speed`. `size` scales turning to the tree's
+   * current scale, and `room` is how much further the tip may grow. Returns true if the shape
+   * changed.
    */
-  update(dt: number, controls: Controls, size: number, room: number): boolean {
-    const canGrow = controls.grow && room > 0;
-    this.speed = approach(
-      this.speed,
-      canGrow ? LIMB.growSpeed * size : 0,
-      0.2,
-      dt,
-    );
+  update(
+    dt: number,
+    steer: number,
+    speed: number,
+    size: number,
+    room: number,
+  ): boolean {
+    const canGrow = speed > 0 && room > 0;
+    this.speed = approach(this.speed, canGrow ? speed : 0, 0.2, dt);
     if (!canGrow && this.speed < 0.005) {
       this.speed = 0;
     }
-    this.steering = approach(this.steering, controls.steer, 0.1, dt);
-    if (controls.steer === 0 && Math.abs(this.steering) < 0.01) {
+    this.steering = approach(this.steering, steer, 0.1, dt);
+    if (steer === 0 && Math.abs(this.steering) < 0.01) {
       this.steering = 0;
     }
 

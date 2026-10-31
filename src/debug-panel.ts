@@ -1,11 +1,28 @@
 import type { Strength } from './physics';
-import { clamp, invariant } from './util';
+import type { Growth, GrowthMode } from './tree';
+import { draggable, element, shape, Slider } from './ui';
+import { invariant } from './util';
 import { MAX_WIND_SPEED, WIND_MODELS, type WindModel, type WindSettings } from './wind';
 
-const STORAGE_KEY = 'arbaro.debug.v2';
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const STORAGE_KEY = 'arbaro.debug.v3';
 /** Strength sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
+/** Fastest flow the slider allows, as a multiple of the speed a held key grows a limb. */
+const MAX_FLOW_RATE = 3;
+
+const GROWTH_MODES: readonly { id: GrowthMode; name: string; description: string }[] = [
+  {
+    id: 'steer',
+    name: 'Steer and grow',
+    description: 'Hold up to grow the selected limb and steer it with left and right. Nothing else grows.',
+  },
+  {
+    id: 'flow',
+    name: 'Flow',
+    description:
+      'Nutrients rise from the roots and grow every tip at once. Each fork is a spout that splits the flow between the branch and the limb it grows from; click a spout to set its share. Left and right still steer the selected limb.',
+  },
+];
 
 /** Beaufort scale: the wind speed in m/s where each named wind begins. */
 const BEAUFORT: readonly (readonly [number, string])[] = [
@@ -29,80 +46,10 @@ const HEADINGS = ['right', 'up and right', 'up', 'up and left', 'left', 'down an
 
 interface Saved {
   open: boolean;
+  growth: Growth;
   wind: WindSettings;
   strength: Strength;
   showStrain: boolean;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  parent: Element,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text !== undefined) {
-    node.textContent = text;
-  }
-  parent.appendChild(node);
-  return node;
-}
-
-function shape<K extends keyof SVGElementTagNameMap>(
-  tag: K,
-  attributes: Record<string, string | number>,
-  parent: Element,
-): SVGElementTagNameMap[K] {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [name, value] of Object.entries(attributes)) {
-    node.setAttribute(name, String(value));
-  }
-  parent.appendChild(node);
-  return node;
-}
-
-/** Follows a press-and-drag on `target`, calling `onMove` with each pointer position. */
-function draggable(target: Element, onMove: (event: PointerEvent) => void): void {
-  target.addEventListener('pointerdown', (event) => {
-    invariant(event instanceof PointerEvent, 'Expected a pointer event.');
-    target.setPointerCapture(event.pointerId);
-    onMove(event);
-  });
-  target.addEventListener('pointermove', (event) => {
-    invariant(event instanceof PointerEvent, 'Expected a pointer event.');
-    if (target.hasPointerCapture(event.pointerId)) {
-      onMove(event);
-    }
-  });
-}
-
-/** A labeled slider over 0 to 1, with a readout beside the label. */
-class Slider {
-  private readonly fill: HTMLElement;
-  private readonly thumb: HTMLElement;
-  private readonly readout: HTMLElement;
-
-  constructor(parent: Element, label: string, onChange: (value: number) => void) {
-    const row = element('div', 'debug-label', parent);
-    element('span', '', row, label);
-    this.readout = element('span', 'debug-value', row);
-    const track = element('div', 'slider', parent);
-    element('div', 'slider-track', track);
-    this.fill = element('div', 'slider-fill', track);
-    this.thumb = element('div', 'slider-thumb', track);
-    draggable(track, (event) => {
-      const box = track.getBoundingClientRect();
-      onChange(clamp((event.clientX - box.left - 6) / (box.width - 12), 0, 1));
-    });
-  }
-
-  show(value: number, readout: string): void {
-    const percent = `${value * 100}%`;
-    this.fill.style.width = `calc(${percent} - ${value * 12}px)`;
-    this.thumb.style.left = `calc(6px + ${percent} - ${value * 12}px)`;
-    this.readout.textContent = readout;
-  }
 }
 
 /** Maps a strength multiplier onto a slider position and back. */
@@ -128,6 +75,13 @@ function load(): Saved | undefined {
       typeof saved.open === 'boolean' &&
       'showStrain' in saved &&
       typeof saved.showStrain === 'boolean' &&
+      'growth' in saved &&
+      typeof saved.growth === 'object' &&
+      saved.growth !== null &&
+      'mode' in saved.growth &&
+      GROWTH_MODES.some((m) => m.id === (saved.growth as { mode: unknown }).mode) &&
+      'flowRate' in saved.growth &&
+      isNumber(saved.growth.flowRate) &&
       'wind' in saved &&
       typeof saved.wind === 'object' &&
       saved.wind !== null &&
@@ -151,14 +105,22 @@ function load(): Saved | undefined {
 
 /** Collapsible panel on the right edge for poking at the simulation. */
 export class DebugPanel {
+  /** Live growth settings, read every frame. */
+  readonly growth: Growth;
   /** Live wind settings. The wind reads these directly, so changes apply on the next frame. */
   readonly wind: WindSettings;
   /** Live multipliers on how much the tree can take before it breaks. */
   readonly strength: Strength;
   /** Whether to mark how close each joint is to breaking. */
   showStrain: boolean;
+  /** Called whenever the growth mode changes. */
+  onGrowthMode: (mode: GrowthMode) => void = () => {};
   private open: boolean;
   private readonly root: HTMLElement;
+  private readonly modes = new Map<GrowthMode, HTMLElement>();
+  private readonly modeDescription: HTMLElement;
+  private readonly flowRate: Slider;
+  private readonly flowRateRow: HTMLElement;
   private readonly arrow: SVGPathElement;
   private readonly heading: HTMLElement;
   private readonly speed: Slider;
@@ -170,6 +132,7 @@ export class DebugPanel {
 
   constructor(host: HTMLElement) {
     const saved = load();
+    this.growth = saved === undefined ? { mode: 'steer', flowRate: 1 } : { ...saved.growth };
     this.wind = saved === undefined ? { direction: 0, strength: 0, model: 'steady' } : { ...saved.wind };
     this.strength = saved === undefined ? { wood: 1, roots: 1 } : { ...saved.strength };
     this.showStrain = saved?.showStrain ?? false;
@@ -179,6 +142,22 @@ export class DebugPanel {
     const tab = element('div', 'debug-tab', this.root, 'Debug');
     tab.addEventListener('click', () => this.toggle());
     const card = element('div', 'debug-card', this.root);
+
+    const growth = element('section', 'debug-section', card);
+    element('h2', 'debug-title', growth, 'Growth');
+    const modeList = element('div', 'models', growth);
+    for (const mode of GROWTH_MODES) {
+      const row = element('div', 'model', modeList);
+      element('span', 'model-mark', row);
+      element('span', '', row, mode.name);
+      row.addEventListener('click', () => this.setGrowth({ mode: mode.id }));
+      this.modes.set(mode.id, row);
+    }
+    this.modeDescription = element('p', 'model-description', growth);
+    this.flowRateRow = element('div', '', growth);
+    this.flowRate = new Slider(this.flowRateRow, 'Flow rate', (value) =>
+      this.setGrowth({ flowRate: value * MAX_FLOW_RATE }),
+    );
 
     const wind = element('section', 'debug-section', card);
     element('h2', 'debug-title', wind, 'Wind');
@@ -261,6 +240,16 @@ export class DebugPanel {
     this.save();
   }
 
+  setGrowth(settings: Partial<Growth>): void {
+    const before = this.growth.mode;
+    Object.assign(this.growth, settings);
+    this.render();
+    this.save();
+    if (this.growth.mode !== before) {
+      this.onGrowthMode(this.growth.mode);
+    }
+  }
+
   set(settings: Partial<WindSettings>): void {
     Object.assign(this.wind, settings);
     this.render();
@@ -275,6 +264,16 @@ export class DebugPanel {
 
   private render(): void {
     this.root.classList.toggle('open', this.open);
+
+    for (const [id, row] of this.modes) {
+      row.classList.toggle('selected', id === this.growth.mode);
+    }
+    const mode = GROWTH_MODES.find((m) => m.id === this.growth.mode);
+    invariant(mode !== undefined, `Unknown growth mode ${this.growth.mode}.`);
+    this.modeDescription.textContent = mode.description;
+    this.flowRateRow.hidden = this.growth.mode !== 'flow';
+    this.flowRate.show(this.growth.flowRate / MAX_FLOW_RATE, `×${this.growth.flowRate.toFixed(2)}`);
+
     const { direction, strength, model } = this.wind;
     this.arrow.setAttribute('transform', `rotate(${(-direction * 180) / Math.PI})`);
     const eighth = Math.round(direction / (Math.PI / 4));
@@ -300,7 +299,13 @@ export class DebugPanel {
   }
 
   private save(): void {
-    const saved: Saved = { open: this.open, wind: this.wind, strength: this.strength, showStrain: this.showStrain };
+    const saved: Saved = {
+      open: this.open,
+      growth: this.growth,
+      wind: this.wind,
+      strength: this.strength,
+      showStrain: this.showStrain,
+    };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   }
 }

@@ -1,5 +1,6 @@
 import type { Camera } from "./camera";
 import type { Debris } from "./debris";
+import type { Dot } from "./flow";
 import type { Limb } from "./limb";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
@@ -26,6 +27,14 @@ const TIP_RING_PX = 9;
 const FORK_PREVIEW_PX = 22;
 /** The strain overlay marks joints carrying more than this fraction of what they can take. */
 const STRAIN_SHOWN = 0.3;
+/** Radius of the gauge marking each spout, in CSS pixels. */
+const SPOUT_PX = 5.5;
+/** An energy dot leaving the roots is this fraction of the trunk's radius at the ground. */
+const DOT_SIZE = 0.32;
+/** An energy dot never fills more of the wood it rides in than this fraction of its radius. */
+const DOT_FILL = 0.42;
+/** Smallest energy dot drawn, in CSS pixels. */
+const DOT_MIN_PX = 0.9;
 
 /** Everything drawn in one frame. */
 export interface Scene {
@@ -36,6 +45,16 @@ export interface Scene {
   hover: Pick | undefined;
   /** Whether to mark how close each joint is to breaking. */
   strain: boolean;
+  /** In flow mode: the energy dots riding up the wood, and the spouts to mark. */
+  flow:
+    | {
+        dots: readonly Dot[];
+        /** The offshoot whose spout the pointer is over, if any. */
+        hoveredSpout: Limb | undefined;
+        /** The offshoot whose spout is open for editing, if any. */
+        openSpout: Limb | undefined;
+      }
+    | undefined;
 }
 
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
@@ -161,7 +180,75 @@ export class Renderer {
       if (scene.strain) {
         this.drawStrain(camera, scene.tree);
       }
+      if (scene.flow !== undefined) {
+        this.drawDots(camera, scene.tree, scene.flow.dots);
+        this.drawSpouts(camera, scene.tree, scene.flow.hoveredSpout, scene.flow.openSpout);
+      }
       this.drawGuides(camera, scene.tree, scene.hover);
+    }
+  }
+
+  /** Draws each energy dot as pale light inside the wood it rides in. */
+  private drawDots(camera: Camera, tree: Tree, dots: readonly Dot[]): void {
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.fillStyle = PALETTE.paperGlow;
+    ctx.globalAlpha = 0.72;
+    const largest = DOT_SIZE * tree.root.radiusAt(0);
+    for (const dot of dots) {
+      const r = Math.min(DOT_FILL * dot.limb.radiusAt(dot.s), largest * Math.sqrt(dot.amount));
+      const radius = r * camera.scale;
+      if (radius < DOT_MIN_PX) {
+        continue;
+      }
+      const p = dot.limb.pointAt(dot.s);
+      const center = camera.toScreen(p.x, p.y);
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Marks every fork with a small gauge: a ring whose dark wedge is the share of the flow its
+   * spout sends into the offshoot.
+   */
+  private drawSpouts(
+    camera: Camera,
+    tree: Tree,
+    hovered: Limb | undefined,
+    open: Limb | undefined,
+  ): void {
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    for (const limb of tree.limbs) {
+      if (limb.attachment === undefined) {
+        continue;
+      }
+      const p = limb.attachment.parent.pointAt(limb.attachment.s);
+      const center = camera.toScreen(p.x, p.y);
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, SPOUT_PX, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.paper;
+      ctx.fill();
+      ctx.lineWidth = limb === hovered || limb === open ? 1.8 : 1;
+      ctx.strokeStyle = PALETTE.ink;
+      ctx.stroke();
+      if (limb.spout > 0) {
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.arc(
+          center.x,
+          center.y,
+          SPOUT_PX - 1.8,
+          -Math.PI / 2,
+          -Math.PI / 2 + limb.spout * Math.PI * 2,
+        );
+        ctx.closePath();
+        ctx.fillStyle = PALETTE.ink;
+        ctx.fill();
+      }
     }
   }
 

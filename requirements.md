@@ -84,21 +84,25 @@ The original brief:
 - [ ] Water grows roots and trunk; light grows branches.
 - [ ] How much of each can be stored grows with the tree.
 
-Open direction from the backlog, which would replace spending on demand:
+Direction from the backlog, which would replace spending on demand. It can be tried as flow mode,
+switched on in the debug panel beside the original steer-and-grow controls:
 
-- _Open._ Water is the currency, and growth is a continual process. You never press a button to
-  send resources somewhere; you only direct where the flow goes.
-- _Open._ Resources come up the trunk pointing upward. Left alone, the tree just grows taller until
-  it reaches a maximum height. Steering a limb steers where its growth goes.
+- [x] Growth is a continual process. You never press a button to send resources somewhere; you
+      only direct where the flow goes.
+- [x] Resources come up the trunk pointing upward. Left alone, the tree just grows taller until it
+      reaches a maximum height. Steering a limb steers where its growth goes.
+- [x] A branch starts at a spout. Click it to set how much of the flow goes into the branch versus
+      on up the trunk (50%, for example). Stems have their own spouts with the same split.
+- [x] A spout can give its branch everything, turn it off, or anything between.
+- [x] The flow shows as dots of energy that start large, split at each spout by its share, and
+      travel out to the tips, where whatever arrives grows the tip in the direction it is steered.
+- [x] How fast nutrients rise from the roots can be set in the debug panel.
+- _Open._ Water is the currency the flow is made of.
+- _Open._ A spout setting that holds its branch steady, taking in just what it loses to decay.
 - _Open._ Decay rises with tree mass: more branches, a thicker or taller trunk, and larger branches
   and stems all decay faster. Where more comes in than decays, that part grows. Where less comes
   in, it dies back from the leaf nodes: the top of the trunk and the ends of branches. Where intake
   matches decay, it holds steady. There is no separate homeostasis rate.
-- _Open._ A branch starts at a spout. Click it to set how much of the flow goes into the branch
-  versus on up the trunk (50%, for example). Stems have their own nozzles with the same split.
-  Each valve might offer settings such as give it everything, hold it steady, or turn it off.
-- _Open._ Show the flow as dots of energy that start large, split at each spout by its share, and
-  travel out to the tips, where whatever arrives grows the tip in the direction it is steered.
 - _Open._ Flowers are always leaf nodes. They are given resources like branches and need enough of
   them, and they bring in light energy, a separate currency whose use is not settled.
 
@@ -203,6 +207,7 @@ _Open._ A button flips into a view of the roots:
 ## Debug tools
 
 - [x] A collapsible debug panel on the right edge, with sections for different systems.
+- [x] Growth section: switch between steer-and-grow and flow mode, and set the flow rate.
 - [x] Wind section: a compass whose arrow you drag to point where the wind blows toward, a strength
       slider, and a choice of wind model with a description of each.
 - [x] Strength section: multipliers on how much the wood and the roots can take, and an overlay
