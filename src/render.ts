@@ -5,7 +5,7 @@ import type { Limb } from "./limb";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
 import { FLARE, type Pick, type Tree } from "./tree";
-import { at, clamp, invariant, lerp, Rng } from "./util";
+import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 
 /** No limb renders thinner than this many CSS pixels across, so tips survive zooming out. */
 const MIN_WIDTH_PX = 1.1;
@@ -25,8 +25,28 @@ const FILLET_ROUNDNESS = 0.55;
 const TIP_RING_PX = 9;
 /** Length of the line previewing where a fork will grow, in CSS pixels. */
 const FORK_PREVIEW_PX = 22;
-/** The strain overlay marks joints carrying more than this fraction of what they can take. */
+/** Strain shows once the wood carries this fraction of what it can take. */
 const STRAIN_SHOWN = 0.3;
+/** Width of the strain vein at the breaking point, as a fraction of the limb's width. */
+const VEIN_WIDTH = 0.22;
+/** Thinnest the strain vein is drawn, in CSS pixels. */
+const VEIN_MIN_PX = 0.7;
+/** Length of each stretch of vein drawn, in CSS pixels. Short enough that its width and color change smoothly. */
+const VEIN_STEP_PX = 3;
+/** Soft glow around the strain vein, in CSS pixels, and how strongly it shows. */
+const VEIN_GLOW = { px: 4, strength: 0.6 } as const;
+/** The glow is blurred at this fraction of the canvas's resolution; being soft, it loses nothing. */
+const GLOW_SCALE = 1 / 4;
+/**
+ * Colors the strain vein moves through as strain rises: a shade lighter than the wood, pale
+ * sand, ember at the breaking point, and hot past it.
+ */
+const VEIN = {
+  wood: [42, 33, 26],
+  sand: [214, 200, 174],
+  ember: [255, 140, 66],
+  hot: [255, 84, 52],
+} as const;
 /** Radius of the gauge marking each spout, in CSS pixels. */
 const SPOUT_PX = 5.5;
 /** An energy dot leaving the roots is this fraction of the trunk's radius at the ground. */
@@ -102,6 +122,12 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly grain: CanvasPattern;
   private sky: CanvasGradient | undefined;
+  /** Where the strain veins are drawn before they are laid into the wood with their glow. */
+  private readonly veins: HTMLCanvasElement;
+  private readonly veinCtx: CanvasRenderingContext2D;
+  /** The veins' glow, blurred at low resolution. */
+  private readonly glow: HTMLCanvasElement;
+  private readonly glowCtx: CanvasRenderingContext2D;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -111,11 +137,29 @@ export class Renderer {
     const grain = ctx.createPattern(grainTile(), "repeat");
     invariant(grain !== null, "Could not create the grain pattern.");
     this.grain = grain;
+    this.veins = document.createElement("canvas");
+    const veinCtx = this.veins.getContext("2d");
+    invariant(
+      veinCtx !== null,
+      "Canvas 2D is not available for the strain veins.",
+    );
+    this.veinCtx = veinCtx;
+    this.glow = document.createElement("canvas");
+    const glowCtx = this.glow.getContext("2d");
+    invariant(
+      glowCtx !== null,
+      "Canvas 2D is not available for the strain glow.",
+    );
+    this.glowCtx = glowCtx;
   }
 
   resize(camera: Camera): void {
     this.canvas.width = Math.round(camera.width * camera.dpr);
     this.canvas.height = Math.round(camera.height * camera.dpr);
+    this.veins.width = this.canvas.width;
+    this.veins.height = this.canvas.height;
+    this.glow.width = Math.ceil(this.canvas.width * GLOW_SCALE);
+    this.glow.height = Math.ceil(this.canvas.height * GLOW_SCALE);
     const cx = camera.width * camera.dpr * 0.5;
     const cy = camera.groundY * camera.dpr;
     const sky = this.ctx.createRadialGradient(
@@ -178,11 +222,16 @@ export class Renderer {
 
     if (scene.tree !== undefined) {
       if (scene.strain) {
-        this.drawStrain(camera, scene.tree);
+        this.drawStrain(camera, scene.tree, ink);
       }
       if (scene.flow !== undefined) {
         this.drawDots(camera, scene.tree, scene.flow.dots);
-        this.drawSpouts(camera, scene.tree, scene.flow.hoveredSpout, scene.flow.openSpout);
+        this.drawSpouts(
+          camera,
+          scene.tree,
+          scene.flow.hoveredSpout,
+          scene.flow.openSpout,
+        );
       }
       this.drawGuides(camera, scene.tree, scene.hover);
     }
@@ -196,7 +245,10 @@ export class Renderer {
     ctx.globalAlpha = 0.72;
     const largest = DOT_SIZE * tree.root.radiusAt(0);
     for (const dot of dots) {
-      const r = Math.min(DOT_FILL * dot.limb.radiusAt(dot.s), largest * Math.sqrt(dot.amount));
+      const r = Math.min(
+        DOT_FILL * dot.limb.radiusAt(dot.s),
+        largest * Math.sqrt(dot.amount),
+      );
       const radius = r * camera.scale;
       if (radius < DOT_MIN_PX) {
         continue;
@@ -266,35 +318,106 @@ export class Renderer {
   }
 
   /**
-   * Shades the wood around each joint carrying a good share of what it can take, amber deepening
-   * to red at its limit.
+   * Shows strain as a vein carved down the middle of each limb, widening and brightening from a
+   * hairline as the wood takes more, and warming to ember at its breaking point. A soft glow sits
+   * around it, and both stay inside the wood.
    */
-  private drawStrain(camera: Camera, tree: Tree): void {
-    const ctx = this.ctx;
-    const spacing = PHYSICS.jointSpacing;
-    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.lineCap = "butt";
+  private drawStrain(camera: Camera, tree: Tree, ink: Path2D): void {
+    const veins = this.veinCtx;
+    veins.setTransform(1, 0, 0, 1, 0, 0);
+    veins.clearRect(0, 0, this.veins.width, this.veins.height);
+    veins.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    veins.lineCap = "round";
+    // Only the area the veins cover is blurred and laid into the wood, in CSS pixels.
+    const covered = {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    };
     for (const limb of tree.limbs) {
+      const strains = tree.physics.strains(limb);
       // A limb grown since the last physics step has not been weighed yet.
-      const strains = tree.physics.strains(limb) ?? [];
-      strains.forEach((strain, joint) => {
-        const t = clamp((strain - STRAIN_SHOWN) / (1 - STRAIN_SHOWN), 0, 1);
-        if (t <= 0) {
-          return;
-        }
-        const s = joint * spacing;
-        const from = limb.pointAt(Math.max(0, s - spacing / 2));
-        const to = limb.pointAt(Math.min(limb.length, s + spacing / 2));
-        const a = camera.toScreen(from.x, from.y);
+      if (strains === undefined) {
+        continue;
+      }
+      const points = limb.points;
+      let from = at(points, 0);
+      let a = camera.toScreen(from.x, from.y);
+      for (let i = 1; i < points.length; i += 1) {
+        const to = at(points, i);
         const b = camera.toScreen(to.x, to.y);
-        ctx.strokeStyle = `rgba(${lerp(222, 196, t)}, ${lerp(160, 40, t)}, ${lerp(60, 30, t)}, ${0.3 + 0.55 * t})`;
-        ctx.lineWidth = Math.max(4, 2 * limb.radiusAt(s) * camera.scale);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      });
+        if (
+          i < points.length - 1 &&
+          Math.hypot(b.x - a.x, b.y - a.y) < VEIN_STEP_PX
+        ) {
+          continue;
+        }
+        const s = (from.s + to.s) / 2;
+        const strain = strainAlong(strains, s, limb.length);
+        if (strain > STRAIN_SHOWN) {
+          const width = Math.max(
+            VEIN_MIN_PX,
+            2 * limb.radiusAt(s) * camera.scale * veinWidth(strain),
+          );
+          veins.strokeStyle = veinColor(strain);
+          veins.lineWidth = width;
+          veins.beginPath();
+          veins.moveTo(a.x, a.y);
+          veins.lineTo(b.x, b.y);
+          veins.stroke();
+          covered.minX = Math.min(covered.minX, a.x - width, b.x - width);
+          covered.minY = Math.min(covered.minY, a.y - width, b.y - width);
+          covered.maxX = Math.max(covered.maxX, a.x + width, b.x + width);
+          covered.maxY = Math.max(covered.maxY, a.y + width, b.y + width);
+        }
+        from = to;
+        a = b;
+      }
     }
+    if (covered.minX > covered.maxX) {
+      return;
+    }
+    // Room for the glow to spread, in device pixels, clamped to the canvas.
+    const margin = 3 * VEIN_GLOW.px;
+    const x = Math.max(0, Math.floor((covered.minX - margin) * camera.dpr));
+    const y = Math.max(0, Math.floor((covered.minY - margin) * camera.dpr));
+    const w =
+      Math.min(
+        this.veins.width,
+        Math.ceil((covered.maxX + margin) * camera.dpr),
+      ) - x;
+    const h =
+      Math.min(
+        this.veins.height,
+        Math.ceil((covered.maxY + margin) * camera.dpr),
+      ) - y;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+    // Shrink the veins into the glow canvas, blurring them on the way.
+    const glow = this.glowCtx;
+    glow.setTransform(1, 0, 0, 1, 0, 0);
+    glow.clearRect(0, 0, this.glow.width, this.glow.height);
+    glow.filter = `blur(${VEIN_GLOW.px * camera.dpr * GLOW_SCALE}px)`;
+    const [gx, gy, gw, gh] = [
+      x * GLOW_SCALE,
+      y * GLOW_SCALE,
+      w * GLOW_SCALE,
+      h * GLOW_SCALE,
+    ];
+    glow.drawImage(this.veins, x, y, w, h, gx, gy, gw, gh);
+    glow.filter = "none";
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clip(ink);
+    ctx.globalAlpha = VEIN_GLOW.strength;
+    ctx.drawImage(this.glow, gx, gy, gw, gh, x, y, w, h);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(this.veins, x, y, w, h, x, y, w, h);
+    ctx.restore();
   }
 
   /** Marks the limb being grown, and previews what a click would do. */
@@ -353,6 +476,48 @@ export class Renderer {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+}
+
+/**
+ * Strain at distance `s` along a limb, blended between the strains at its joints, and falling
+ * away to nothing at the tip, which carries no load.
+ */
+function strainAlong(
+  strains: readonly number[],
+  s: number,
+  length: number,
+): number {
+  const position = s / PHYSICS.jointSpacing;
+  const i = Math.floor(position);
+  if (i + 1 < strains.length) {
+    return lerp(at(strains, i), at(strains, i + 1), position - i);
+  }
+  const last = (strains.length - 1) * PHYSICS.jointSpacing;
+  const toTip =
+    length > last ? clamp(1 - (s - last) / (length - last), 0, 1) : 0;
+  return at(strains, strains.length - 1) * toTip;
+}
+
+/** Color of the strain vein at a strain, as a CSS color. */
+function veinColor(strain: number): string {
+  const lift = 0.2 + 0.8 * smoothstep(STRAIN_SHOWN, 0.85, strain);
+  const heat = smoothstep(0.8, 1, strain);
+  const burn = smoothstep(1, 1.3, strain);
+  const channel = (k: 0 | 1 | 2): number => {
+    const rising = lerp(VEIN.wood[k], VEIN.sand[k], lift);
+    return Math.round(
+      lerp(lerp(rising, VEIN.ember[k], heat), VEIN.hot[k], burn),
+    );
+  };
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+}
+
+/** Width of the strain vein at a strain, as a fraction of the limb's width. */
+function veinWidth(strain: number): number {
+  return (
+    VEIN_WIDTH * (0.15 + 0.85 * smoothstep(STRAIN_SHOWN, 1, strain)) +
+    0.12 * smoothstep(1, 1.3, strain)
+  );
 }
 
 /** Sparse pale specks on transparency, tiled over the ink. */
