@@ -42,7 +42,10 @@ export interface Bounds {
 
 /** Distance along its parent where an offshoot forks off. */
 function forkedAt(offshoot: Limb): number {
-  invariant(offshoot.attachment !== undefined, "Only an offshoot forks off a parent.");
+  invariant(
+    offshoot.attachment !== undefined,
+    "Only an offshoot forks off a parent.",
+  );
   return offshoot.attachment.s;
 }
 
@@ -83,7 +86,12 @@ export class Tree {
    * Grows and steers the active limb while every other limb holds its grown shape, then lets the
    * wind and gravity move the whole tree. Returns the joints that gave way, outermost last.
    */
-  update(dt: number, controls: Controls, wind: Wind, strength: Strength): Failure[] {
+  update(
+    dt: number,
+    controls: Controls,
+    wind: Wind,
+    strength: Strength,
+  ): Failure[] {
     const reach = this.reach(this.active);
     const size = Math.max(1, reach / LIMB.steadyLength);
     if (this.active.update(dt, controls, size, LIMB.maxReach - reach)) {
@@ -119,7 +127,11 @@ export class Tree {
    * off past the cut. At `s` = 0 the whole offshoot goes. The wood left behind keeps its girth.
    */
   sever(limb: Limb, s: number): void {
-    for (let held: Limb | undefined = limb; held !== undefined; held = held.attachment?.parent) {
+    for (
+      let held: Limb | undefined = limb;
+      held !== undefined;
+      held = held.attachment?.parent
+    ) {
       held.holdGirth();
     }
     const gone: Limb[] = [];
@@ -129,7 +141,10 @@ export class Tree {
     };
     let survivor = limb;
     if (s === 0) {
-      invariant(limb.attachment !== undefined, "The trunk cannot be cut at the ground.");
+      invariant(
+        limb.attachment !== undefined,
+        "The trunk cannot be cut at the ground.",
+      );
       survivor = limb.attachment.parent;
       survivor.removeChild(limb);
       collect(limb);
@@ -162,7 +177,12 @@ export class Tree {
     let my = 0;
     let second = 0;
     let area = 0;
-    const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    const bounds = {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    };
     const weigh = (part: Limb, from: number): void => {
       const points = part.points;
       for (let i = 0; i + 1 < points.length; i += 1) {
@@ -220,7 +240,10 @@ export class Tree {
       }
     };
     gather(limb, from);
-    const wood = parts.reduce((total, { part, start }) => total + Math.max(0, part.length - start), 0);
+    const wood = parts.reduce(
+      (total, { part, start }) => total + Math.max(0, part.length - start),
+      0,
+    );
     const spacing = Math.max(CONTACT_SPACING, wood / MAX_CONTACTS);
     for (const { part, start } of parts) {
       for (let along = start; along < part.length; along += spacing) {
@@ -232,7 +255,10 @@ export class Tree {
     }
     // Wood pointing up at the cut sits on its stump, so it tips over on it before it falls.
     const cut = limb.pointAt(s);
-    const hinge = s > 0 && Math.sin(cut.heading) > HINGE_UPRIGHTNESS ? { x: cut.x, y: cut.y } : undefined;
+    const hinge =
+      s > 0 && Math.sin(cut.heading) > HINGE_UPRIGHTNESS
+        ? { x: cut.x, y: cut.y }
+        : undefined;
     return { mass, center, inertia, area, contacts, bounds, hinge };
   }
 
@@ -384,11 +410,19 @@ export class Tree {
     for (const limb of this.limbs) {
       const bends = this.physics.bends(limb);
       if (limb.attachment === undefined) {
-        limb.pose({ x: this.baseX, y: 0, heading: UPRIGHT }, bends, PHYSICS.jointSpacing);
+        limb.pose(
+          { x: this.baseX, y: 0, heading: UPRIGHT },
+          bends,
+          PHYSICS.jointSpacing,
+        );
       } else {
         const fork = limb.attachment.parent.pointAt(limb.attachment.s);
         limb.pose(
-          { x: fork.x, y: fork.y, heading: fork.heading + limb.attachment.angle },
+          {
+            x: fork.x,
+            y: fork.y,
+            heading: fork.heading + limb.attachment.angle,
+          },
           bends,
           PHYSICS.jointSpacing,
         );

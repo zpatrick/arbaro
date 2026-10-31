@@ -1,4 +1,12 @@
-import { approach, at, clamp, invariant, lerp, smoothstep, valueNoise } from './util';
+import {
+  approach,
+  at,
+  clamp,
+  invariant,
+  lerp,
+  smoothstep,
+  valueNoise,
+} from "./util";
 
 /** Heading of a vertical stem, in radians counterclockwise from +x with y pointing up. */
 export const UPRIGHT = Math.PI / 2;
@@ -117,7 +125,12 @@ function interpolate(points: readonly LimbPoint[], s: number): LimbPoint {
   const a = at(points, lo);
   const b = at(points, hi);
   const t = clamp((s - a.s) / Math.max(b.s - a.s, 1e-9), 0, 1);
-  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), heading: lerp(a.heading, b.heading, t), s };
+  return {
+    x: lerp(a.x, b.x, t),
+    y: lerp(a.y, b.y, t),
+    heading: lerp(a.heading, b.heading, t),
+    s,
+  };
 }
 
 /**
@@ -151,7 +164,11 @@ export class Limb {
   /** Progress through the meander, advanced in meanders grown rather than raw length. */
   private wanderPhase = 0;
 
-  constructor(attachment: Attachment | undefined, straightBase: number, seed: number) {
+  constructor(
+    attachment: Attachment | undefined,
+    straightBase: number,
+    seed: number,
+  ) {
     this.attachment = attachment;
     this.straightBase = straightBase;
     this.seed = seed;
@@ -214,10 +231,15 @@ export class Limb {
    * held its girth.
    */
   truncate(s: number): void {
-    invariant(s > 0 && s < this.grown, `Cannot cut a limb of length ${this.grown} at ${s}.`);
     invariant(
-      this.children.every((child) => child.attachment !== undefined && child.attachment.s < s),
-      'Offshoots past a cut must be removed before the cut.',
+      s > 0 && s < this.grown,
+      `Cannot cut a limb of length ${this.grown} at ${s}.`,
+    );
+    invariant(
+      this.children.every(
+        (child) => child.attachment !== undefined && child.attachment.s < s,
+      ),
+      "Offshoots past a cut must be removed before the cut.",
     );
     this.holdGirth();
     const atCut = this.areaAt(s);
@@ -243,7 +265,10 @@ export class Limb {
   /** Detaches an offshoot from this limb. */
   removeChild(child: Limb): void {
     const index = this.children.indexOf(child);
-    invariant(index >= 0, 'Cannot remove an offshoot that does not grow from this limb.');
+    invariant(
+      index >= 0,
+      "Cannot remove an offshoot that does not grow from this limb.",
+    );
     this.children.splice(index, 1);
   }
 
@@ -263,7 +288,12 @@ export class Limb {
    */
   update(dt: number, controls: Controls, size: number, room: number): boolean {
     const canGrow = controls.grow && room > 0;
-    this.speed = approach(this.speed, canGrow ? LIMB.growSpeed * size : 0, 0.2, dt);
+    this.speed = approach(
+      this.speed,
+      canGrow ? LIMB.growSpeed * size : 0,
+      0.2,
+      dt,
+    );
     if (!canGrow && this.speed < 0.005) {
       this.speed = 0;
     }
@@ -307,11 +337,16 @@ export class Limb {
       let curvature = 0;
       if (segment.length > 0 && i >= firstBendable) {
         const radius = this.radiusAt(s + segment.length / 2);
-        const reach = Math.floor((LIMB.bendSmoothing * radius) / SEGMENT_LENGTH);
+        const reach = Math.floor(
+          (LIMB.bendSmoothing * radius) / SEGMENT_LENGTH,
+        );
         const lo = Math.max(firstBendable, i - reach);
         const hi = Math.min(count, i + reach + 1);
-        const averaged = (at(turns, hi) - at(turns, lo)) / (at(lengths, hi) - at(lengths, lo));
-        curvature = averaged / Math.max(1, (radius * Math.abs(averaged)) / LIMB.maxBendRatio);
+        const averaged =
+          (at(turns, hi) - at(turns, lo)) / (at(lengths, hi) - at(lengths, lo));
+        curvature =
+          averaged /
+          Math.max(1, (radius * Math.abs(averaged)) / LIMB.maxBendRatio);
       }
       restTurns.push(curvature * segment.length);
       s += segment.length;
@@ -326,9 +361,18 @@ export class Limb {
    * joint `k * spacing` along the limb. Each bend is spread smoothly over a joint spacing either
    * side of its joint, so a swaying limb stays one smooth curve.
    */
-  pose(base: Base, bends: readonly number[] | undefined, spacing: number): void {
+  pose(
+    base: Base,
+    bends: readonly number[] | undefined,
+    spacing: number,
+  ): void {
     const rest = at(this.restPoints, 0);
-    if (bends === undefined && base.x === rest.x && base.y === rest.y && base.heading === rest.heading) {
+    if (
+      bends === undefined &&
+      base.x === rest.x &&
+      base.y === rest.y &&
+      base.heading === rest.heading
+    ) {
       this.points = this.restPoints;
       return;
     }
@@ -338,7 +382,10 @@ export class Limb {
       // of a total of `spacing`. The weights of neighboring joints add up to an even spread.
       const spread = (offset: number): number => {
         const x = clamp(offset, -spacing, spacing);
-        return (x + spacing) / 2 + (spacing * Math.sin((Math.PI * x) / spacing)) / (2 * Math.PI);
+        return (
+          (x + spacing) / 2 +
+          (spacing * Math.sin((Math.PI * x) / spacing)) / (2 * Math.PI)
+        );
       };
       for (let k = 0; k < bends.length; k += 1) {
         const bend = at(bends, k);
@@ -347,12 +394,20 @@ export class Limb {
           continue;
         }
         const share = bend / (spread(this.grown - joint) - spread(-joint));
-        const first = Math.max(0, Math.floor((joint - spacing) / SEGMENT_LENGTH));
-        const last = Math.min(this.segments.length - 1, Math.floor((joint + spacing) / SEGMENT_LENGTH));
+        const first = Math.max(
+          0,
+          Math.floor((joint - spacing) / SEGMENT_LENGTH),
+        );
+        const last = Math.min(
+          this.segments.length - 1,
+          Math.floor((joint + spacing) / SEGMENT_LENGTH),
+        );
         for (let i = first; i <= last; i += 1) {
           const start = i * SEGMENT_LENGTH;
           const end = start + at(this.segments, i).length;
-          turns[i] = at(turns, i) + share * (spread(end - joint) - spread(start - joint));
+          turns[i] =
+            at(turns, i) +
+            share * (spread(end - joint) - spread(start - joint));
         }
       }
     }
@@ -365,12 +420,18 @@ export class Limb {
    * tapered point rather than a blunt stub.
    */
   private carriedAt(parentS: number): number {
-    invariant(this.attachment !== undefined, 'Only an offshoot thickens a parent.');
+    invariant(
+      this.attachment !== undefined,
+      "Only an offshoot thickens a parent.",
+    );
     const { parent, s: fork } = this.attachment;
     if (parentS <= fork) {
       return 1;
     }
-    const blend = Math.min(LIMB.forkBlend * Math.sqrt(this.baseArea), 0.6 * (parent.length - fork));
+    const blend = Math.min(
+      LIMB.forkBlend * Math.sqrt(this.baseArea),
+      0.6 * (parent.length - fork),
+    );
     return 1 - smoothstep(fork, fork + Math.max(blend, 1e-6), parentS);
   }
 
@@ -400,7 +461,9 @@ export class Limb {
     // New wood past the old growth narrows smoothly from the old girth to its own.
     const end = (samples - 1) * SEGMENT_LENGTH;
     const area = at(this.girth, samples - 1);
-    return area * (1 - smoothstep(end, end + LIMB.regrowthNeck * Math.sqrt(area), s));
+    return (
+      area * (1 - smoothstep(end, end + LIMB.regrowthNeck * Math.sqrt(area), s))
+    );
   }
 
   /** Lays out a centerline from `base` by turning `turns[i]` across each segment. */
@@ -429,7 +492,9 @@ export class Limb {
     const lean = this.restTip.heading - UPRIGHT;
     let target: number;
     if (this.steering !== 0) {
-      target = (-this.steering * LIMB.maxCurvature * (growing ? 1 : LIMB.idleBend)) / size;
+      target =
+        (-this.steering * LIMB.maxCurvature * (growing ? 1 : LIMB.idleBend)) /
+        size;
       if (target * lean > 0) {
         target *= clamp((LIMB.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
       }
@@ -447,7 +512,9 @@ export class Limb {
       if (softness <= 0 || start < this.straightBase) {
         break;
       }
-      segment.curvature += (target - segment.curvature) * (1 - Math.exp(-LIMB.bendRate * softness * dt));
+      segment.curvature +=
+        (target - segment.curvature) *
+        (1 - Math.exp(-LIMB.bendRate * softness * dt));
       fromTip += segment.length;
     }
   }

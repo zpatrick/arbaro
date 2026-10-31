@@ -2,7 +2,8 @@
 :root {
   --paper: #ede4d2;
   --ink: #2a211a;
-  font-family: 'Avenir Next', 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
+  font-family:
+    "Avenir Next", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
 }
 
 * {
@@ -29,7 +30,7 @@ body,
 
 /* Fine sand grain over everything, so flat fills read as a surface rather than a screen. */
 #app::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -155,7 +156,7 @@ body,
 }
 
 .debug-title::after {
-  content: '';
+  content: "";
   flex: 1;
   height: 1px;
   background: rgba(42, 33, 26, 0.18);

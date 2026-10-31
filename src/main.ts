@@ -1,14 +1,14 @@
-import './style.css';
-import { Camera } from './camera';
-import { Debris } from './debris';
-import { DebugPanel } from './debug-panel';
-import { Keyboard } from './input';
-import type { Controls, Limb } from './limb';
-import type { Failure, Strength } from './physics';
-import { minimumRadius, pieceShapes, Renderer, treeShapes } from './render';
-import { type Bounds, type Pick, Tree } from './tree';
-import { at, invariant } from './util';
-import { Wind, type WindSettings } from './wind';
+import "./style.css";
+import { Camera } from "./camera";
+import { Debris } from "./debris";
+import { DebugPanel } from "./debug-panel";
+import { Keyboard } from "./input";
+import type { Controls, Limb } from "./limb";
+import type { Failure, Strength } from "./physics";
+import { minimumRadius, pieceShapes, Renderer, treeShapes } from "./render";
+import { type Bounds, type Pick, Tree } from "./tree";
+import { at, invariant } from "./util";
+import { Wind, type WindSettings } from "./wind";
 
 /** Longest frame step the simulation will take, so a stalled tab does not lurch forward. */
 const MAX_STEP = 1 / 20;
@@ -21,19 +21,22 @@ const TOPPLE_SPIN = 0.08;
 /** Seconds a message stays up. */
 const MESSAGE_SECONDS = 2.6;
 
-function element<T extends HTMLElement>(selector: string, type: new () => T): T {
+function element<T extends HTMLElement>(
+  selector: string,
+  type: new () => T,
+): T {
   const found = document.querySelector(selector);
   invariant(found instanceof type, `Missing ${selector}.`);
   return found;
 }
 
-const canvas = element('#scene', HTMLCanvasElement);
-const hint = element('#hint', HTMLDivElement);
-const message = element('#message', HTMLDivElement);
+const canvas = element("#scene", HTMLCanvasElement);
+const hint = element("#hint", HTMLDivElement);
+const message = element("#message", HTMLDivElement);
 const camera = new Camera();
 const renderer = new Renderer(canvas);
 const keyboard = new Keyboard(window);
-const panel = new DebugPanel(element('#app', HTMLDivElement));
+const panel = new DebugPanel(element("#app", HTMLDivElement));
 const wind = new Wind(panel.wind);
 
 let seed = 1;
@@ -46,7 +49,9 @@ let messageTimer: number | undefined;
  * When set, frames still draw but time stands still, so a script can step the simulation exactly.
  * Set by the debug hook, or from the start by loading the page with `?frozen` in development.
  */
-let frozen = import.meta.env.DEV && new URLSearchParams(window.location.search).has('frozen');
+let frozen =
+  import.meta.env.DEV &&
+  new URLSearchParams(window.location.search).has("frozen");
 
 function resize(): void {
   camera.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio);
@@ -61,9 +66,12 @@ function replant(): void {
 
 function announce(text: string): void {
   message.textContent = text;
-  message.classList.add('shown');
+  message.classList.add("shown");
   window.clearTimeout(messageTimer);
-  messageTimer = window.setTimeout(() => message.classList.remove('shown'), MESSAGE_SECONDS * 1000);
+  messageTimer = window.setTimeout(
+    () => message.classList.remove("shown"),
+    MESSAGE_SECONDS * 1000,
+  );
 }
 
 function pickAt(standing: Tree, x: number, y: number): Pick | undefined {
@@ -74,8 +82,15 @@ function pickAt(standing: Tree, x: number, y: number): Pick | undefined {
 /** Cuts `limb` at `s` and lets everything beyond fall, keeping the motion it had. */
 function breakOff(standing: Tree, limb: Limb, s: number): void {
   const piece = standing.piece(limb, s);
-  const motion = standing.physics.velocityAt(limb, s, piece.center.x, piece.center.y);
-  debris.push(new Debris(pieceShapes(limb, s, minimumRadius(camera)), piece, motion));
+  const motion = standing.physics.velocityAt(
+    limb,
+    s,
+    piece.center.x,
+    piece.center.y,
+  );
+  debris.push(
+    new Debris(pieceShapes(limb, s, minimumRadius(camera)), piece, motion),
+  );
   standing.sever(limb, s);
 }
 
@@ -85,10 +100,22 @@ function breakOff(standing: Tree, limb: Limb, s: number): void {
  */
 function topple(standing: Tree, turning: 1 | -1): void {
   const piece = standing.piece(standing.root, 0);
-  const motion = standing.physics.velocityAt(standing.root, 0, piece.center.x, piece.center.y);
+  const motion = standing.physics.velocityAt(
+    standing.root,
+    0,
+    piece.center.x,
+    piece.center.y,
+  );
   // Counterclockwise spin is positive.
   motion.spin -= turning * TOPPLE_SPIN;
-  debris.push(new Debris(treeShapes(standing, minimumRadius(camera)), piece, motion, FALLEN_TREE_LINGER));
+  debris.push(
+    new Debris(
+      treeShapes(standing, minimumRadius(camera)),
+      piece,
+      motion,
+      FALLEN_TREE_LINGER,
+    ),
+  );
   tree = undefined;
 }
 
@@ -100,7 +127,11 @@ function framing(): Bounds | undefined {
     bounds =
       bounds === undefined
         ? b
-        : { minX: Math.min(bounds.minX, b.minX), maxX: Math.max(bounds.maxX, b.maxX), maxY: Math.max(bounds.maxY, b.maxY) };
+        : {
+            minX: Math.min(bounds.minX, b.minX),
+            maxX: Math.max(bounds.maxX, b.maxX),
+            maxY: Math.max(bounds.maxY, b.maxY),
+          };
   }
   return bounds;
 }
@@ -112,9 +143,9 @@ function giveWay(standing: Tree, failure: Failure): void {
   if (!standing.has(failure.limb)) {
     return;
   }
-  if (failure.kind === 'uproot') {
+  if (failure.kind === "uproot") {
     topple(standing, failure.turning);
-    announce('The roots gave way');
+    announce("The roots gave way");
     return;
   }
   const s = standing.cutPoint(failure.limb, failure.s);
@@ -122,9 +153,13 @@ function giveWay(standing: Tree, failure: Failure): void {
     return;
   }
   // It is the trunk that snapped if the whole crown comes down with it.
-  const trunk = failure.limb === standing.root && standing.root.children.every((child) => child.attachment === undefined || child.attachment.s >= s);
+  const trunk =
+    failure.limb === standing.root &&
+    standing.root.children.every(
+      (child) => child.attachment === undefined || child.attachment.s >= s,
+    );
   breakOff(standing, failure.limb, s);
-  announce(trunk ? 'The trunk snapped' : 'A limb snapped');
+  announce(trunk ? "The trunk snapped" : "A limb snapped");
 }
 
 /** Advances everything by `dt` seconds. */
@@ -150,21 +185,21 @@ function step(dt: number, controls: Controls): void {
 
 resize();
 camera.snap(tree.bounds());
-window.addEventListener('resize', resize);
-window.addEventListener('keydown', (event) => {
-  if (event.code === 'KeyR' && !event.repeat) {
+window.addEventListener("resize", resize);
+window.addEventListener("keydown", (event) => {
+  if (event.code === "KeyR" && !event.repeat) {
     replant();
   }
 });
-canvas.addEventListener('pointermove', (event) => {
+canvas.addEventListener("pointermove", (event) => {
   pointer = { x: event.clientX, y: event.clientY };
 });
-canvas.addEventListener('pointerleave', () => {
+canvas.addEventListener("pointerleave", () => {
   pointer = undefined;
 });
 // Clicking a limb makes it the one that grows and steers. Clicking the limb that already is
 // forks a new offshoot from that spot.
-canvas.addEventListener('pointerdown', (event) => {
+canvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || tree === undefined) {
     return;
   }
@@ -179,7 +214,7 @@ canvas.addEventListener('pointerdown', (event) => {
   }
 });
 // Right-clicking a limb cuts it there, and everything beyond falls.
-canvas.addEventListener('contextmenu', (event) => {
+canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   if (tree === undefined) {
     return;
@@ -206,11 +241,14 @@ function frame(now: number): void {
   if (view !== undefined) {
     camera.follow(view, dt);
   }
-  const hover = tree === undefined || pointer === undefined ? undefined : pickAt(tree, pointer.x, pointer.y);
-  canvas.style.cursor = hover === undefined ? '' : 'pointer';
+  const hover =
+    tree === undefined || pointer === undefined
+      ? undefined
+      : pickAt(tree, pointer.x, pointer.y);
+  canvas.style.cursor = hover === undefined ? "" : "pointer";
   renderer.draw(camera, { tree, debris, hover, strain: panel.showStrain });
   if (controls.grow) {
-    hint.classList.add('quiet');
+    hint.classList.add("quiet");
   }
   requestAnimationFrame(frame);
 }
@@ -246,7 +284,7 @@ declare global {
 
 if (import.meta.env.DEV) {
   const standing = (): Tree => {
-    invariant(tree !== undefined, 'There is no standing tree.');
+    invariant(tree !== undefined, "There is no standing tree.");
     return tree;
   };
   window.__arbaro = {
@@ -277,7 +315,10 @@ if (import.meta.env.DEV) {
     cut(index, fraction) {
       const limb = at(standing().limbs, index);
       const s = standing().cutPoint(limb, limb.length * fraction);
-      invariant(s !== undefined, `Nothing to cut at ${fraction} of limb ${index}.`);
+      invariant(
+        s !== undefined,
+        `Nothing to cut at ${fraction} of limb ${index}.`,
+      );
       breakOff(standing(), limb, s);
     },
     wind(settings) {

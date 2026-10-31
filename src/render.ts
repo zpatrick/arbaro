@@ -1,10 +1,10 @@
-import type { Camera } from './camera';
-import type { Debris } from './debris';
-import type { Limb } from './limb';
-import { PALETTE } from './palette';
-import { PHYSICS } from './physics';
-import { FLARE, type Pick, type Tree } from './tree';
-import { at, clamp, invariant, lerp, Rng } from './util';
+import type { Camera } from "./camera";
+import type { Debris } from "./debris";
+import type { Limb } from "./limb";
+import { PALETTE } from "./palette";
+import { PHYSICS } from "./physics";
+import { FLARE, type Pick, type Tree } from "./tree";
+import { at, clamp, invariant, lerp, Rng } from "./util";
 
 /** No limb renders thinner than this many CSS pixels across, so tips survive zooming out. */
 const MIN_WIDTH_PX = 1.1;
@@ -86,11 +86,11 @@ export class Renderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    const ctx = canvas.getContext('2d');
-    invariant(ctx !== null, 'Canvas 2D is not available.');
+    const ctx = canvas.getContext("2d");
+    invariant(ctx !== null, "Canvas 2D is not available.");
     this.ctx = ctx;
-    const grain = ctx.createPattern(grainTile(), 'repeat');
-    invariant(grain !== null, 'Could not create the grain pattern.');
+    const grain = ctx.createPattern(grainTile(), "repeat");
+    invariant(grain !== null, "Could not create the grain pattern.");
     this.grain = grain;
   }
 
@@ -99,7 +99,14 @@ export class Renderer {
     this.canvas.height = Math.round(camera.height * camera.dpr);
     const cx = camera.width * camera.dpr * 0.5;
     const cy = camera.groundY * camera.dpr;
-    const sky = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(cx, cy) * 1.05);
+    const sky = this.ctx.createRadialGradient(
+      cx,
+      cy,
+      0,
+      cx,
+      cy,
+      Math.hypot(cx, cy) * 1.05,
+    );
     sky.addColorStop(0, PALETTE.paperGlow);
     sky.addColorStop(0.55, PALETTE.paper);
     sky.addColorStop(1, PALETTE.paperShade);
@@ -109,7 +116,7 @@ export class Renderer {
   /** Draws in device pixels throughout so every ink shape shares one grain. */
   draw(camera: Camera, scene: Scene): void {
     const ctx = this.ctx;
-    invariant(this.sky !== undefined, 'Renderer.resize must run before draw.');
+    invariant(this.sky !== undefined, "Renderer.resize must run before draw.");
     const width = this.canvas.width;
     const groundY = camera.groundY * camera.dpr;
 
@@ -163,11 +170,11 @@ export class Renderer {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = PALETTE.ink;
     ctx.fill(path);
-    ctx.globalCompositeOperation = 'screen';
+    ctx.globalCompositeOperation = "screen";
     ctx.globalAlpha = INK_GRAIN * alpha;
     ctx.fillStyle = this.grain;
     ctx.fill(path);
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
   }
 
@@ -179,7 +186,7 @@ export class Renderer {
     const ctx = this.ctx;
     const spacing = PHYSICS.jointSpacing;
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.lineCap = 'butt';
+    ctx.lineCap = "butt";
     for (const limb of tree.limbs) {
       // A limb grown since the last physics step has not been weighed yet.
       const strains = tree.physics.strains(limb) ?? [];
@@ -204,11 +211,15 @@ export class Renderer {
   }
 
   /** Marks the limb being grown, and previews what a click would do. */
-  private drawGuides(camera: Camera, tree: Tree, hover: Pick | undefined): void {
+  private drawGuides(
+    camera: Camera,
+    tree: Tree,
+    hover: Pick | undefined,
+  ): void {
     const ctx = this.ctx;
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
     ctx.lineWidth = 1.25;
-    ctx.lineCap = 'round';
+    ctx.lineCap = "round";
     if (tree.limbs.length > 1) {
       const tip = tree.active.tip;
       this.ring(camera.toScreen(tip.x, tip.y), 0.55);
@@ -224,13 +235,19 @@ export class Renderer {
     const s = tree.forkPoint(hover.limb, hover.s);
     const from = hover.limb.pointAt(s);
     // The fork heading is worked out on the grown shape; turn it by however far the limb has swayed.
-    const heading = tree.forkHeading(hover.limb, s, hover.side) + from.heading - hover.limb.restPointAt(s).heading;
+    const heading =
+      tree.forkHeading(hover.limb, s, hover.side) +
+      from.heading -
+      hover.limb.restPointAt(s).heading;
     const start = camera.toScreen(from.x, from.y);
     ctx.strokeStyle = PALETTE.ink;
     ctx.globalAlpha = 0.45;
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
-    ctx.lineTo(start.x + Math.cos(heading) * FORK_PREVIEW_PX, start.y - Math.sin(heading) * FORK_PREVIEW_PX);
+    ctx.lineTo(
+      start.x + Math.cos(heading) * FORK_PREVIEW_PX,
+      start.y - Math.sin(heading) * FORK_PREVIEW_PX,
+    );
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.beginPath();
@@ -254,11 +271,11 @@ export class Renderer {
 /** Sparse pale specks on transparency, tiled over the ink. */
 function grainTile(): HTMLCanvasElement {
   const size = 256;
-  const tile = document.createElement('canvas');
+  const tile = document.createElement("canvas");
   tile.width = size;
   tile.height = size;
-  const ctx = tile.getContext('2d');
-  invariant(ctx !== null, 'Canvas 2D is not available for the grain tile.');
+  const ctx = tile.getContext("2d");
+  invariant(ctx !== null, "Canvas 2D is not available for the grain tile.");
   const image = ctx.createImageData(size, size);
   const rng = new Rng(7);
   for (let i = 0; i < size * size; i += 1) {
@@ -279,7 +296,10 @@ export function treeShapes(tree: Tree, minRadius: number): Path2D[] {
   const edges = new Map<Limb, Edges>();
   const shapes: Path2D[] = [];
   for (const limb of tree.limbs) {
-    const own = { left: edge(limb, minRadius, 1), right: edge(limb, minRadius, -1) };
+    const own = {
+      left: edge(limb, minRadius, 1),
+      right: edge(limb, minRadius, -1),
+    };
     edges.set(limb, own);
     if (limb.attachment === undefined) {
       shapes.push(rootOutline(tree, own, minRadius));
@@ -287,7 +307,10 @@ export function treeShapes(tree: Tree, minRadius: number): Path2D[] {
     }
     shapes.push(limbOutline(limb, own, minRadius));
     const parent = edges.get(limb.attachment.parent);
-    invariant(parent !== undefined, 'A parent limb must be outlined before its offshoots.');
+    invariant(
+      parent !== undefined,
+      "A parent limb must be outlined before its offshoots.",
+    );
     shapes.push(...forkFillets(limb, own, parent, minRadius));
   }
   return shapes;
@@ -297,19 +320,35 @@ export function treeShapes(tree: Tree, minRadius: number): Path2D[] {
  * Shapes of everything beyond `s` on `limb`, in world coordinates: the rest of the limb, closed
  * straight across the cut, and every offshoot forked off past the cut, blended into its parent.
  */
-export function pieceShapes(limb: Limb, s: number, minRadius: number): Path2D[] {
-  const cut = { left: beyond(edge(limb, minRadius, 1), s), right: beyond(edge(limb, minRadius, -1), s) };
+export function pieceShapes(
+  limb: Limb,
+  s: number,
+  minRadius: number,
+): Path2D[] {
+  const cut = {
+    left: beyond(edge(limb, minRadius, 1), s),
+    right: beyond(edge(limb, minRadius, -1), s),
+  };
   const shapes = [limbOutline(limb, cut, minRadius)];
   const edges = new Map<Limb, Edges>([[limb, cut]]);
   const visit = (parent: Limb, parentEdges: Edges): void => {
     for (const child of parent.children) {
-      invariant(child.attachment !== undefined, 'An offshoot must fork off its parent.');
+      invariant(
+        child.attachment !== undefined,
+        "An offshoot must fork off its parent.",
+      );
       if (parent === limb && child.attachment.s < s) {
         continue;
       }
-      const own = { left: edge(child, minRadius, 1), right: edge(child, minRadius, -1) };
+      const own = {
+        left: edge(child, minRadius, 1),
+        right: edge(child, minRadius, -1),
+      };
       edges.set(child, own);
-      shapes.push(limbOutline(child, own, minRadius), ...forkFillets(child, own, parentEdges, minRadius));
+      shapes.push(
+        limbOutline(child, own, minRadius),
+        ...forkFillets(child, own, parentEdges, minRadius),
+      );
       visit(child, own);
     }
   };
@@ -327,7 +366,13 @@ function beyond(points: readonly EdgePoint[], s: number): EdgePoint[] {
   const a = at(points, index - 1);
   const b = at(points, index);
   const t = (s - a.s) / (b.s - a.s);
-  const start = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), tx: b.tx, ty: b.ty, s };
+  const start = {
+    x: lerp(a.x, b.x, t),
+    y: lerp(a.y, b.y, t),
+    tx: b.tx,
+    ty: b.ty,
+    s,
+  };
   return [start, ...points.slice(index)];
 }
 
@@ -336,14 +381,24 @@ function beyond(points: readonly EdgePoint[], s: number): EdgePoint[] {
  * around the tip, down the right edge and back down through the right flare. It closes along
  * the ground line, where the ground takes over.
  */
-function rootOutline(tree: Tree, { left, right }: Edges, minRadius: number): Path2D {
+function rootOutline(
+  tree: Tree,
+  { left, right }: Edges,
+  minRadius: number,
+): Path2D {
   const trunk = tree.root;
   const baseRadius = Math.max(minRadius, trunk.radiusAt(0));
   const maxRise = 0.3 * trunk.restTip.y;
   const leftSpread = FLARE.spread * baseRadius * tree.flare.left;
   const rightSpread = FLARE.spread * baseRadius * tree.flare.right;
-  const leftJoin = firstAbove(left, Math.min(FLARE.rise * baseRadius * tree.flare.left, maxRise));
-  const rightJoin = firstAbove(right, Math.min(FLARE.rise * baseRadius * tree.flare.right, maxRise));
+  const leftJoin = firstAbove(
+    left,
+    Math.min(FLARE.rise * baseRadius * tree.flare.left, maxRise),
+  );
+  const rightJoin = firstAbove(
+    right,
+    Math.min(FLARE.rise * baseRadius * tree.flare.right, maxRise),
+  );
   const groundLeft = at(left, 0).x - leftSpread;
   const groundRight = at(right, 0).x + rightSpread;
 
@@ -351,19 +406,37 @@ function rootOutline(tree: Tree, { left, right }: Edges, minRadius: number): Pat
   path.moveTo(groundLeft, 0);
   const lj = at(left, leftJoin);
   const leftLift = lj.y * FLARE_LIFT;
-  path.bezierCurveTo(groundLeft + leftSpread * FLARE_HUG, 0, lj.x - lj.tx * leftLift, lj.y - lj.ty * leftLift, lj.x, lj.y);
+  path.bezierCurveTo(
+    groundLeft + leftSpread * FLARE_HUG,
+    0,
+    lj.x - lj.tx * leftLift,
+    lj.y - lj.ty * leftLift,
+    lj.x,
+    lj.y,
+  );
   smoothThrough(path, left.slice(leftJoin));
   tipCap(path, trunk, minRadius);
   smoothThrough(path, right.slice(rightJoin).reverse());
   const rj = at(right, rightJoin);
   const rightLift = rj.y * FLARE_LIFT;
-  path.bezierCurveTo(rj.x - rj.tx * rightLift, rj.y - rj.ty * rightLift, groundRight - rightSpread * FLARE_HUG, 0, groundRight, 0);
+  path.bezierCurveTo(
+    rj.x - rj.tx * rightLift,
+    rj.y - rj.ty * rightLift,
+    groundRight - rightSpread * FLARE_HUG,
+    0,
+    groundRight,
+    0,
+  );
   path.closePath();
   return path;
 }
 
 /** An offshoot's silhouette. Its base sits inside its parent, so it closes straight across. */
-function limbOutline(limb: Limb, { left, right }: Edges, minRadius: number): Path2D {
+function limbOutline(
+  limb: Limb,
+  { left, right }: Edges,
+  minRadius: number,
+): Path2D {
   const path = new Path2D();
   const start = at(left, 0);
   path.moveTo(start.x, start.y);
@@ -376,23 +449,45 @@ function limbOutline(limb: Limb, { left, right }: Edges, minRadius: number): Pat
 
 function tipCap(path: Path2D, limb: Limb, minRadius: number): void {
   const tip = limb.tip;
-  path.arc(tip.x, tip.y, Math.max(minRadius, limb.radiusAt(tip.s)), tip.heading + Math.PI / 2, tip.heading - Math.PI / 2, true);
+  path.arc(
+    tip.x,
+    tip.y,
+    Math.max(minRadius, limb.radiusAt(tip.s)),
+    tip.heading + Math.PI / 2,
+    tip.heading - Math.PI / 2,
+    true,
+  );
 }
 
 /**
  * Patches that round off the two corners where an offshoot's edges leave its parent: a tight
  * crotch on the side the offshoot leans toward, and a broad collar beneath it.
  */
-function forkFillets(child: Limb, own: Edges, parent: Edges, minRadius: number): Path2D[] {
-  invariant(child.attachment !== undefined, 'Only an offshoot has a fork to blend.');
+function forkFillets(
+  child: Limb,
+  own: Edges,
+  parent: Edges,
+  minRadius: number,
+): Path2D[] {
+  invariant(
+    child.attachment !== undefined,
+    "Only an offshoot has a fork to blend.",
+  );
   const forkS = child.attachment.s;
-  const span = 6 * (child.attachment.parent.radiusAt(forkS) + child.radiusAt(0));
+  const span =
+    6 * (child.attachment.parent.radiusAt(forkS) + child.radiusAt(0));
   const patches: Path2D[] = [];
   for (const [childEdge, outside] of [
     [own.left, 1],
     [own.right, -1],
   ] as const) {
-    const crossing = firstCrossing(childEdge, parent, span, forkS - span, forkS + span);
+    const crossing = firstCrossing(
+      childEdge,
+      parent,
+      span,
+      forkS - span,
+      forkS + span,
+    );
     // A freshly forked offshoot can still be entirely inside its parent on one side. There is
     // no corner to round until its edge breaks out.
     if (crossing !== undefined) {
@@ -419,16 +514,34 @@ function firstCrossing(
     parentEdge,
     parentSide,
     from: Math.max(0, firstAtOrAfter(parentEdge, parentFrom) - 1),
-    to: Math.min(parentEdge.length - 1, firstAtOrAfter(parentEdge, parentTo) + 1),
+    to: Math.min(
+      parentEdge.length - 1,
+      firstAtOrAfter(parentEdge, parentTo) + 1,
+    ),
   }));
-  for (let i = 0; i + 1 < childEdge.length && at(childEdge, i).s <= childSpan; i += 1) {
+  for (
+    let i = 0;
+    i + 1 < childEdge.length && at(childEdge, i).s <= childSpan;
+    i += 1
+  ) {
     const p1 = at(childEdge, i);
     const p2 = at(childEdge, i + 1);
     for (const { parentEdge, parentSide, from, to } of windows) {
       for (let j = from; j < to; j += 1) {
-        const point = intersect(p1, p2, at(parentEdge, j), at(parentEdge, j + 1));
+        const point = intersect(
+          p1,
+          p2,
+          at(parentEdge, j),
+          at(parentEdge, j + 1),
+        );
         if (point !== undefined) {
-          return { point, childNext: i + 1, parentEdge, parentSide, parentIndex: j };
+          return {
+            point,
+            childNext: i + 1,
+            parentEdge,
+            parentSide,
+            parentIndex: j,
+          };
         }
       }
     }
@@ -440,8 +553,20 @@ function firstCrossing(
  * Rounds the corner between the offshoot's edge and its parent's edge at `crossing`. `outside` is
  * the side of the offshoot edge that faces away from the offshoot: 1 for its left edge.
  */
-function fillet(child: Limb, childEdge: readonly EdgePoint[], crossing: Crossing, outside: 1 | -1, minRadius: number): Path2D {
-  const { point: corner, childNext, parentEdge, parentSide, parentIndex } = crossing;
+function fillet(
+  child: Limb,
+  childEdge: readonly EdgePoint[],
+  crossing: Crossing,
+  outside: 1 | -1,
+  minRadius: number,
+): Path2D {
+  const {
+    point: corner,
+    childNext,
+    parentEdge,
+    parentSide,
+    parentIndex,
+  } = crossing;
   const c1 = at(childEdge, childNext - 1);
   const c2 = at(childEdge, childNext);
   const q1 = at(parentEdge, parentIndex);
@@ -456,14 +581,38 @@ function fillet(child: Limb, childEdge: readonly EdgePoint[], crossing: Crossing
   const radius = Math.max(minRadius, child.radiusAt(c1.s));
   const size = (acute ? CROTCH_FILLET : COLLAR_FILLET) * radius;
 
-  const childLeg = walk({ ...corner, tx: childDir.x, ty: childDir.y }, childEdge, childNext, 1, size);
+  const childLeg = walk(
+    { ...corner, tx: childDir.x, ty: childDir.y },
+    childEdge,
+    childNext,
+    1,
+    size,
+  );
   const parentLeg = up
-    ? walk({ ...corner, tx: parentUp.x, ty: parentUp.y }, parentEdge, parentIndex + 1, 1, size)
-    : walk({ ...corner, tx: parentUp.x, ty: parentUp.y }, parentEdge, parentIndex, -1, size);
+    ? walk(
+        { ...corner, tx: parentUp.x, ty: parentUp.y },
+        parentEdge,
+        parentIndex + 1,
+        1,
+        size,
+      )
+    : walk(
+        { ...corner, tx: parentUp.x, ty: parentUp.y },
+        parentEdge,
+        parentIndex,
+        -1,
+        size,
+      );
   const a = at(childLeg, childLeg.length - 1);
   const b = at(parentLeg, parentLeg.length - 1);
-  const towardA = { x: a.x + (corner.x - a.x) * FILLET_ROUNDNESS, y: a.y + (corner.y - a.y) * FILLET_ROUNDNESS };
-  const towardB = { x: b.x + (corner.x - b.x) * FILLET_ROUNDNESS, y: b.y + (corner.y - b.y) * FILLET_ROUNDNESS };
+  const towardA = {
+    x: a.x + (corner.x - a.x) * FILLET_ROUNDNESS,
+    y: a.y + (corner.y - a.y) * FILLET_ROUNDNESS,
+  };
+  const towardB = {
+    x: b.x + (corner.x - b.x) * FILLET_ROUNDNESS,
+    y: b.y + (corner.y - b.y) * FILLET_ROUNDNESS,
+  };
 
   // The patch's straight sides run just inside both limbs, so it overlaps the wood rather than
   // meeting it edge to edge, which can leave a hairline of paper showing through.
@@ -473,8 +622,17 @@ function fillet(child: Limb, childEdge: readonly EdgePoint[], crossing: Crossing
 
   // Wind the patch clockwise like every outline, so it adds to the silhouette instead of cutting
   // a hole where it overlaps.
-  const clockwise = (a.x - corner.x) * (b.y - corner.y) - (a.y - corner.y) * (b.x - corner.x) < 0;
-  const [firstInside, secondInside, firstOut, secondOut, firstHandle, secondHandle] = clockwise
+  const clockwise =
+    (a.x - corner.x) * (b.y - corner.y) - (a.y - corner.y) * (b.x - corner.x) <
+    0;
+  const [
+    firstInside,
+    secondInside,
+    firstOut,
+    secondOut,
+    firstHandle,
+    secondHandle,
+  ] = clockwise
     ? [childInside, parentInside, a, b, towardA, towardB]
     : [parentInside, childInside, b, a, towardB, towardA];
   const path = new Path2D();
@@ -484,7 +642,14 @@ function fillet(child: Limb, childEdge: readonly EdgePoint[], crossing: Crossing
     path.lineTo(p.x, p.y);
   }
   path.lineTo(firstOut.x, firstOut.y);
-  path.bezierCurveTo(firstHandle.x, firstHandle.y, secondHandle.x, secondHandle.y, secondOut.x, secondOut.y);
+  path.bezierCurveTo(
+    firstHandle.x,
+    firstHandle.y,
+    secondHandle.x,
+    secondHandle.y,
+    secondOut.x,
+    secondOut.y,
+  );
   for (const p of [...secondInside].reverse()) {
     path.lineTo(p.x, p.y);
   }
@@ -504,10 +669,20 @@ function inset(p: EdgeStep, depth: number): Vec {
  * Follows `edge` from `from`, starting at index `start` and stepping by `step`, for `distance`
  * or half of what is left of the edge if that is shorter. Returns the points passed through.
  */
-function walk(from: EdgeStep, edge: readonly EdgePoint[], start: number, step: 1 | -1, distance: number): EdgeStep[] {
+function walk(
+  from: EdgeStep,
+  edge: readonly EdgePoint[],
+  start: number,
+  step: 1 | -1,
+  distance: number,
+): EdgeStep[] {
   let available = 0;
   let previous: Vec = from;
-  for (let i = start; i >= 0 && i < edge.length && available < distance * 2; i += step) {
+  for (
+    let i = start;
+    i >= 0 && i < edge.length && available < distance * 2;
+    i += step
+  ) {
     const p = at(edge, i);
     available += Math.hypot(p.x - previous.x, p.y - previous.y);
     previous = p;
@@ -520,7 +695,12 @@ function walk(from: EdgeStep, edge: readonly EdgePoint[], start: number, step: 1
     const length = Math.hypot(p.x - previous.x, p.y - previous.y);
     if (length >= remaining) {
       const t = remaining / Math.max(length, 1e-12);
-      points.push({ x: previous.x + (p.x - previous.x) * t, y: previous.y + (p.y - previous.y) * t, tx: p.tx, ty: p.ty });
+      points.push({
+        x: previous.x + (p.x - previous.x) * t,
+        y: previous.y + (p.y - previous.y) * t,
+        tx: p.tx,
+        ty: p.ty,
+      });
       return points;
     }
     points.push(p);
@@ -551,7 +731,10 @@ function intersect(p1: Vec, p2: Vec, q1: Vec, q2: Vec): Vec | undefined {
 
 function unit(x: number, y: number): Vec {
   const length = Math.hypot(x, y);
-  invariant(length > 0, 'Cannot take the direction of a zero-length edge segment.');
+  invariant(
+    length > 0,
+    "Cannot take the direction of a zero-length edge segment.",
+  );
   return { x: x / length, y: y / length };
 }
 
@@ -581,7 +764,10 @@ function edge(limb: Limb, minRadius: number, side: 1 | -1): EdgePoint[] {
     const previous = points[points.length - 1];
     // Where thick wood curves tightly, the inner edge would fold back on itself. Dropping the
     // points that move backward leaves a clean crease instead of a loop.
-    if (previous === undefined || (candidate.x - previous.x) * tx + (candidate.y - previous.y) * ty > 0) {
+    if (
+      previous === undefined ||
+      (candidate.x - previous.x) * tx + (candidate.y - previous.y) * ty > 0
+    ) {
       points.push(candidate);
     }
   }

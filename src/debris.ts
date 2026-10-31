@@ -1,6 +1,6 @@
-import { PHYSICS } from './physics';
-import { clamp } from './util';
-import type { Wind } from './wind';
+import { PHYSICS } from "./physics";
+import { clamp } from "./util";
+import type { Wind } from "./wind";
 
 /** Seconds a piece lies still on the ground before it starts to fade. */
 const LINGER = 6;
@@ -76,7 +76,12 @@ export class Debris {
   /** Whether the piece is still tipping over on the stump it sat on. */
   private hinged: boolean;
 
-  constructor(shapes: readonly Path2D[], piece: Piece, motion: { x: number; y: number; spin: number }, linger = LINGER) {
+  constructor(
+    shapes: readonly Path2D[],
+    piece: Piece,
+    motion: { x: number; y: number; spin: number },
+    linger = LINGER,
+  ) {
     this.shapes = shapes;
     this.piece = piece;
     this.linger = linger;
@@ -132,7 +137,10 @@ export class Debris {
     for (let i = 0; i < steps; i += 1) {
       touching = this.advance(dt / steps, wind);
     }
-    const still = touching && Math.hypot(this.vx, this.vy) < STILL.speed && Math.abs(this.spin) < STILL.spin;
+    const still =
+      touching &&
+      Math.hypot(this.vx, this.vy) < STILL.speed &&
+      Math.abs(this.spin) < STILL.spin;
     this.resting = still ? this.resting + dt : 0;
   }
 
@@ -147,8 +155,10 @@ export class Debris {
       // Tipping over on the stump: turn about the hinge under gravity and the wind.
       const armX = this.x - hinge.x;
       const armY = this.y - hinge.y;
-      const torque = armX * (drag * ry - mass * PHYSICS.gravity) - armY * drag * rx;
-      this.spin += (h * torque) / (inertia + mass * (armX * armX + armY * armY));
+      const torque =
+        armX * (drag * ry - mass * PHYSICS.gravity) - armY * drag * rx;
+      this.spin +=
+        (h * torque) / (inertia + mass * (armX * armX + armY * armY));
       const turn = h * this.spin;
       const cos = Math.cos(turn);
       const sin = Math.sin(turn);
@@ -169,7 +179,13 @@ export class Debris {
     // Every contact point below the ground, with the impulse it has pushed with so far this step.
     const cos = Math.cos(this.angle);
     const sin = Math.sin(this.angle);
-    const touching: { rx: number; ry: number; target: number; normal: number; friction: number }[] = [];
+    const touching: {
+      rx: number;
+      ry: number;
+      target: number;
+      normal: number;
+      friction: number;
+    }[] = [];
     for (const contact of this.piece.contacts) {
       const ox = contact.x - this.piece.center.x;
       const oy = contact.y - this.piece.center.y;
@@ -181,14 +197,20 @@ export class Debris {
       }
       const approach = this.vy + this.spin * armX;
       // Bounce off hard landings; otherwise ease out of the ground.
-      const target = Math.max(-BOUNCE * approach, (SETTLE.rate * Math.max(0, depth - SETTLE.slop)) / h);
+      const target = Math.max(
+        -BOUNCE * approach,
+        (SETTLE.rate * Math.max(0, depth - SETTLE.slop)) / h,
+      );
       touching.push({ rx: armX, ry: armY, target, normal: 0, friction: 0 });
     }
     for (let pass = 0; pass < CONTACT_PASSES; pass += 1) {
       for (const c of touching) {
         const normalSpeed = this.vy + this.spin * c.rx;
         const normalMass = 1 / (1 / mass + (c.rx * c.rx) / inertia);
-        const total = Math.max(0, c.normal + normalMass * (c.target - normalSpeed));
+        const total = Math.max(
+          0,
+          c.normal + normalMass * (c.target - normalSpeed),
+        );
         const push = total - c.normal;
         c.normal = total;
         this.vy += push / mass;
@@ -196,7 +218,11 @@ export class Debris {
 
         const slide = this.vx - this.spin * c.ry;
         const slideMass = 1 / (1 / mass + (c.ry * c.ry) / inertia);
-        const grip = clamp(c.friction - slideMass * slide, -FRICTION * c.normal, FRICTION * c.normal);
+        const grip = clamp(
+          c.friction - slideMass * slide,
+          -FRICTION * c.normal,
+          FRICTION * c.normal,
+        );
         const drag = grip - c.friction;
         c.friction = grip;
         this.vx += drag / mass;

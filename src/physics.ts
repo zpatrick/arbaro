@@ -1,6 +1,6 @@
-import type { Limb } from './limb';
-import { at, invariant, wrapAngle } from './util';
-import type { Wind } from './wind';
+import type { Limb } from "./limb";
+import { at, invariant, wrapAngle } from "./util";
+import type { Wind } from "./wind";
 
 export const PHYSICS = {
   /** Distance between the joints a limb bends at, in meters. One world unit is a meter. */
@@ -65,7 +65,7 @@ export interface Failure {
   /** Distance along the limb of the joint that gave way. */
   s: number;
   /** The wood snapped, or the roots let go of the trunk. */
-  kind: 'snap' | 'uproot';
+  kind: "snap" | "uproot";
   /** The way the load was turning the wood beyond the joint: 1 clockwise, -1 counterclockwise. */
   turning: 1 | -1;
 }
@@ -210,7 +210,12 @@ class Body {
 
   /** Bending torque the base joint is carrying right now. */
   get moment(): number {
-    return this.preload + this.recoil - this.stiffness * this.angle - this.damping * this.rate;
+    return (
+      this.preload +
+      this.recoil -
+      this.stiffness * this.angle -
+      this.damping * this.rate
+    );
   }
 }
 
@@ -259,7 +264,11 @@ export class TreePhysics {
   /** How close each joint along the limb is to giving way, as a fraction of its limit. */
   strains(limb: Limb): readonly number[] | undefined {
     const range = this.ranges.get(limb);
-    return range === undefined ? undefined : this.bodies.slice(range.first, range.first + range.count).map((b) => b.strain);
+    return range === undefined
+      ? undefined
+      : this.bodies
+          .slice(range.first, range.first + range.count)
+          .map((b) => b.strain);
   }
 
   /** Largest joint angle anywhere in the tree, in radians. */
@@ -285,12 +294,19 @@ export class TreePhysics {
    * spin. Zero while the tree is at rest, and for a limb grown since the last step, which has not
    * moved yet.
    */
-  velocityAt(limb: Limb, s: number, x: number, y: number): { x: number; y: number; spin: number } {
+  velocityAt(
+    limb: Limb,
+    s: number,
+    x: number,
+    y: number,
+  ): { x: number; y: number; spin: number } {
     const range = this.ranges.get(limb);
     if (this.still || range === undefined) {
       return { x: 0, y: 0, spin: 0 };
     }
-    const index = range.first + Math.min(Math.floor(s / PHYSICS.jointSpacing), range.count - 1);
+    const index =
+      range.first +
+      Math.min(Math.floor(s / PHYSICS.jointSpacing), range.count - 1);
     const b = at(this.bodies, index);
     return { x: b.vx - b.w * y, y: b.vy + b.w * x, spin: b.w };
   }
@@ -310,14 +326,25 @@ export class TreePhysics {
       return;
     }
     const count = jointCount(limb.length);
-    for (const values of [sway.angle, sway.rate, sway.damage, sway.recoil, sway.preload]) {
+    for (const values of [
+      sway.angle,
+      sway.rate,
+      sway.damage,
+      sway.recoil,
+      sway.preload,
+    ]) {
       values.length = Math.min(values.length, count);
     }
     this.lost = true;
   }
 
   /** Advances the tree by `dt` seconds and returns the joints that gave way. */
-  step(dt: number, limbs: readonly Limb[], wind: Wind, strength: Strength): Failure[] {
+  step(
+    dt: number,
+    limbs: readonly Limb[],
+    wind: Wind,
+    strength: Strength,
+  ): Failure[] {
     if (this.stale) {
       this.sync(limbs);
       this.stale = false;
@@ -372,22 +399,29 @@ export class TreePhysics {
       const turning = b.moment > 0 ? 1 : -1;
       const moment = Math.abs(b.moment);
       let strain = moment / (b.capacity * strength.wood);
-      let kind: Failure['kind'] = 'snap';
+      let kind: Failure["kind"] = "snap";
       if (b.anchorage !== undefined) {
         const pull = moment / (b.anchorage * strength.roots);
         if (pull > strain) {
           strain = pull;
-          kind = 'uproot';
+          kind = "uproot";
         }
       }
       b.strain = strain;
       if (strain > 1) {
-        b.damage += dt * (FAILURE.damageAtLimit + FAILURE.damagePerOverload * (strain - 1));
+        b.damage +=
+          dt *
+          (FAILURE.damageAtLimit + FAILURE.damagePerOverload * (strain - 1));
       } else if (strain < 0.9) {
         b.damage = Math.max(0, b.damage - FAILURE.healing * dt);
       }
       if (b.damage >= 1) {
-        failures.push({ limb: b.limb, s: b.joint * PHYSICS.jointSpacing, kind, turning });
+        failures.push({
+          limb: b.limb,
+          s: b.joint * PHYSICS.jointSpacing,
+          kind,
+          turning,
+        });
       }
     }
     return failures;
@@ -416,7 +450,8 @@ export class TreePhysics {
         const spread = r0 * r0 + r0 * r1 + r1 * r1;
         const mass = (PHYSICS.woodDensity * Math.PI * arc * spread) / 3;
         // A joint's spring stands for the wood half a body either side of it.
-        const span = k === 0 ? arc / 2 : (arc + at(bodies, bodies.length - 1).arc) / 2;
+        const span =
+          k === 0 ? arc / 2 : (arc + at(bodies, bodies.length - 1).arc) / 2;
         let parent: Body | undefined;
         let parentPose: RestPose | undefined;
         if (k > 0) {
@@ -424,8 +459,13 @@ export class TreePhysics {
           parentPose = at(poses, poses.length - 1);
         } else if (limb.attachment !== undefined) {
           const host = ranges.get(limb.attachment.parent);
-          invariant(host !== undefined, 'A parent limb must be simulated before its offshoots.');
-          const index = host.first + Math.min(Math.floor(limb.attachment.s / spacing), host.count - 1);
+          invariant(
+            host !== undefined,
+            "A parent limb must be simulated before its offshoots.",
+          );
+          const index =
+            host.first +
+            Math.min(Math.floor(limb.attachment.s / spacing), host.count - 1);
           parent = at(bodies, index);
           parentPose = at(poses, index);
         }
@@ -452,13 +492,15 @@ export class TreePhysics {
             offsetY,
             length,
             arc,
-            com: (length * (r0 * r0 + 2 * r0 * r1 + 3 * r1 * r1)) / (4 * spread),
+            com:
+              (length * (r0 * r0 + 2 * r0 * r1 + 3 * r1 * r1)) / (4 * spread),
             mass,
             inertia: mass * ((length * length) / 12 + (r0 * r0 + r1 * r1) / 8),
             radius: (r0 + r1) / 2,
             stiffness: (PHYSICS.stiffness * Math.PI * r0 ** 4) / (4 * span),
             capacity: (FAILURE.breakingStress * Math.PI * r0 ** 3) / 4,
-            anchorage: parent === undefined ? FAILURE.rootHold * r0 ** 3 : undefined,
+            anchorage:
+              parent === undefined ? FAILURE.rootHold * r0 ** 3 : undefined,
             eddy: limbIndex * 1009 + k,
           }),
         );
@@ -521,11 +563,17 @@ export class TreePhysics {
       const { x, y } = at(poses, i);
       const m = at(mass, i);
       body.preload = PHYSICS.gravity * (at(mx, i) - m * x);
-      const inertia = at(second, i) - 2 * (x * at(mx, i) + y * at(my, i)) + m * (x * x + y * y);
+      const inertia =
+        at(second, i) -
+        2 * (x * at(mx, i) + y * at(my, i)) +
+        m * (x * x + y * y);
       body.damping = 2 * PHYSICS.damping * Math.sqrt(body.stiffness * inertia);
       if (body.parent !== undefined) {
         const p = index.get(body.parent);
-        invariant(p !== undefined, 'A body hangs from a body that is not simulated.');
+        invariant(
+          p !== undefined,
+          "A body hangs from a body that is not simulated.",
+        );
         mass[p] = at(mass, p) + m;
         mx[p] = at(mx, p) + at(mx, i);
         my[p] = at(my, p) + at(my, i);
@@ -638,7 +686,11 @@ export class TreePhysics {
       const u2 = b.i12 + b.i22 * jy - b.i23 * jx;
       const u3 = b.i13 + b.i23 * jy - b.i33 * jx;
       const d = u1 + jy * u2 - jx * u3 + h * b.damping + h * h * b.stiffness;
-      const torque = b.preload + b.recoil - b.stiffness * b.angle - (b.damping + h * b.stiffness) * b.rate;
+      const torque =
+        b.preload +
+        b.recoil -
+        b.stiffness * b.angle -
+        (b.damping + h * b.stiffness) * b.rate;
       const u = torque - (b.p1 + jy * b.p2 - jx * b.p3);
       b.u1 = u1;
       b.u2 = u2;
