@@ -45,9 +45,10 @@ const blow = (model, strength, direction = 0) => ({ wind: { model, strength, dir
 
 /**
  * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
- * fraction of its length, selects a limb, or sets the wind, all through the dev-only debug hook
- * on a freshly loaded page so every scene starts from the same seed. `crop` frames a close-up
- * around the trunk's base, the active tip, or where limb 1 forks off.
+ * fraction of its length, selects a limb, cuts limb `cut` at a fraction of its length, sets the
+ * wind, or sets how much the tree can take, all through the dev-only debug hook on a freshly
+ * loaded page so every scene starts from the same seed. `crop` frames a close-up around the
+ * trunk's base, the active tip, where limb 1 forks off, or the tip of limb N (`tipN`).
  */
 const SCENES = [
   { file: '01-sprout', actions: [] },
@@ -65,9 +66,21 @@ const SCENES = [
   { file: '13-tree-of-life-detail', scale: 2, crop: 'fork', actions: TREE_OF_LIFE },
   { file: '14-gale', actions: [...TREE_OF_LIFE, blow('steady', 0.5), still(8)] },
   { file: '15-hurricane', actions: [...TREE_OF_LIFE, blow('steady', 1), still(8)] },
-  { file: '16-hurricane-detail', scale: 3, crop: 'fork', actions: [...TREE_OF_LIFE, blow('steady', 1), still(8)] },
+  // Wood and roots strong enough to ride out the hurricane, to see how forks hold up bent hard.
+  {
+    file: '16-hurricane-detail',
+    scale: 3,
+    crop: 'fork',
+    actions: [...TREE_OF_LIFE, { strength: { wood: 4, roots: 4 } }, blow('steady', 1), still(8)],
+  },
   { file: '17-down-and-left', actions: [...TREE_OF_LIFE, blow('steady', 0.8, -Math.PI * 0.75), still(8)] },
   { file: '18-trunk-in-gale', actions: [...S_CURVE, blow('steady', 0.6), still(8)] },
+  { file: '19-after-the-storm', actions: [...TREE_OF_LIFE, blow('gusty', 0.75), still(6), blow('steady', 0), still(4)] },
+  { file: '20-pruned', actions: [...TREE_OF_LIFE, still(2), { cut: 3, at: 0.35 }, still(3)] },
+  { file: '21-pruned-stub-detail', scale: 3, crop: 'tip3', actions: [...TREE_OF_LIFE, still(2), { cut: 3, at: 0.35 }, still(3)] },
+  { file: '22-felled', actions: [...TREE_OF_LIFE, still(2), { cut: 0, at: 0.35 }, still(5)] },
+  { file: '23-uprooted', actions: [...TREE_OF_LIFE, { strength: { roots: 0.25 } }, blow('steady', 0.55), still(6)] },
+  { file: '24-regrown', actions: [...TREE_OF_LIFE, still(2), { cut: 2, at: 0.45 }, still(3), { select: 2 }, grow(2.5)] },
 ];
 
 const server = await createServer({ root, logLevel: 'error' });
@@ -88,7 +101,8 @@ try {
     });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error));
-    await page.goto(url);
+    // Frozen from the first frame, so time only moves when a scene steps it.
+    await page.goto(`${url}?frozen`);
     await page.waitForFunction(() => window.__arbaro !== undefined);
     // The debug panel is a tool, not part of the picture.
     await page.addStyleTag({ content: '.debug { display: none !important; }' });
@@ -101,9 +115,15 @@ try {
           debug.fork(action.fork, action.at, action.side);
         } else if (action.select !== undefined) {
           debug.select(action.select);
+        } else if (action.cut !== undefined) {
+          debug.cut(action.cut, action.at);
+        } else if (action.strength !== undefined) {
+          debug.strength(action.strength);
         } else if (action.wind !== undefined) {
-          debug.simulate(2, { grow: false, steer: 0 });
-          settled = true;
+          if (!settled) {
+            debug.simulate(2, { grow: false, steer: 0 });
+            settled = true;
+          }
           debug.wind(action.wind);
         } else {
           debug.simulate(action.seconds, { grow: action.grow, steer: action.steer });
@@ -113,6 +133,9 @@ try {
         debug.simulate(2, { grow: false, steer: 0 });
       }
       const tree = debug.tree();
+      if (tree === undefined) {
+        return {};
+      }
       const camera = debug.camera();
       const screen = (p) => camera.toScreen(p.x, p.y);
       const forked = tree.limbs[1]?.attachment;
@@ -120,6 +143,7 @@ try {
         base: screen(tree.root.points[0]),
         tip: screen(tree.active.tip),
         fork: forked === undefined ? undefined : screen(forked.parent.pointAt(forked.s)),
+        tips: tree.limbs.map((limb) => screen(limb.tip)),
       };
     }, scene.actions);
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -128,7 +152,8 @@ try {
     }
     let clip;
     if (scene.crop !== undefined) {
-      const anchor = anchors[scene.crop];
+      const limbTip = /^tip(\d+)$/.exec(scene.crop);
+      const anchor = limbTip === null ? anchors[scene.crop] : anchors.tips?.[Number(limbTip[1])];
       if (anchor === undefined) {
         throw new Error(`Scene ${scene.file} has no ${scene.crop} to crop around.`);
       }

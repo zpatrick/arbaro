@@ -58,6 +58,8 @@ art and tree-of-life drawings.
       limbs above it.
 - [x] Forks blend smoothly into their parents, with a rounded crotch above and a softer collar
       below.
+- [x] Wood never shrinks. A limb that loses what it carried keeps its girth, and new growth from a
+      cut end narrows smoothly out of it.
 - [ ] Spending resources on a limb thickens it, up to a limit. (Original brief.)
 
 ### Roots
@@ -68,8 +70,11 @@ art and tree-of-life drawings.
 
 ### Pruning
 
-- [ ] Cut a limb and everything growing from it away. Part of what was spent on it comes back.
-      The first trunk and taproot cannot be cut. (Original brief.)
+- [x] Right-click a limb to cut it there. Everything beyond the cut, offshoots included, falls to
+      the ground like a broken piece. The stump keeps its girth and can be grown again.
+- [x] The trunk can be felled down to a short stump. (The original brief kept the first trunk and
+      taproot from being cut.)
+- [ ] Part of what was spent on a cut limb comes back. (Original brief.)
 
 ## Resources and growth
 
@@ -129,11 +134,18 @@ Open direction from the backlog, which would replace spending on demand:
 
 ### Loads, breaking and falling
 
+- [x] A limb's own weight counts toward what it carries, so a limb grown too long, or a trunk grown
+      too tall and crooked, can break under itself.
 - [ ] Loads weigh limbs down: flowers, beehives sitting on a branch, and anything else hung on the
       tree.
-- [ ] Limbs break when the bending stress in them exceeds what the wood can take. The broken piece
-      falls to the ground, rests, then fades away.
-- [ ] The tree falls over if the trunk snaps or the roots can no longer hold it upright.
+- [x] Limbs break when the bending stress in them stays past what the wood can take; brief peaks
+      are survived, sustained overload is not. The broken piece falls with the motion it had,
+      lands, rests, then fades away. A piece that sat on top of its break tips over on the stump
+      before it falls.
+- [x] The tree falls over if the trunk snaps or the roots can no longer hold it upright. Until roots
+      exist, a thicker trunk stands for better roots. An uprooted tree tips over on its base, root
+      flare and all.
+- [x] When weight comes off a limb, the wood that carried it springs back.
 - [ ] Warn the player when the roots are struggling or a limb is close to snapping.
 
 ### Wind
@@ -171,7 +183,8 @@ Open direction from the backlog, which would replace spending on demand:
 - [ ] An in-game display of resources, goal progress, wind and time of day, plus facts about the
       selected limb: length, thickness, what it carries or anchors, its flowers, how close it is to
       snapping, and what it has stored.
-- [ ] Short messages for events: planting, a branch snapping, the tree falling.
+- [x] A short message when a limb snaps, the trunk snaps, or the roots give way.
+- [ ] A short message when the seed is planted.
 
 ## Root view
 
@@ -192,3 +205,5 @@ _Open._ A button flips into a view of the roots:
 - [x] A collapsible debug panel on the right edge, with sections for different systems.
 - [x] Wind section: a compass whose arrow you drag to point where the wind blows toward, a strength
       slider, and a choice of wind model with a description of each.
+- [x] Strength section: multipliers on how much the wood and the roots can take, and an overlay
+      showing how close each joint is to breaking.

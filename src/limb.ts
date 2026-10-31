@@ -52,6 +52,11 @@ export const LIMB = {
   taperExponent: 0.85,
   /** Angle between a new offshoot and the limb it forks from. */
   forkAngle: 0.6,
+  /**
+   * New growth out of a cut end narrows from the old wood's girth to its own over this many of
+   * the old wood's radii.
+   */
+  regrowthNeck: 2.5,
   /** Above a fork, the parent sheds the offshoot's share of its cross-section over this many offshoot radii. */
   forkBlend: 4,
 } as const;
@@ -133,6 +138,12 @@ export class Limb {
   private readonly segments: Segment[] = [{ length: 0, curvature: 0 }];
   /** Turn across each segment of the grown curve, after smoothing and relaxation. */
   private restTurns: number[] = [];
+  /**
+   * Cross-section the wood had at each multiple of the segment length when the limb last lost
+   * wood. Wood never shrinks when the load on it drops, so a cut or broken limb keeps its girth.
+   * Empty for a limb that has only ever grown.
+   */
+  private readonly girth: number[] = [];
   private readonly seed: number;
   private grown = 0;
   private speed = 0;
@@ -175,15 +186,65 @@ export class Limb {
   }
 
   /**
-   * Cross-section at distance `s` along the limb. Below a fork, the wood's cross-section is the
-   * sum of the two limbs above it, as in a real tree.
+   * Cross-section at distance `s` along the limb: as thick as what the wood carries, or as thick
+   * as it has ever grown there, whichever is more.
    */
   areaAt(s: number): number {
-    let area = ownRadius(Math.max(0, this.grown - s)) ** 2;
-    for (const child of this.children) {
-      area += child.baseArea * child.carriedAt(s);
+    return Math.max(this.loadAt(s), this.grownAt(s));
+  }
+
+  /**
+   * Remembers how thick the wood is everywhere along the limb, so it keeps that girth when it is
+   * about to lose some of what it carries.
+   */
+  holdGirth(): void {
+    for (let i = 0; i * SEGMENT_LENGTH <= this.grown; i += 1) {
+      const area = this.areaAt(i * SEGMENT_LENGTH);
+      if (i < this.girth.length) {
+        this.girth[i] = Math.max(at(this.girth, i), area);
+      } else {
+        this.girth.push(area);
+      }
     }
-    return area;
+  }
+
+  /**
+   * Cuts the limb back to `s`. The wood that stays keeps its girth, so the cut end is as thick as
+   * the wood was there. Offshoots past the cut must already have been removed, after the limb
+   * held its girth.
+   */
+  truncate(s: number): void {
+    invariant(s > 0 && s < this.grown, `Cannot cut a limb of length ${this.grown} at ${s}.`);
+    invariant(
+      this.children.every((child) => child.attachment !== undefined && child.attachment.s < s),
+      'Offshoots past a cut must be removed before the cut.',
+    );
+    this.holdGirth();
+    const atCut = this.areaAt(s);
+    let remaining = s;
+    let kept = 0;
+    for (const segment of this.segments) {
+      if (remaining <= 1e-12) {
+        break;
+      }
+      segment.length = Math.min(segment.length, remaining);
+      remaining -= segment.length;
+      kept += 1;
+    }
+    this.segments.length = kept;
+    // Hold the girth at the cut out to the next sample, so the cut end keeps its full thickness.
+    const last = Math.floor(s / SEGMENT_LENGTH) + 1;
+    this.girth.length = Math.min(this.girth.length, last);
+    this.girth[last] = atCut;
+    this.grown = s;
+    this.halt();
+  }
+
+  /** Detaches an offshoot from this limb. */
+  removeChild(child: Limb): void {
+    const index = this.children.indexOf(child);
+    invariant(index >= 0, 'Cannot remove an offshoot that does not grow from this limb.');
+    this.children.splice(index, 1);
   }
 
   /** Point on the drawn centerline at distance `s`, interpolated between samples. */
@@ -311,6 +372,35 @@ export class Limb {
     }
     const blend = Math.min(LIMB.forkBlend * Math.sqrt(this.baseArea), 0.6 * (parent.length - fork));
     return 1 - smoothstep(fork, fork + Math.max(blend, 1e-6), parentS);
+  }
+
+  /**
+   * Cross-section the load on the wood calls for: the rest of this limb plus every offshoot
+   * forked off above `s`. Below a fork, it is the sum of the two limbs above it, as in a real tree.
+   */
+  private loadAt(s: number): number {
+    let area = ownRadius(Math.max(0, this.grown - s)) ** 2;
+    for (const child of this.children) {
+      area += child.baseArea * child.carriedAt(s);
+    }
+    return area;
+  }
+
+  /** Cross-section the wood has grown to at `s`, which it keeps even if its load drops. */
+  private grownAt(s: number): number {
+    const samples = this.girth.length;
+    if (samples === 0) {
+      return 0;
+    }
+    const position = s / SEGMENT_LENGTH;
+    const i = Math.floor(position);
+    if (i + 1 < samples) {
+      return lerp(at(this.girth, i), at(this.girth, i + 1), position - i);
+    }
+    // New wood past the old growth narrows smoothly from the old girth to its own.
+    const end = (samples - 1) * SEGMENT_LENGTH;
+    const area = at(this.girth, samples - 1);
+    return area * (1 - smoothstep(end, end + LIMB.regrowthNeck * Math.sqrt(area), s));
   }
 
   /** Lays out a centerline from `base` by turning `turns[i]` across each segment. */

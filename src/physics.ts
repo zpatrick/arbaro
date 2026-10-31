@@ -25,15 +25,71 @@ export const PHYSICS = {
   step: 1 / 120,
 } as const;
 
+export const FAILURE = {
+  /**
+   * Bending stress at which wood breaks, in pascals. Real green wood takes about 40 MPa, but it is
+   * also ninety times stiffer than the wood above, which bends visibly well before it breaks. A
+   * healthy tree carries about a quarter of this in calm air and starts losing limbs in a storm.
+   */
+  breakingStress: 2e6,
+  /**
+   * Torque the roots can hold, in newton meters per cubic meter of trunk radius at the ground. A
+   * stand-in until roots are simulated: a thicker trunk is a better-rooted one. Trees uproot in
+   * violent storms, after their weakest limbs have gone.
+   */
+  rootHold: 2.1e6,
+  /** Damage per second while a joint is held exactly at its limit. It gives way at 1. */
+  damageAtLimit: 0.4,
+  /** Extra damage per second for each multiple of its limit a joint is pushed past it. */
+  damagePerOverload: 4,
+  /** Damage healed per second once a joint is comfortably back under its limit. */
+  healing: 0.3,
+} as const;
+
 /** Joint angles below this, in radians, are too small to see. */
 const STILL_ANGLE = 2e-5;
 /** Joint speeds below this, in radians per second, are too small to see. */
 const STILL_RATE = 2e-4;
+/** Seconds for a joint to stop pushing against weight it suddenly lost. */
+const RECOIL = 0.45;
 
-/** How far each joint along a limb has been pushed from the grown shape, and how fast it is moving. */
+/** Multipliers on how much the tree can take, from the debug panel. */
+export interface Strength {
+  wood: number;
+  roots: number;
+}
+
+/** A joint that gave way. */
+export interface Failure {
+  limb: Limb;
+  /** Distance along the limb of the joint that gave way. */
+  s: number;
+  /** The wood snapped, or the roots let go of the trunk. */
+  kind: 'snap' | 'uproot';
+  /** The way the load was turning the wood beyond the joint: 1 clockwise, -1 counterclockwise. */
+  turning: 1 | -1;
+}
+
+/** State kept for every joint along a limb, across rebuilds of the bodies. */
 interface Sway {
+  /** How far each joint has been pushed from the grown shape, in radians. */
   angle: number[];
+  /** How fast each joint is moving, in radians per second. */
   rate: number[];
+  /** Overload damage each joint has taken. It gives way at 1. */
+  damage: number[];
+  /** Torque each joint still pushes with after losing weight it carried. */
+  recoil: number[];
+  /** Torque each joint was preloaded with at the last rebuild, to tell how much weight it lost. */
+  preload: number[];
+}
+
+/** Number of joints along a limb of this length. */
+function jointCount(length: number): number {
+  // Joints sit at whole multiples of the spacing, so growth only ever adds joints at the tip and
+  // every existing joint keeps its motion. The last body runs from half to one and a half
+  // spacings long.
+  return Math.max(1, Math.floor(length / PHYSICS.jointSpacing + 0.5));
 }
 
 /**
@@ -42,6 +98,7 @@ interface Sway {
  * spatial quantity in world coordinates about the origin.
  */
 class Body {
+  readonly limb: Limb;
   readonly sway: Sway;
   /** Index of the base joint along its limb. */
   readonly joint: number;
@@ -64,6 +121,10 @@ class Body {
   readonly radius: number;
   /** Torque per radian at the base joint. */
   readonly stiffness: number;
+  /** Bending torque the wood at the base joint can take before it breaks. */
+  readonly capacity: number;
+  /** Torque the roots can hold, for the body standing on the ground. */
+  readonly anchorage: number | undefined;
   /** Keys the body's own eddies in the buffeting wind, so they stay put when bodies are rebuilt. */
   readonly eddy: number;
   /** Torque per radian per second at the base joint. */
@@ -73,6 +134,10 @@ class Body {
 
   angle: number;
   rate: number;
+  damage: number;
+  recoil: number;
+  /** Torque at the base joint as a fraction of what it can take. */
+  strain = 0;
 
   // Per-step working values, named after their symbols in the algorithm.
   theta = 0;
@@ -102,6 +167,7 @@ class Body {
   a3 = 0;
 
   constructor(fields: {
+    limb: Limb;
     sway: Sway;
     joint: number;
     parent: Body | undefined;
@@ -115,8 +181,11 @@ class Body {
     inertia: number;
     radius: number;
     stiffness: number;
+    capacity: number;
+    anchorage: number | undefined;
     eddy: number;
   }) {
+    this.limb = fields.limb;
     this.sway = fields.sway;
     this.joint = fields.joint;
     this.parent = fields.parent;
@@ -130,9 +199,18 @@ class Body {
     this.inertia = fields.inertia;
     this.radius = fields.radius;
     this.stiffness = fields.stiffness;
+    this.capacity = fields.capacity;
+    this.anchorage = fields.anchorage;
     this.eddy = fields.eddy;
     this.angle = at(fields.sway.angle, fields.joint);
     this.rate = at(fields.sway.rate, fields.joint);
+    this.damage = at(fields.sway.damage, fields.joint);
+    this.recoil = at(fields.sway.recoil, fields.joint);
+  }
+
+  /** Bending torque the base joint is carrying right now. */
+  get moment(): number {
+    return this.preload + this.recoil - this.stiffness * this.angle - this.damping * this.rate;
   }
 }
 
@@ -144,18 +222,24 @@ interface RestPose {
 }
 
 /**
- * Bends the tree under gravity and wind. Each limb is a chain of rigid bodies joined by springs as
- * stiff as the wood at that point, so thin twigs flex while the trunk barely moves. The grown
- * shape is the resting shape: the springs are preloaded to hold the tree's own weight, and only
- * wind, or weight the tree did not grow with, moves it.
+ * Bends the tree under gravity and wind, and finds where it breaks. Each limb is a chain of rigid
+ * bodies joined by springs as stiff as the wood at that point, so thin twigs flex while the trunk
+ * barely moves. The grown shape is the resting shape: the springs are preloaded to hold the
+ * tree's own weight, and only wind, or weight the tree did not grow with, moves it. The preload
+ * still counts toward what each joint carries, so a limb grown too long can break under its own
+ * weight.
  */
 export class TreePhysics {
   /** Mass-weighted average velocity of the whole tree, in meters per second. Zero at rest. */
   readonly motion = { x: 0, y: 0 };
   private readonly sways = new Map<Limb, Sway>();
   private bodies: Body[] = [];
+  /** Where each limb's bodies start in `bodies`, and how many it has. */
+  private ranges = new Map<Limb, { first: number; count: number }>();
   private stale = true;
   private still = true;
+  /** Set when the tree lost wood, so the next rebuild knows which joints suddenly carry less. */
+  private lost = false;
 
   /** True while the tree is at rest in calm air, so the grown shape is the drawn shape. */
   get asleep(): boolean {
@@ -172,6 +256,12 @@ export class TreePhysics {
     return this.still ? undefined : this.sways.get(limb)?.angle;
   }
 
+  /** How close each joint along the limb is to giving way, as a fraction of its limit. */
+  strains(limb: Limb): readonly number[] | undefined {
+    const range = this.ranges.get(limb);
+    return range === undefined ? undefined : this.bodies.slice(range.first, range.first + range.count).map((b) => b.strain);
+  }
+
   /** Largest joint angle anywhere in the tree, in radians. */
   maxBend(): number {
     let largest = 0;
@@ -181,48 +271,138 @@ export class TreePhysics {
     return largest;
   }
 
-  step(dt: number, limbs: readonly Limb[], wind: Wind): void {
-    if (this.still && wind.calm) {
+  /** Largest strain anywhere in the tree, as a fraction of the limit at that joint. */
+  maxStrain(): number {
+    let largest = 0;
+    for (const body of this.bodies) {
+      largest = Math.max(largest, body.strain);
+    }
+    return largest;
+  }
+
+  /**
+   * Velocity of the wood at (x, y) on the body holding distance `s` along `limb`, and that body's
+   * spin. Zero while the tree is at rest, and for a limb grown since the last step, which has not
+   * moved yet.
+   */
+  velocityAt(limb: Limb, s: number, x: number, y: number): { x: number; y: number; spin: number } {
+    const range = this.ranges.get(limb);
+    if (this.still || range === undefined) {
+      return { x: 0, y: 0, spin: 0 };
+    }
+    const index = range.first + Math.min(Math.floor(s / PHYSICS.jointSpacing), range.count - 1);
+    const b = at(this.bodies, index);
+    return { x: b.vx - b.w * y, y: b.vy + b.w * x, spin: b.w };
+  }
+
+  /** Drops the state of limbs that left the tree. */
+  forget(limbs: readonly Limb[]): void {
+    for (const limb of limbs) {
+      this.sways.delete(limb);
+    }
+    this.lost = true;
+  }
+
+  /** Drops the state of joints past the end of a limb that was cut short. */
+  trim(limb: Limb): void {
+    const sway = this.sways.get(limb);
+    if (sway === undefined) {
       return;
     }
-    this.still = false;
+    const count = jointCount(limb.length);
+    for (const values of [sway.angle, sway.rate, sway.damage, sway.recoil, sway.preload]) {
+      values.length = Math.min(values.length, count);
+    }
+    this.lost = true;
+  }
+
+  /** Advances the tree by `dt` seconds and returns the joints that gave way. */
+  step(dt: number, limbs: readonly Limb[], wind: Wind, strength: Strength): Failure[] {
     if (this.stale) {
       this.sync(limbs);
       this.stale = false;
     }
-    const steps = Math.max(1, Math.ceil(dt / PHYSICS.step - 1e-9));
-    for (let i = 0; i < steps; i += 1) {
-      this.integrate(dt / steps, wind);
-    }
-    const settled = wind.calm && this.bodies.every((b) => Math.abs(b.angle) < STILL_ANGLE && Math.abs(b.rate) < STILL_RATE);
-    for (const body of this.bodies) {
-      if (settled) {
-        body.angle = 0;
-        body.rate = 0;
+    if (!this.still || !wind.calm) {
+      this.still = false;
+      const steps = Math.max(1, Math.ceil(dt / PHYSICS.step - 1e-9));
+      for (let i = 0; i < steps; i += 1) {
+        this.integrate(dt / steps, wind);
       }
+    }
+    const failures = this.assess(dt, strength);
+    if (!this.still) {
+      const fade = Math.exp(-dt / RECOIL);
+      for (const body of this.bodies) {
+        body.recoil *= fade;
+      }
+      const settled =
+        wind.calm &&
+        this.bodies.every(
+          (b) =>
+            Math.abs(b.angle) < STILL_ANGLE &&
+            Math.abs(b.rate) < STILL_RATE &&
+            Math.abs(b.recoil) < b.stiffness * STILL_ANGLE,
+        );
+      if (settled) {
+        for (const body of this.bodies) {
+          body.angle = 0;
+          body.rate = 0;
+          body.recoil = 0;
+        }
+        this.motion.x = 0;
+        this.motion.y = 0;
+        this.still = true;
+      }
+    }
+    for (const body of this.bodies) {
       body.sway.angle[body.joint] = body.angle;
       body.sway.rate[body.joint] = body.rate;
+      body.sway.damage[body.joint] = body.damage;
+      body.sway.recoil[body.joint] = body.recoil;
     }
-    if (settled) {
-      this.motion.x = 0;
-      this.motion.y = 0;
-    }
-    this.still = settled;
+    return failures;
   }
 
-  /** Rebuilds the bodies from the grown shape, keeping every joint's motion. */
+  /** Works out how close every joint is to its limit, and which have taken enough damage to go. */
+  private assess(dt: number, strength: Strength): Failure[] {
+    const failures: Failure[] = [];
+    for (const b of this.bodies) {
+      // The joint pushes back against the load, so a counterclockwise joint torque means the load
+      // turns the wood clockwise.
+      const turning = b.moment > 0 ? 1 : -1;
+      const moment = Math.abs(b.moment);
+      let strain = moment / (b.capacity * strength.wood);
+      let kind: Failure['kind'] = 'snap';
+      if (b.anchorage !== undefined) {
+        const pull = moment / (b.anchorage * strength.roots);
+        if (pull > strain) {
+          strain = pull;
+          kind = 'uproot';
+        }
+      }
+      b.strain = strain;
+      if (strain > 1) {
+        b.damage += dt * (FAILURE.damageAtLimit + FAILURE.damagePerOverload * (strain - 1));
+      } else if (strain < 0.9) {
+        b.damage = Math.max(0, b.damage - FAILURE.healing * dt);
+      }
+      if (b.damage >= 1) {
+        failures.push({ limb: b.limb, s: b.joint * PHYSICS.jointSpacing, kind, turning });
+      }
+    }
+    return failures;
+  }
+
+  /** Rebuilds the bodies from the grown shape, keeping every joint's state. */
   private sync(limbs: readonly Limb[]): void {
     const spacing = PHYSICS.jointSpacing;
     const bodies: Body[] = [];
     const poses: RestPose[] = [];
-    const firstBody = new Map<Limb, { index: number; count: number }>();
+    const ranges = new Map<Limb, { first: number; count: number }>();
     for (const [limbIndex, limb] of limbs.entries()) {
-      // Joints sit at whole multiples of the spacing, so growth only ever adds joints at the tip
-      // and every existing joint keeps its motion. The last body runs from half to one and a
-      // half spacings long.
-      const count = Math.max(1, Math.floor(limb.length / spacing + 0.5));
+      const count = jointCount(limb.length);
       const sway = this.swayFor(limb, count);
-      firstBody.set(limb, { index: bodies.length, count });
+      ranges.set(limb, { first: bodies.length, count });
       for (let k = 0; k < count; k += 1) {
         const s0 = k * spacing;
         const s1 = k === count - 1 ? limb.length : (k + 1) * spacing;
@@ -243,9 +423,9 @@ export class TreePhysics {
           parent = at(bodies, bodies.length - 1);
           parentPose = at(poses, poses.length - 1);
         } else if (limb.attachment !== undefined) {
-          const host = firstBody.get(limb.attachment.parent);
+          const host = ranges.get(limb.attachment.parent);
           invariant(host !== undefined, 'A parent limb must be simulated before its offshoots.');
-          const index = host.index + Math.min(Math.floor(limb.attachment.s / spacing), host.count - 1);
+          const index = host.first + Math.min(Math.floor(limb.attachment.s / spacing), host.count - 1);
           parent = at(bodies, index);
           parentPose = at(poses, index);
         }
@@ -263,6 +443,7 @@ export class TreePhysics {
         }
         bodies.push(
           new Body({
+            limb,
             sway,
             joint: k,
             parent,
@@ -276,6 +457,8 @@ export class TreePhysics {
             inertia: mass * ((length * length) / 12 + (r0 * r0 + r1 * r1) / 8),
             radius: (r0 + r1) / 2,
             stiffness: (PHYSICS.stiffness * Math.PI * r0 ** 4) / (4 * span),
+            capacity: (FAILURE.breakingStress * Math.PI * r0 ** 3) / 4,
+            anchorage: parent === undefined ? FAILURE.rootHold * r0 ** 3 : undefined,
             eddy: limbIndex * 1009 + k,
           }),
         );
@@ -283,18 +466,32 @@ export class TreePhysics {
       }
     }
     this.weigh(bodies, poses);
+    // A joint that lost weight it was preloaded for pushes back until it settles, so the rest of
+    // the tree springs up when a limb comes off.
+    for (const body of bodies) {
+      const preload = body.sway.preload;
+      if (this.lost && body.joint < preload.length) {
+        body.recoil += at(preload, body.joint) - body.preload;
+        this.still = false;
+      }
+      preload[body.joint] = body.preload;
+    }
+    this.lost = false;
     this.bodies = bodies;
+    this.ranges = ranges;
   }
 
   private swayFor(limb: Limb, count: number): Sway {
     let sway = this.sways.get(limb);
     if (sway === undefined) {
-      sway = { angle: [], rate: [] };
+      sway = { angle: [], rate: [], damage: [], recoil: [], preload: [] };
       this.sways.set(limb, sway);
     }
     while (sway.angle.length < count) {
       sway.angle.push(0);
       sway.rate.push(0);
+      sway.damage.push(0);
+      sway.recoil.push(0);
     }
     return sway;
   }
@@ -441,7 +638,7 @@ export class TreePhysics {
       const u2 = b.i12 + b.i22 * jy - b.i23 * jx;
       const u3 = b.i13 + b.i23 * jy - b.i33 * jx;
       const d = u1 + jy * u2 - jx * u3 + h * b.damping + h * h * b.stiffness;
-      const torque = b.preload - b.stiffness * b.angle - (b.damping + h * b.stiffness) * b.rate;
+      const torque = b.preload + b.recoil - b.stiffness * b.angle - (b.damping + h * b.stiffness) * b.rate;
       const u = torque - (b.p1 + jy * b.p2 - jx * b.p3);
       b.u1 = u1;
       b.u2 = u2;

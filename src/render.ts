@@ -1,8 +1,10 @@
 import type { Camera } from './camera';
+import type { Debris } from './debris';
 import type { Limb } from './limb';
 import { PALETTE } from './palette';
+import { PHYSICS } from './physics';
 import { FLARE, type Pick, type Tree } from './tree';
-import { at, invariant, Rng } from './util';
+import { at, clamp, invariant, lerp, Rng } from './util';
 
 /** No limb renders thinner than this many CSS pixels across, so tips survive zooming out. */
 const MIN_WIDTH_PX = 1.1;
@@ -22,6 +24,24 @@ const FILLET_ROUNDNESS = 0.55;
 const TIP_RING_PX = 9;
 /** Length of the line previewing where a fork will grow, in CSS pixels. */
 const FORK_PREVIEW_PX = 22;
+/** The strain overlay marks joints carrying more than this fraction of what they can take. */
+const STRAIN_SHOWN = 0.3;
+
+/** Everything drawn in one frame. */
+export interface Scene {
+  /** The standing tree, if there is one. */
+  tree: Tree | undefined;
+  /** Pieces that broke or were cut off, falling or lying on the ground. */
+  debris: readonly Debris[];
+  hover: Pick | undefined;
+  /** Whether to mark how close each joint is to breaking. */
+  strain: boolean;
+}
+
+/** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
+export function minimumRadius(camera: Camera): number {
+  return MIN_WIDTH_PX / 2 / camera.scale;
+}
 
 interface Vec {
   x: number;
@@ -87,7 +107,7 @@ export class Renderer {
   }
 
   /** Draws in device pixels throughout so every ink shape shares one grain. */
-  draw(camera: Camera, tree: Tree, hover: Pick | undefined): void {
+  draw(camera: Camera, scene: Scene): void {
     const ctx = this.ctx;
     invariant(this.sky !== undefined, 'Renderer.resize must run before draw.');
     const width = this.canvas.width;
@@ -98,23 +118,89 @@ export class Renderer {
     ctx.fillRect(0, 0, width, groundY);
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
-    // one silhouette and the grain lands on each pixel of ink exactly once.
+    // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
+    // in, so one lying on the ground merges into it.
     const ink = new Path2D();
     ink.rect(0, groundY, width, this.canvas.height - groundY);
     const world = camera.worldTransform();
-    for (const shape of treeShapes(tree, MIN_WIDTH_PX / 2 / camera.scale)) {
-      ink.addPath(shape, world);
+    if (scene.tree !== undefined) {
+      for (const shape of treeShapes(scene.tree, minimumRadius(camera))) {
+        ink.addPath(shape, world);
+      }
     }
+    const fading: Debris[] = [];
+    for (const piece of scene.debris) {
+      if (piece.alpha < 1) {
+        fading.push(piece);
+        continue;
+      }
+      const placed = world.multiply(piece.transform);
+      for (const shape of piece.shapes) {
+        ink.addPath(shape, placed);
+      }
+    }
+    this.fillInk(ink, 1);
+    // A fading piece needs its own fill to be see-through.
+    for (const piece of fading) {
+      const path = new Path2D();
+      const placed = world.multiply(piece.transform);
+      for (const shape of piece.shapes) {
+        path.addPath(shape, placed);
+      }
+      this.fillInk(path, piece.alpha);
+    }
+
+    if (scene.tree !== undefined) {
+      if (scene.strain) {
+        this.drawStrain(camera, scene.tree);
+      }
+      this.drawGuides(camera, scene.tree, scene.hover);
+    }
+  }
+
+  private fillInk(path: Path2D, alpha: number): void {
+    const ctx = this.ctx;
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = PALETTE.ink;
-    ctx.fill(ink);
+    ctx.fill(path);
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = INK_GRAIN;
+    ctx.globalAlpha = INK_GRAIN * alpha;
     ctx.fillStyle = this.grain;
-    ctx.fill(ink);
+    ctx.fill(path);
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
+  }
 
-    this.drawGuides(camera, tree, hover);
+  /**
+   * Shades the wood around each joint carrying a good share of what it can take, amber deepening
+   * to red at its limit.
+   */
+  private drawStrain(camera: Camera, tree: Tree): void {
+    const ctx = this.ctx;
+    const spacing = PHYSICS.jointSpacing;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.lineCap = 'butt';
+    for (const limb of tree.limbs) {
+      // A limb grown since the last physics step has not been weighed yet.
+      const strains = tree.physics.strains(limb) ?? [];
+      strains.forEach((strain, joint) => {
+        const t = clamp((strain - STRAIN_SHOWN) / (1 - STRAIN_SHOWN), 0, 1);
+        if (t <= 0) {
+          return;
+        }
+        const s = joint * spacing;
+        const from = limb.pointAt(Math.max(0, s - spacing / 2));
+        const to = limb.pointAt(Math.min(limb.length, s + spacing / 2));
+        const a = camera.toScreen(from.x, from.y);
+        const b = camera.toScreen(to.x, to.y);
+        ctx.strokeStyle = `rgba(${lerp(222, 196, t)}, ${lerp(160, 40, t)}, ${lerp(60, 30, t)}, ${0.3 + 0.55 * t})`;
+        ctx.lineWidth = Math.max(4, 2 * limb.radiusAt(s) * camera.scale);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      });
+    }
   }
 
   /** Marks the limb being grown, and previews what a click would do. */
@@ -189,7 +275,7 @@ function grainTile(): HTMLCanvasElement {
  * Every shape that makes up the tree, in world coordinates and all wound clockwise: one outline
  * per limb plus the fillets that blend each offshoot into its parent.
  */
-function treeShapes(tree: Tree, minRadius: number): Path2D[] {
+export function treeShapes(tree: Tree, minRadius: number): Path2D[] {
   const edges = new Map<Limb, Edges>();
   const shapes: Path2D[] = [];
   for (const limb of tree.limbs) {
@@ -205,6 +291,44 @@ function treeShapes(tree: Tree, minRadius: number): Path2D[] {
     shapes.push(...forkFillets(limb, own, parent, minRadius));
   }
   return shapes;
+}
+
+/**
+ * Shapes of everything beyond `s` on `limb`, in world coordinates: the rest of the limb, closed
+ * straight across the cut, and every offshoot forked off past the cut, blended into its parent.
+ */
+export function pieceShapes(limb: Limb, s: number, minRadius: number): Path2D[] {
+  const cut = { left: beyond(edge(limb, minRadius, 1), s), right: beyond(edge(limb, minRadius, -1), s) };
+  const shapes = [limbOutline(limb, cut, minRadius)];
+  const edges = new Map<Limb, Edges>([[limb, cut]]);
+  const visit = (parent: Limb, parentEdges: Edges): void => {
+    for (const child of parent.children) {
+      invariant(child.attachment !== undefined, 'An offshoot must fork off its parent.');
+      if (parent === limb && child.attachment.s < s) {
+        continue;
+      }
+      const own = { left: edge(child, minRadius, 1), right: edge(child, minRadius, -1) };
+      edges.set(child, own);
+      shapes.push(limbOutline(child, own, minRadius), ...forkFillets(child, own, parentEdges, minRadius));
+      visit(child, own);
+    }
+  };
+  visit(limb, cut);
+  return shapes;
+}
+
+/** The part of an edge from distance `s` on, starting with a point exactly at `s`. */
+function beyond(points: readonly EdgePoint[], s: number): EdgePoint[] {
+  const index = points.findIndex((p) => p.s >= s);
+  invariant(index >= 0, `Nothing on this edge lies past ${s}.`);
+  if (index === 0) {
+    return [...points];
+  }
+  const a = at(points, index - 1);
+  const b = at(points, index);
+  const t = (s - a.s) / (b.s - a.s);
+  const start = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), tx: b.tx, ty: b.ty, s };
+  return [start, ...points.slice(index)];
 }
 
 /**

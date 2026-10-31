@@ -1,8 +1,11 @@
+import type { Strength } from './physics';
 import { clamp, invariant } from './util';
 import { MAX_WIND_SPEED, WIND_MODELS, type WindModel, type WindSettings } from './wind';
 
-const STORAGE_KEY = 'arbaro.debug.v1';
+const STORAGE_KEY = 'arbaro.debug.v2';
 const SVG_NS = 'http://www.w3.org/2000/svg';
+/** Strength sliders run from a quarter to four times normal, evenly in ratio. */
+const STRENGTH_RANGE = 4;
 
 /** Beaufort scale: the wind speed in m/s where each named wind begins. */
 const BEAUFORT: readonly (readonly [number, string])[] = [
@@ -27,6 +30,8 @@ const HEADINGS = ['right', 'up and right', 'up', 'up and left', 'left', 'down an
 interface Saved {
   open: boolean;
   wind: WindSettings;
+  strength: Strength;
+  showStrain: boolean;
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(
@@ -72,26 +77,73 @@ function draggable(target: Element, onMove: (event: PointerEvent) => void): void
   });
 }
 
+/** A labeled slider over 0 to 1, with a readout beside the label. */
+class Slider {
+  private readonly fill: HTMLElement;
+  private readonly thumb: HTMLElement;
+  private readonly readout: HTMLElement;
+
+  constructor(parent: Element, label: string, onChange: (value: number) => void) {
+    const row = element('div', 'debug-label', parent);
+    element('span', '', row, label);
+    this.readout = element('span', 'debug-value', row);
+    const track = element('div', 'slider', parent);
+    element('div', 'slider-track', track);
+    this.fill = element('div', 'slider-fill', track);
+    this.thumb = element('div', 'slider-thumb', track);
+    draggable(track, (event) => {
+      const box = track.getBoundingClientRect();
+      onChange(clamp((event.clientX - box.left - 6) / (box.width - 12), 0, 1));
+    });
+  }
+
+  show(value: number, readout: string): void {
+    const percent = `${value * 100}%`;
+    this.fill.style.width = `calc(${percent} - ${value * 12}px)`;
+    this.thumb.style.left = `calc(6px + ${percent} - ${value * 12}px)`;
+    this.readout.textContent = readout;
+  }
+}
+
+/** Maps a strength multiplier onto a slider position and back. */
+function strengthToSlider(multiplier: number): number {
+  return 0.5 + Math.log(multiplier) / (2 * Math.log(STRENGTH_RANGE));
+}
+
+function sliderToStrength(value: number): number {
+  return Math.pow(STRENGTH_RANGE, 2 * value - 1);
+}
+
 function load(): Saved | undefined {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (raw === null) {
     return undefined;
   }
   const saved: unknown = JSON.parse(raw);
+  const isNumber = (value: unknown): value is number => typeof value === 'number';
   invariant(
     typeof saved === 'object' &&
       saved !== null &&
       'open' in saved &&
       typeof saved.open === 'boolean' &&
+      'showStrain' in saved &&
+      typeof saved.showStrain === 'boolean' &&
       'wind' in saved &&
       typeof saved.wind === 'object' &&
       saved.wind !== null &&
       'direction' in saved.wind &&
-      typeof saved.wind.direction === 'number' &&
+      isNumber(saved.wind.direction) &&
       'strength' in saved.wind &&
-      typeof saved.wind.strength === 'number' &&
+      isNumber(saved.wind.strength) &&
       'model' in saved.wind &&
-      WIND_MODELS.some((m) => m.id === (saved.wind as { model: unknown }).model),
+      WIND_MODELS.some((m) => m.id === (saved.wind as { model: unknown }).model) &&
+      'strength' in saved &&
+      typeof saved.strength === 'object' &&
+      saved.strength !== null &&
+      'wood' in saved.strength &&
+      isNumber(saved.strength.wood) &&
+      'roots' in saved.strength &&
+      isNumber(saved.strength.roots),
     `Saved debug settings under ${STORAGE_KEY} are malformed: ${raw}`,
   );
   return saved as Saved;
@@ -101,19 +153,26 @@ function load(): Saved | undefined {
 export class DebugPanel {
   /** Live wind settings. The wind reads these directly, so changes apply on the next frame. */
   readonly wind: WindSettings;
+  /** Live multipliers on how much the tree can take before it breaks. */
+  readonly strength: Strength;
+  /** Whether to mark how close each joint is to breaking. */
+  showStrain: boolean;
   private open: boolean;
   private readonly root: HTMLElement;
   private readonly arrow: SVGPathElement;
   private readonly heading: HTMLElement;
-  private readonly fill: HTMLElement;
-  private readonly thumb: HTMLElement;
-  private readonly speed: HTMLElement;
+  private readonly speed: Slider;
   private readonly models = new Map<WindModel, HTMLElement>();
   private readonly description: HTMLElement;
+  private readonly wood: Slider;
+  private readonly roots: Slider;
+  private readonly strainToggle: HTMLElement;
 
   constructor(host: HTMLElement) {
     const saved = load();
     this.wind = saved === undefined ? { direction: 0, strength: 0, model: 'steady' } : { ...saved.wind };
+    this.strength = saved === undefined ? { wood: 1, roots: 1 } : { ...saved.strength };
+    this.showStrain = saved?.showStrain ?? false;
     this.open = saved?.open ?? false;
 
     this.root = element('aside', 'debug', host);
@@ -162,18 +221,7 @@ export class DebugPanel {
       }
     });
     this.heading = element('div', 'compass-readout', wind);
-
-    const strengthRow = element('div', 'debug-label', wind);
-    element('span', '', strengthRow, 'Strength');
-    this.speed = element('span', 'debug-value', strengthRow);
-    const slider = element('div', 'slider', wind);
-    element('div', 'slider-track', slider);
-    this.fill = element('div', 'slider-fill', slider);
-    this.thumb = element('div', 'slider-thumb', slider);
-    draggable(slider, (event) => {
-      const box = slider.getBoundingClientRect();
-      this.set({ strength: clamp((event.clientX - box.left - 6) / (box.width - 12), 0, 1) });
-    });
+    this.speed = new Slider(wind, 'Strength', (value) => this.set({ strength: value }));
 
     element('div', 'debug-label', wind, 'Model');
     const list = element('div', 'models', wind);
@@ -185,6 +233,19 @@ export class DebugPanel {
       this.models.set(model.id, row);
     }
     this.description = element('p', 'model-description', wind);
+
+    const strength = element('section', 'debug-section', card);
+    element('h2', 'debug-title', strength, 'Strength');
+    this.wood = new Slider(strength, 'Wood', (value) => this.setStrength({ wood: sliderToStrength(value) }));
+    this.roots = new Slider(strength, 'Roots', (value) => this.setStrength({ roots: sliderToStrength(value) }));
+    this.strainToggle = element('div', 'model debug-toggle', strength);
+    element('span', 'model-mark', this.strainToggle);
+    element('span', '', this.strainToggle, 'Show strain');
+    this.strainToggle.addEventListener('click', () => {
+      this.showStrain = !this.showStrain;
+      this.render();
+      this.save();
+    });
 
     window.addEventListener('keydown', (event) => {
       if (event.code === 'Backquote' && !event.repeat) {
@@ -206,6 +267,12 @@ export class DebugPanel {
     this.save();
   }
 
+  setStrength(settings: Partial<Strength>): void {
+    Object.assign(this.strength, settings);
+    this.render();
+    this.save();
+  }
+
   private render(): void {
     this.root.classList.toggle('open', this.open);
     const { direction, strength, model } = this.wind;
@@ -215,13 +282,10 @@ export class DebugPanel {
     invariant(heading !== undefined, `No heading for direction ${direction}.`);
     this.heading.textContent = `Blowing ${heading}`;
 
-    const percent = `${strength * 100}%`;
-    this.fill.style.width = `calc(${percent} - ${strength * 12}px)`;
-    this.thumb.style.left = `calc(6px + ${percent} - ${strength * 12}px)`;
     const speed = strength * MAX_WIND_SPEED;
     const named = [...BEAUFORT].reverse().find(([from]) => speed >= from);
     invariant(named !== undefined, `No Beaufort name for ${speed} m/s.`);
-    this.speed.textContent = `${Math.round(speed)} m/s · ${named[1]}`;
+    this.speed.show(strength, `${Math.round(speed)} m/s · ${named[1]}`);
 
     for (const [id, row] of this.models) {
       row.classList.toggle('selected', id === model);
@@ -229,10 +293,14 @@ export class DebugPanel {
     const chosen = WIND_MODELS.find((m) => m.id === model);
     invariant(chosen !== undefined, `Unknown wind model ${model}.`);
     this.description.textContent = chosen.description;
+
+    this.wood.show(strengthToSlider(this.strength.wood), `×${this.strength.wood.toFixed(2)}`);
+    this.roots.show(strengthToSlider(this.strength.roots), `×${this.strength.roots.toFixed(2)}`);
+    this.strainToggle.classList.toggle('selected', this.showStrain);
   }
 
   private save(): void {
-    const saved: Saved = { open: this.open, wind: this.wind };
+    const saved: Saved = { open: this.open, wind: this.wind, strength: this.strength, showStrain: this.showStrain };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   }
 }
