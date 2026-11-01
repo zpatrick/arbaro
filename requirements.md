@@ -126,6 +126,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one
       crowning each limb long enough to flower and more along the thin wood behind it. The tree
       grows back a flower the wind takes after a while.
+- [x] How many flowers a limb carries follows how much thin wood it has, not a set number: they
+      are spaced along all of it, taking turns on either side, at one and a half times their size,
+      so a long twiggy limb carries many, a short one a few, and larger flowers fewer.
 - [x] Flowers open at sunrise and close into buds at sunset, and are seen opening and closing.
 - [x] Through autumn they turn yellow, then orange, then brown, wilt, and drop.
 - [x] Strong wind tears flowers loose; a typical open flower starts to go in a storm. A larger

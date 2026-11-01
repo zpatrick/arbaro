@@ -53,10 +53,12 @@ export const FLOWERS = {
   tipReach: 0.2,
   /** A limb flowers once it is this long, in world units, when the tree places the flowers. */
   firstBloom: 1.2,
-  /** Spacing of the flowers the tree places along a limb, back from its tip, in world units. */
-  spacing: 0.62,
-  /** Most flowers the tree places on one limb, counting the one at its tip. */
-  perLimb: 3,
+  /**
+   * Spacing of the flowers the tree places along a limb, back from its tip, as a multiple of
+   * their size, so larger flowers grow further apart. Neighbors take turns on either side, so
+   * flowers on the same side are twice this apart.
+   */
+  spacing: 1.5,
   /** The tree keeps its flowers this far from where a limb starts, in world units. */
   clearOfBase: 0.5,
   /** Seconds the tree takes to grow back a flower it lost to the wind. */
@@ -461,7 +463,8 @@ export class Flowers {
 
   /**
    * The tree's own flowers: one crowning each limb long enough to flower, and more spaced back
-   * along the thin wood behind it, alternating sides, wherever there is room for one.
+   * along the thin wood behind it, alternating sides, as far as the wood stays thin enough for
+   * them. A long twiggy limb carries many, a short one a few.
    */
   private growOwn(tree: Tree, settings: FlowerSettings): void {
     for (const limb of tree.limbs) {
@@ -475,9 +478,11 @@ export class Flowers {
       if (limb.length < FLOWERS.firstBloom) {
         continue;
       }
+      const spacing = FLOWERS.spacing * FLOWERS.size * settings.size;
+      invariant(spacing > 0, `Flowers ${settings.size} in size have no room.`);
       let side = this.firstSide(limb);
-      for (let slot = 0; slot < FLOWERS.perLimb; slot += 1) {
-        const s = limb.length - slot * FLOWERS.spacing;
+      for (let slot = 0; ; slot += 1) {
+        const s = limb.length - slot * spacing;
         if (s < FLOWERS.clearOfBase || limb.radiusAt(s) > FLOWERS.maxGirth) {
           break;
         }
@@ -488,7 +493,7 @@ export class Flowers {
         const taken = own.some((f) =>
           spot.side === 0
             ? f.side === 0
-            : f.side !== 0 && Math.abs(f.s - s) < 0.75 * FLOWERS.spacing,
+            : f.side !== 0 && Math.abs(f.s - s) < 0.75 * spacing,
         );
         if (!taken) {
           const flower = this.flower("tree", limb, spot, kind);
