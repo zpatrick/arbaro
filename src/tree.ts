@@ -182,17 +182,18 @@ export class Tree {
   }
 
   /**
-   * Where a cut asked for at `s` along `limb` actually falls: at the base of an offshoot cut inside
-   * its parent, no lower than a stump on the trunk, or nowhere if almost nothing lies beyond it.
+   * Where pruning or a break asked for at `s` along `limb` actually falls: at the base of an
+   * offshoot when asked for inside its parent, no lower than a stump on the trunk, or nowhere if
+   * almost nothing lies beyond it.
    */
-  cutPoint(limb: Limb, s: number): number | undefined {
-    let cut = s;
+  prunePoint(limb: Limb, s: number): number | undefined {
+    let at = s;
     if (limb.attachment === undefined) {
-      cut = Math.max(s, STUMP);
+      at = Math.max(s, STUMP);
     } else if (s <= limb.attachment.parent.radiusAt(limb.attachment.s)) {
-      cut = 0;
+      at = 0;
     }
-    return cut < limb.length - SMALLEST_CUT ? cut : undefined;
+    return at < limb.length - SMALLEST_CUT ? at : undefined;
   }
 
   /** True if `limb` is still part of the tree. */

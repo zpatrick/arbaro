@@ -44,8 +44,8 @@ const ZOOM_PER_PX = { wheel: 0.0015, pinch: 0.01 } as const;
 /** What the hint under the ground says in each growth mode. */
 const HINTS: Record<GrowthMode, string> = {
   steer:
-    "<span>Hold <kbd>↑</kbd> to grow</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Right-click to cut</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
-  flow: "<span>The roots feed every tip</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Click a spout to split the flow</span><span>Right-click to cut</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
+    "<span>Hold <kbd>↑</kbd> to grow</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Hold <kbd>C</kbd> and click to prune</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
+  flow: "<span>The roots feed every tip</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Click a spout to split the flow</span><span>Hold <kbd>C</kbd> and click to prune</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
 };
 
 function element<T extends HTMLElement>(
@@ -76,7 +76,9 @@ const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
 let shiftHeld = false;
-/** Seconds of simulated time so far, which set the stars twinkling and the sun's rays turning. */
+/** Whether C is held, which turns a click on a limb into pruning it there. */
+let pruneHeld = false;
+/** Seconds of simulated time so far, which set the stars twinkling. */
 let clock = 0;
 /**
  * A press that pans the view as it drags: where the pointer was last, and whether it has moved
@@ -210,7 +212,7 @@ function isDay(light: SkyLight): boolean {
   return light.daylight > 0.5;
 }
 
-/** Cuts `limb` at `s` and lets everything beyond fall, keeping the motion it had. */
+/** Severs `limb` at `s` and lets everything beyond fall, keeping the motion it had. */
 function breakOff(standing: Tree, limb: Limb, s: number): void {
   const piece = standing.piece(limb, s);
   const motion = standing.physics.velocityAt(
@@ -279,7 +281,7 @@ function giveWay(standing: Tree, failure: Failure): void {
     announce("The roots gave way");
     return;
   }
-  const s = standing.cutPoint(failure.limb, failure.s);
+  const s = standing.prunePoint(failure.limb, failure.s);
   if (s === undefined) {
     return;
   }
@@ -344,6 +346,9 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Shift") {
     shiftHeld = true;
   }
+  if (event.code === "KeyC") {
+    pruneHeld = true;
+  }
   if (event.code === "KeyR" && !event.repeat) {
     replant();
   }
@@ -358,9 +363,13 @@ window.addEventListener("keyup", (event) => {
   if (event.key === "Shift") {
     shiftHeld = false;
   }
+  if (event.code === "KeyC") {
+    pruneHeld = false;
+  }
 });
 window.addEventListener("blur", () => {
   shiftHeld = false;
+  pruneHeld = false;
 });
 canvas.addEventListener("pointermove", (event) => {
   pointer = { x: event.clientX, y: event.clientY };
@@ -404,10 +413,11 @@ canvas.addEventListener(
   { passive: false },
 );
 // Clicking a limb makes it the one that grows and steers. Clicking the limb that already is
-// forks a new offshoot from that spot. In flow mode, clicking a spout opens it; a click anywhere
-// else just closes the open one. While flowers are placed by hand, a shift-click places or
-// knocks off a flower instead. Dragging from open space, or with the middle button from anywhere,
-// pans the view.
+// forks a new offshoot from that spot. Holding C, a click prunes the limb there instead, and
+// everything beyond falls. In flow mode, clicking a spout opens it; a click anywhere else just
+// closes the open one. While flowers are placed by hand, a shift-click places or knocks off a
+// flower instead. Dragging from open space, or with the middle button from anywhere, pans the
+// view.
 canvas.addEventListener("pointerdown", (event) => {
   if (event.button === 1) {
     event.preventDefault();
@@ -419,6 +429,18 @@ canvas.addEventListener("pointerdown", (event) => {
   }
   if (tree === undefined) {
     startPanning(event);
+    return;
+  }
+  if (pruneHeld) {
+    const pick = pickAt(tree, event.clientX, event.clientY);
+    if (pick === undefined) {
+      startPanning(event);
+      return;
+    }
+    const s = tree.prunePoint(pick.limb, pick.s);
+    if (s !== undefined) {
+      breakOff(tree, pick.limb, s);
+    }
     return;
   }
   if (placingFlowers(event)) {
@@ -444,22 +466,6 @@ canvas.addEventListener("pointerdown", (event) => {
     startPanning(event);
   }
 });
-// Right-clicking a limb cuts it there, and everything beyond falls.
-canvas.addEventListener("contextmenu", (event) => {
-  event.preventDefault();
-  if (tree === undefined) {
-    return;
-  }
-  const pick = pickAt(tree, event.clientX, event.clientY);
-  if (pick === undefined) {
-    return;
-  }
-  const s = tree.cutPoint(pick.limb, pick.s);
-  if (s !== undefined) {
-    breakOff(tree, pick.limb, s);
-  }
-});
-
 let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(MAX_STEP, (now - last) / 1000);
@@ -506,7 +512,13 @@ function frame(now: number): void {
     flowerHover?.ghost !== undefined ||
     flowerHover?.target !== undefined;
   canvas.style.cursor =
-    panning?.dragging === true ? "grabbing" : pointing ? "pointer" : "grab";
+    panning?.dragging === true
+      ? "grabbing"
+      : pruneHeld && hover !== undefined
+        ? "crosshair"
+        : pointing
+          ? "pointer"
+          : "grab";
   placeHint();
   // The open spout follows its fork as the tree sways, and closes if the fork is gone.
   const open = spoutControl.limb;
@@ -555,8 +567,8 @@ interface DebugHandle {
   fork(index: number, fraction: number, side: 1 | -1): void;
   /** Makes limb `index` the one that grows and steers, like a click. */
   select(index: number): void;
-  /** Cuts limb `index` at `fraction` of its length, like a right-click. */
-  cut(index: number, fraction: number): void;
+  /** Prunes limb `index` at `fraction` of its length, like a click with C held. */
+  prune(index: number, fraction: number): void;
   /** Changes the wind, as the debug panel would. */
   wind(settings: Partial<WindSettings>): void;
   /** Changes how much the tree can take, as the debug panel would. */
@@ -616,12 +628,12 @@ if (import.meta.env.DEV) {
     select(index) {
       standing().select(at(standing().limbs, index));
     },
-    cut(index, fraction) {
+    prune(index, fraction) {
       const limb = at(standing().limbs, index);
-      const s = standing().cutPoint(limb, limb.length * fraction);
+      const s = standing().prunePoint(limb, limb.length * fraction);
       invariant(
         s !== undefined,
-        `Nothing to cut at ${fraction} of limb ${index}.`,
+        `Nothing to prune at ${fraction} of limb ${index}.`,
       );
       breakOff(standing(), limb, s);
     },

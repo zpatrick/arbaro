@@ -4,6 +4,8 @@ import type { Dot } from "./flow";
 import { drawFlower } from "./flower-art";
 import type { FlowerHover, FlowerView } from "./flowers";
 import type { Limb } from "./limb";
+import { BARN_LINE, barnLines, barnOutline } from "./barn";
+import { Mountains } from "./mountains";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
 import { css, type Rgb, type SkyBody, type SkyLight } from "./sky";
@@ -62,8 +64,9 @@ const DOT_MIN_PX = 0.9;
 const STALK = { width: 0.06, min: 0.9, max: 2.4 } as const;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
-/** Radius of the sun, as a fraction of the view's height. The moon is a little smaller. */
-const SUN_SIZE = 0.022;
+/** Radius of the sun and of the moon, as fractions of the view's height. */
+const SUN_SIZE = 0.04;
+const MOON_SIZE = 0.019;
 /** Highest the sun and moon climb, as a fraction of the view's height below its top. */
 const SKY_TOP = 0.075;
 /** How far apart the sun rises and sets, as a fraction of the view's width. */
@@ -73,10 +76,9 @@ const SKY_SPAN = 0.88;
  * width, so they pass beside the top of the tree rather than behind it.
  */
 const SKY_LEAN = 0.13;
-/** Flame-like rays around the sun. */
-const SUN_RAYS = 14;
-/** Turns of the sun's rays per second of simulated time. */
-const SUN_SPIN = 0.008;
+/** How strongly the lines carved into the barn show, and their thinnest, in CSS pixels. */
+const BARN_LINE_ALPHA = 0.5;
+const BARN_LINE_MIN_PX = 0.7;
 const STARLIGHT: Rgb = [240, 236, 222];
 const MOONLIGHT: Rgb = [238, 233, 214];
 /** The haze around the moon, a touch bluer than the moon itself. */
@@ -86,7 +88,7 @@ const MOON_HAZE: Rgb = [214, 222, 242];
 export interface Scene {
   /** The light at this time of day. */
   light: SkyLight;
-  /** Seconds of simulated time, which set the stars twinkling and the sun's rays turning. */
+  /** Seconds of simulated time, which set the stars twinkling. */
   clock: number;
   /** The standing tree, if there is one. */
   tree: Tree | undefined;
@@ -171,6 +173,8 @@ export class Renderer {
   private readonly grain: CanvasPattern;
   private resized = false;
   private readonly stars: Star[];
+  private readonly mountains = new Mountains();
+  private readonly barn = { outline: barnOutline(), lines: barnLines() };
   /** Ink of the wood and ground in this frame's light. */
   private inkColor: string = PALETTE.ink;
   /** Ink of the guides drawn over the scene in this frame's light. */
@@ -236,13 +240,14 @@ export class Renderer {
     this.guideColor = css(scene.light.guide);
 
     this.drawSky(camera, scene.light, scene.clock, ground);
+    const world = camera.worldTransform();
+    this.drawBarn(camera, world, scene.light);
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
     // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
     // in, so one lying on the ground merges into it.
     const ink = new Path2D();
     ink.rect(0, ground, width, this.canvas.height - ground);
-    const world = camera.worldTransform();
     if (scene.tree !== undefined) {
       for (const shape of treeShapes(scene.tree, minimumRadius(camera))) {
         ink.addPath(shape, world);
@@ -309,7 +314,8 @@ export class Renderer {
 
   /**
    * Fills the sky above `ground`, in device pixels, for the time of day: a glow over the middle of
-   * the horizon, warm light on the sun's side at sunrise and sunset, and the stars, moon and sun.
+   * the horizon, the stars, moon and sun, the mountains in front of them, and warm light on the
+   * sun's side at sunrise and sunset.
    */
   private drawSky(
     camera: Camera,
@@ -336,7 +342,30 @@ export class Renderer {
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, width, ground);
 
+
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    if (light.daylight < 1) {
+      this.drawStars(camera, 1 - light.daylight, clock);
+    }
+    if (light.moon.height > -0.2) {
+      this.drawMoon(
+        this.bodyAt(camera, light.moon),
+        MOON_SIZE * camera.height,
+        light,
+      );
+    }
+    if (light.sun.height > -0.2) {
+      const sun = this.bodyAt(camera, light.sun);
+      ctx.fillStyle = css(light.sunColor);
+      ctx.beginPath();
+      ctx.arc(sun.x, sun.y, SUN_SIZE * camera.height, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    this.mountains.draw(ctx, camera, sky, light);
+
+    // The glow of sunrise and sunset lies over everything in the sky, the mountains too.
     if (light.twilight > 0) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       const rising = light.sun.along < 0.5 || light.sun.along > 1.5;
       const x = cx + (rising ? -1 : 1) * cx * SKY_SPAN;
       const radius = width * 0.9;
@@ -355,18 +384,6 @@ export class Renderer {
       band.addColorStop(1, css(light.twilightColor, 0));
       ctx.fillStyle = band;
       ctx.fillRect(0, 0, width, ground);
-    }
-
-    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    if (light.daylight < 1) {
-      this.drawStars(camera, 1 - light.daylight, clock);
-    }
-    const radius = SUN_SIZE * camera.height;
-    if (light.moon.height > -0.2) {
-      this.drawMoon(this.bodyAt(camera, light.moon), radius * 0.85, light);
-    }
-    if (light.sun.height > -0.2) {
-      this.drawSun(this.bodyAt(camera, light.sun), radius, light, clock);
     }
   }
 
@@ -450,73 +467,6 @@ export class Renderer {
     ctx.arc(center.x + offset, center.y, radius, inner, -inner, false);
     ctx.closePath();
     ctx.fill();
-  }
-
-  /**
-   * The sun, after the sand drawings: a disc carved with rings inside a ring of flame-like rays
-   * that turn slowly, in a warm glow. It reddens toward the horizon.
-   */
-  private drawSun(
-    center: Vec,
-    radius: number,
-    light: SkyLight,
-    clock: number,
-  ): void {
-    const ctx = this.ctx;
-    const color = light.sunColor;
-    const glow = ctx.createRadialGradient(
-      center.x,
-      center.y,
-      radius * 0.8,
-      center.x,
-      center.y,
-      radius * 4,
-    );
-    glow.addColorStop(0, css(color, 0.32));
-    glow.addColorStop(1, css(color, 0));
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius * 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = css(color, 0.85);
-    const spin = clock * SUN_SPIN * Math.PI * 2;
-    for (let i = 0; i < SUN_RAYS; i += 1) {
-      const length = radius * (i % 2 === 0 ? 1.05 : 0.7);
-      const sway = (i % 4 < 2 ? 1 : -1) * 0.16 * length;
-      const base = radius * 1.12;
-      const half = radius * 0.14;
-      ctx.save();
-      ctx.translate(center.x, center.y);
-      ctx.rotate(spin + (i * Math.PI * 2) / SUN_RAYS);
-      ctx.beginPath();
-      ctx.moveTo(base, -half);
-      ctx.quadraticCurveTo(
-        base + 0.55 * length,
-        -0.3 * half + sway,
-        base + length,
-        1.3 * sway,
-      );
-      ctx.quadraticCurveTo(base + 0.5 * length, 0.7 * half + sway, base, half);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
-    ctx.fillStyle = css(color);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = css(
-      [color[0] * 0.8, color[1] * 0.78, color[2] * 0.75],
-      0.5,
-    );
-    ctx.lineWidth = 1;
-    for (const ring of [0.72, 0.48]) {
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, radius * ring, 0, Math.PI * 2);
-      ctx.stroke();
-    }
   }
 
   /** Draws a flower on its stalk, if it has one, in the light of `light`. */
@@ -620,6 +570,24 @@ export class Renderer {
         ctx.fill();
       }
     }
+  }
+
+  /**
+   * The barn beside the tree, in ink like the tree and behind it, with its lines carved through
+   * the ink to the sky's color beneath.
+   */
+  private drawBarn(camera: Camera, world: DOMMatrix, light: SkyLight): void {
+    const outline = new Path2D();
+    outline.addPath(this.barn.outline, world);
+    this.fillInk(outline, 1);
+    const ctx = this.ctx;
+    ctx.setTransform(world);
+    ctx.strokeStyle = css(light.sky.middle, BARN_LINE_ALPHA);
+    ctx.lineWidth = Math.max(BARN_LINE, BARN_LINE_MIN_PX / camera.scale);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke(this.barn.lines);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
   /** Fills `path`, given in device pixels, with ink and its grain. */

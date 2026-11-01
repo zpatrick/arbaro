@@ -53,7 +53,7 @@ const FLOWER_LIGHT = {
 /** Ink of the guides drawn over the scene, which turns pale at night so it still shows. */
 const GUIDE = { day: [42, 33, 26], night: [226, 222, 210] } as const;
 /** Color of the sun high in the sky and as it meets the horizon. */
-const SUN = { high: [236, 196, 112], low: [232, 136, 84] } as const;
+const SUN = { high: [234, 204, 150], low: [226, 146, 100] } as const;
 
 /** A body in the sky: how far along its arc from the left horizon to the right, and whether it is up. */
 export interface SkyBody {

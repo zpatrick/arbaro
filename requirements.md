@@ -70,11 +70,12 @@ art and tree-of-life drawings.
 
 ### Pruning
 
-- [x] Right-click a limb to cut it there. Everything beyond the cut, offshoots included, falls to
-      the ground like a broken piece. The stump keeps its girth and can be grown again.
+- [x] Hold C and click a limb to prune it there. Everything beyond, offshoots included, falls to
+      the ground like a broken piece. The stump keeps its girth and can be grown again. The pointer
+      turns to a crosshair over a limb while C is held.
 - [x] The trunk can be felled down to a short stump. (The original brief kept the first trunk and
-      taproot from being cut.)
-- [ ] Part of what was spent on a cut limb comes back. (Original brief.)
+      taproot from being pruned.)
+- [ ] Part of what was spent on a pruned limb comes back. (Original brief.)
 
 ## Resources and growth
 
@@ -186,6 +187,20 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A day and night cycle: the sun crosses the sky by day, the moon and stars come out at night,
       and the light on the sky, the wood and the flowers follows, warm at sunrise and sunset. A
       day takes three minutes at normal speed.
+- [x] The sun is a plain disc, after the minimal sun of reference 10. (Rays like reference 06 may
+      come later.)
+- [x] A range of mountains on the horizon behind the tree, after reference 10: ridgelines up to
+      sharp peaks, in a far row and a lower near row with a saddle behind the tree. Spurs, forks
+      and creases carved down their fronts part each peak into faces, with narrow bands along the
+      ridges and spurs. The mountains are filled with the sky, so the sun and moon set behind
+      them.
+- [x] The mountains' faces are lit by the sun: faces turned from it are hatched, the steepest
+      most densely, and faces turned toward a low sun glow warm, so the shading swings across the
+      range from morning to evening. The moon shades them more softly by night. They darken into
+      silhouettes against sunrise, sunset and the night sky, and their lines turn pale by night.
+- [x] A small barn stands on the ground beside the tree, true to size (7 m wide, its ridge at
+      5.8 m), so the tree's height can be judged by it. It is ink like the tree, behind it, with
+      its doors carved through to the sky's color.
 - [ ] Clouds dim the sun.
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
