@@ -115,6 +115,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
       spread nearly flat with their tips turned up, a middle row, and a cup of upright petals,
       each petal carved with a second outline and a midrib, and stamens rising from its heart.
       Closed, it is a smooth pointed bud.
+- [x] Flowers are true to life at the usual size: an open lotus is about 27 cm across, a cloud
+      blossom 17 cm and a star flower 15 cm.
 - [x] Flowers only grow on thin wood, and keep to it as their limb grows, so they ride up with
       the tip.
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one

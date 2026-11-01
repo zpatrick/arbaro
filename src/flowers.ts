@@ -44,8 +44,11 @@ export interface Conditions {
 export const FLOWERS = {
   /** Thickest wood a flower grows on, as a radius in world units. */
   maxGirth: 0.08,
-  /** Size of a flower at a size multiplier of one, in world units. */
-  size: 0.56,
+  /**
+   * Size of a flower at a size multiplier of one, in world units: true to life, so an open lotus
+   * is about 27 cm across, a cloud blossom 17 cm and a star flower 15 cm.
+   */
+  size: 0.14,
   /** A flower placed this close to its limb's tip, in world units, crowns the tip instead. */
   tipReach: 0.2,
   /** A limb flowers once it is this long, in world units, when the tree places the flowers. */
@@ -72,7 +75,7 @@ export const FLOWERS = {
    * Pull the stem of a flower of the usual size holds against, in newtons. At normal strength a
    * typical open flower starts to tear loose in a storm, at about 24 m/s.
    */
-  hold: 78,
+  hold: 4.9,
   /**
    * A larger flower grows a stouter stem, so its hold grows with its size to this power: a little
    * slower than the pull of the wind, which grows with its area. A flower twice the size holds
@@ -326,9 +329,10 @@ export class Flowers {
     tree: Tree,
     x: number,
     y: number,
+    reach: number,
     settings: FlowerSettings,
   ): boolean {
-    const flower = this.flowerAt(tree, x, y, settings);
+    const flower = this.flowerAt(tree, x, y, reach, settings);
     if (flower === undefined) {
       return false;
     }
@@ -345,12 +349,13 @@ export class Flowers {
     tree: Tree,
     x: number,
     y: number,
+    reach: number,
     pick: Pick | undefined,
     settings: FlowerSettings,
     season: number,
     day: boolean,
   ): FlowerHover {
-    const target = this.flowerAt(tree, x, y, settings);
+    const target = this.flowerAt(tree, x, y, reach, settings);
     if (target !== undefined) {
       return { ghost: undefined, target: this.view(target, settings, season) };
     }
@@ -700,11 +705,15 @@ export class Flowers {
     };
   }
 
-  /** The hand-placed flower drawn over (x, y), nearest first. */
+  /**
+   * The hand-placed flower drawn over (x, y), or within `reach` of its middle, nearest first, so
+   * a flower too small to aim at can still be hit.
+   */
   private flowerAt(
     tree: Tree,
     x: number,
     y: number,
+    reach: number,
     settings: FlowerSettings,
   ): Flower | undefined {
     let nearest: { flower: Flower; distance: number } | undefined;
@@ -721,7 +730,7 @@ export class Flowers {
       const middle = along(pose, pose.angle, 0.5 * pose.size);
       const distance = Math.hypot(x - middle.x, y - middle.y);
       if (
-        distance <= 0.6 * pose.size &&
+        distance <= Math.max(0.6 * pose.size, reach) &&
         (nearest === undefined || distance < nearest.distance)
       ) {
         nearest = { flower, distance };

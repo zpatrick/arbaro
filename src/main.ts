@@ -179,7 +179,15 @@ function placingFlowers(event: { shiftKey: boolean }): boolean {
 /** Knocks off the flower under (x, y) in CSS pixels, or grows one on the thin wood there. */
 function tendFlowers(standing: Tree, x: number, y: number): void {
   const world = camera.toWorld(x, y);
-  if (flowers.knockOff(standing, world.x, world.y, panel.flowers)) {
+  if (
+    flowers.knockOff(
+      standing,
+      world.x,
+      world.y,
+      PICK_TOLERANCE_PX / camera.scale,
+      panel.flowers,
+    )
+  ) {
     return;
   }
   const pick = pickAt(standing, x, y);
@@ -200,6 +208,7 @@ function flowerHoverAt(
     standing,
     world.x,
     world.y,
+    PICK_TOLERANCE_PX / camera.scale,
     pickAt(standing, x, y),
     panel.flowers,
     panel.time.season,
