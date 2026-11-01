@@ -64,6 +64,11 @@ export const FLOWERS = {
    * the tip than its place in the row, so they never line up exactly.
    */
   jitter: 0.4,
+  /**
+   * Clusters grow along the top of a limb that lies this near level or nearer: the cosine of its
+   * slope, from 0 for upright to 1 for level.
+   */
+  onTop: 0.5,
   /** The tree keeps its flowers this far from where a limb starts, in world units. */
   clearOfBase: 0.5,
   /** Seconds the tree takes to grow back a flower it lost to the wind. */
@@ -115,6 +120,13 @@ export const FLOWERS = {
   /** How far flowers flutter in a strong wind, in radians. */
   flutter: 0.18,
 } as const;
+
+/**
+ * How open to the sky a flower is: the flowers above it, up to `depth` times its size higher and
+ * within `width` times its size to either side, shade it, those straight above the most. Shaded
+ * by `cover` of them its exposure falls to 1/e, and it follows the canopy over `settle` seconds.
+ */
+const EXPOSURE = { width: 1.5, depth: 6, cover: 5, settle: 1 } as const;
 
 /** How each kind grows. */
 interface KindHabit {
@@ -259,6 +271,8 @@ interface Flower {
   dropped: "season" | "wind" | undefined;
   /** Seconds until the tree grows back a flower it lost to the wind. */
   regrowIn: number;
+  /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
+  exposure: number;
 }
 
 /** A flower that came off the tree, falling or lying on the ground. */
@@ -312,6 +326,8 @@ export interface FlowerView {
   alpha: number;
   /** For the small differences in how it is drawn, from 0 to 1. */
   variant: number;
+  /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
+  exposure: number;
   /** The stalk it grows on while it is on the tree, curving through `control`. */
   stalk: { from: Vec; control: Vec } | undefined;
 }
@@ -380,6 +396,7 @@ export class Flowers {
         this.growOwn(tree, settings);
       }
       this.tend(dt, tree, settings, conditions);
+      this.expose(dt, settings);
     }
     for (const flower of this.falling) {
       fall(flower, dt, conditions.wind);
@@ -463,6 +480,7 @@ export class Flowers {
         age: season,
         alpha: 0.45,
         variant: TYPICAL.variant,
+        exposure: 1,
       },
       target: undefined,
     };
@@ -488,6 +506,7 @@ export class Flowers {
         age: ageOf(flower.traits, season),
         alpha: flower.alpha,
         variant: flower.traits.variant,
+        exposure: 1,
         stalk: undefined,
       });
     }
@@ -525,6 +544,7 @@ export class Flowers {
       damage: 0,
       dropped: undefined,
       regrowIn: 0,
+      exposure: 1,
     };
   }
 
@@ -594,13 +614,59 @@ export class Flowers {
                     limb.length,
                     s + this.rng.next() * FLOWERS.jitter * spacing,
                   ),
-                  side: spot.side,
+                  side:
+                    habit.mounds && facesDown(limb, s, spot.side)
+                      ? opposite(spot.side)
+                      : spot.side,
                 };
           const flower = this.flower("tree", limb, placed, kind);
           this.flowers.push(flower);
           own.push(flower);
         }
       }
+    }
+  }
+
+  /**
+   * Follows how open to the sky each flower on the tree is: the more of the others lie above it,
+   * overhanging it, the less. It follows slowly, so a flower does not flicker between light and
+   * shade as the canopy sways.
+   */
+  private expose(dt: number, settings: FlowerSettings): void {
+    const showing = this.flowers.filter(
+      (f) => f.dropped === undefined && f.grown > 0,
+    );
+    const poses = showing.map((f) => this.poseOf(f, settings));
+    const order = poses
+      .map((_, i) => i)
+      .sort((a, b) => at(poses, a).x - at(poses, b).x);
+    const widest = EXPOSURE.width * Math.max(0, ...poses.map((p) => p.size));
+    let first = 0;
+    for (const i of order) {
+      const a = at(poses, i);
+      while (at(poses, at(order, first)).x < a.x - widest) {
+        first += 1;
+      }
+      const reach = EXPOSURE.width * a.size;
+      let cover = 0;
+      for (let k = first; k < order.length; k += 1) {
+        const b = at(poses, at(order, k));
+        if (b.x > a.x + widest) {
+          break;
+        }
+        const across = Math.abs(b.x - a.x);
+        const above = b.y - a.y;
+        if (above > 0 && above < EXPOSURE.depth * a.size && across < reach) {
+          cover += 1 - across / reach;
+        }
+      }
+      const flower = at(showing, i);
+      flower.exposure = approach(
+        flower.exposure,
+        Math.exp(-cover / EXPOSURE.cover),
+        EXPOSURE.settle,
+        dt,
+      );
     }
   }
 
@@ -809,6 +875,7 @@ export class Flowers {
       age: ageOf(flower.traits, season),
       alpha: 1,
       variant: flower.traits.variant,
+      exposure: flower.exposure,
     };
   }
 
@@ -908,6 +975,18 @@ function position(flower: Flower, tree: Tree): number | undefined {
   return thinFrom(limb, flower.girth);
 }
 
+/**
+ * Whether `side` of `limb` at `s` faces the ground: on a limb that lies near level, the tree grows
+ * its clusters along the top, so they gather into pads with the shade beneath them.
+ */
+function facesDown(limb: Limb, s: number, side: 1 | -1): boolean {
+  return side * Math.cos(limb.pointAt(s).heading) < -FLOWERS.onTop;
+}
+
+function opposite(side: 1 | -1): 1 | -1 {
+  return side === 1 ? -1 : 1;
+}
+
 /** Brings back a flower that dropped, as a bud that grows in. */
 function regrow(flower: Flower): void {
   flower.dropped = undefined;
@@ -948,11 +1027,8 @@ function flowerPose(
       stalk: { from: { x: p.x, y: p.y }, control },
     };
   }
-  // From the side, its stalk leaves the wood square on and curves up toward the sky. A mound's
-  // twig grows only as the square root of its size, so the larger it grows the closer it keeps
-  // to its limb.
-  const stalk =
-    (habit.stalk + (habit.twig * traits.reach) / Math.sqrt(clusters)) * span;
+  // From the side, its stalk leaves the wood square on and curves up toward the sky.
+  const stalk = (habit.stalk + habit.twig * traits.reach) * span;
   const normal = p.heading + (side * Math.PI) / 2;
   const angle =
     turnToward(normal, UPRIGHT, habit.skyward) +

@@ -1,7 +1,12 @@
 import type { Camera } from "./camera";
 import type { Debris } from "./debris";
 import type { Dot } from "./flow";
-import { drawFlower } from "./flower-art";
+import {
+  drawFlower,
+  drawMarks,
+  type FlowerLook,
+  inDetail,
+} from "./flower-art";
 import type { FlowerHover, FlowerView } from "./flowers";
 import type { Limb } from "./limb";
 import { BARN_LINE, barnLines, barnOutline } from "./barn";
@@ -60,8 +65,18 @@ const DOT_SIZE = 0.32;
 const DOT_FILL = 0.42;
 /** Smallest energy dot drawn, in CSS pixels. */
 const DOT_MIN_PX = 0.9;
-/** Width of a flower's stalk as a fraction of the flower's size, and its limits in CSS pixels. */
-const STALK = { width: 0.06, min: 0.9, max: 2.4 } as const;
+/**
+ * Width of a flower's stalk as a fraction of the flower's size, and its limits in CSS pixels.
+ * Under a flower painted as marks it can be as narrow as `fine`, and shows `fineAlpha` as strong,
+ * so the stalks read as fine twigs among the marks.
+ */
+const STALK = {
+  width: 0.06,
+  min: 0.9,
+  max: 2.4,
+  fine: 0.5,
+  fineAlpha: 0.55,
+} as const;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
 /** Radius of the sun and of the moon, as fractions of the view's height. */
@@ -284,12 +299,28 @@ export class Renderer {
       }
     }
     const shown = scene.flowers.filter((flower) => inView(camera, flower));
-    // Every stalk first, so the flowers cover the stalks of their neighbors.
-    for (const flower of shown) {
-      this.drawStalk(camera, flower);
+    const looks = shown.map((flower) =>
+      lookOf(camera, flower, scene.light.flowerLight),
+    );
+    const detailed = inDetail(looks, {
+      x: camera.width / 2,
+      y: camera.height / 2,
+    });
+    // Every stalk first, so the flowers cover the stalks of their neighbors. Under clusters
+    // painted as marks, the stalks are finer, so they show as twigs among the marks.
+    for (const [i, flower] of shown.entries()) {
+      this.drawStalk(camera, flower, !at(detailed, i));
     }
-    for (const flower of shown) {
-      this.drawFlower(camera, flower, scene.light.flowerLight);
+    // Those clusters are painted together, under the flowers drawn in detail.
+    drawMarks(
+      this.ctx,
+      camera.dpr,
+      looks.filter((_, i) => !at(detailed, i)),
+    );
+    for (const [i, look] of looks.entries()) {
+      if (at(detailed, i)) {
+        drawFlower(this.ctx, camera.dpr, look);
+      }
     }
     if (scene.tree !== undefined) {
       if (scene.flow !== undefined) {
@@ -303,8 +334,13 @@ export class Renderer {
       this.drawGuides(camera, scene.tree, scene.hover);
     }
     if (scene.flowerHover?.ghost !== undefined) {
-      this.drawStalk(camera, scene.flowerHover.ghost);
-      this.drawFlower(camera, scene.flowerHover.ghost, scene.light.flowerLight);
+      const { ghost } = scene.flowerHover;
+      this.drawStalk(camera, ghost, false);
+      drawFlower(
+        this.ctx,
+        camera.dpr,
+        lookOf(camera, ghost, scene.light.flowerLight),
+      );
     }
     if (scene.flowerHover?.target !== undefined) {
       const { target } = scene.flowerHover;
@@ -475,8 +511,8 @@ export class Renderer {
     ctx.fill();
   }
 
-  /** Draws the stalk a flower grows on, if it has one. */
-  private drawStalk(camera: Camera, flower: FlowerView): void {
+  /** Draws the stalk a flower grows on, if it has one: `fine` under a flower painted as marks. */
+  private drawStalk(camera: Camera, flower: FlowerView, fine: boolean): void {
     if (flower.stalk === undefined) {
       return;
     }
@@ -490,35 +526,19 @@ export class Renderer {
       flower.stalk.control.y,
     );
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.globalAlpha = flower.alpha;
+    ctx.globalAlpha = flower.alpha * (fine ? STALK.fineAlpha : 1);
     ctx.strokeStyle = this.inkColor;
-    ctx.lineWidth = clamp(size * STALK.width, STALK.min, STALK.max);
+    ctx.lineWidth = clamp(
+      size * STALK.width,
+      fine ? STALK.fine : STALK.min,
+      STALK.max,
+    );
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.quadraticCurveTo(control.x, control.y, base.x, base.y);
     ctx.stroke();
     ctx.globalAlpha = 1;
-  }
-
-  /** Draws a flower, in the light of `light`. */
-  private drawFlower(camera: Camera, flower: FlowerView, light: Rgb): void {
-    const ctx = this.ctx;
-    const size = flower.size * camera.scale;
-    const base = camera.toScreen(flower.x, flower.y);
-    drawFlower(ctx, camera.dpr, {
-      kind: flower.kind,
-      x: base.x,
-      y: base.y,
-      angle: flower.angle,
-      size,
-      clusters: flower.clusters,
-      openness: flower.openness,
-      age: flower.age,
-      alpha: flower.alpha,
-      variant: flower.variant,
-      light,
-    });
   }
 
   /** Draws each energy dot as pale light inside the wood it rides in. */
@@ -780,6 +800,25 @@ export class Renderer {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+}
+
+/** How a flower shows in the view, in the light of `light`. */
+function lookOf(camera: Camera, flower: FlowerView, light: Rgb): FlowerLook {
+  const base = camera.toScreen(flower.x, flower.y);
+  return {
+    kind: flower.kind,
+    x: base.x,
+    y: base.y,
+    angle: flower.angle,
+    size: flower.size * camera.scale,
+    clusters: flower.clusters,
+    openness: flower.openness,
+    age: flower.age,
+    alpha: flower.alpha,
+    variant: flower.variant,
+    exposure: flower.exposure,
+    light,
+  };
 }
 
 /** Whether any of a flower or its stalk could show in the view. */

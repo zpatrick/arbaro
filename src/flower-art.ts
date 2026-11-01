@@ -1,6 +1,6 @@
 import type { FlowerKind } from "./flowers";
 import type { Rgb } from "./sky";
-import { at, clamp, lerp, smoothstep } from "./util";
+import { at, clamp, invariant, lerp, smoothstep } from "./util";
 
 /**
  * Outline around every petal, as a fraction of the flower's size, and its limits in CSS pixels.
@@ -10,6 +10,11 @@ const OUTLINE = { width: 0.04, min: 0.45, max: 1.1 } as const;
 /** Ink of the sepals and outlines: the wood's ink, with the outlines a little softer. */
 const INK: Rgb = [42, 33, 26];
 const OUTLINE_ALPHA = 0.85;
+/**
+ * A cluster's outlines come in from `faint` as strong, as its blossoms or leaves grow from `from`
+ * to `to` CSS pixels across, so one just come into detail is near the flat marks around it.
+ */
+const OUTLINE_FADE = { faint: 0.3, from: 10, to: 24 } as const;
 /** Fine lines inside the petals, in CSS pixels. */
 const VEIN_PX = 0.7;
 /** The fine lines fade in as a flower is drawn between these sizes, in CSS pixels. */
@@ -104,12 +109,6 @@ const SEED_HEAD = {
 } as const;
 
 /**
- * A cherry cluster or maple spray drawn smaller than somewhere between these sizes, in CSS
- * pixels, shows as a puff in its colors, or as one lobe of its mound's mass; larger, it shows
- * blossom by blossom or leaf by leaf. A whole canopy of them seen from afar is a mass of puffs.
- */
-const CLUSTER_DETAIL_PX = { from: 48, to: 72 } as const;
-/**
  * Size of one of a cluster's blossoms or leaves, as a fraction of the cluster's. Its outline and
  * fine lines are drawn as a flower's of that size would be, so a cluster never clots with ink.
  */
@@ -118,48 +117,73 @@ const CLUSTER_PART = 0.25;
 /**
  * How a mound packs its clusters: as many as `fill` times the square of how many clusters across
  * it is, in a dome around `middle` reaching `top` above it and `underside` below, as fractions of
- * the mound's height. Seen from afar, each cluster is a lobe of the mound's mass `lobe` times the
- * cluster's size in radius, and a line is carved along the top of every lobe from `carvedFrom`
- * on, at `carving` strength, where it lies over the ones behind. The lines fade in as the lobes
- * grow between `carvedPx` in radius, in CSS pixels.
+ * the mound's height.
  */
 const MOUND = {
   fill: 1.1,
   middle: 0.48,
   top: 0.44,
   underside: 0.26,
-  lobe: 0.42,
-  carvedFrom: 2,
-  carving: 0.4,
-  carvedPx: { from: 3, to: 6 },
-  /**
-   * Below this radius in CSS pixels a lobe's edge does not show, so every other cluster is left
-   * out and the rest grow this much to cover for them.
-   */
-  coarsePx: 3,
-  coarseGrowth: 1.35,
-  /**
-   * The deep hearts flecking a cherry's mass: so many to each cluster of a mound, in the blossoms'
-   * color darkened to `shade`, fading in as the lobes grow between `fleckPx` in radius.
-   */
-  fleck: { perCluster: 3, shade: 0.74, alpha: 0.55 },
-  fleckPx: { from: 4, to: 9 },
 } as const;
-/**
- * A lobe of a maple's mass is a ring of leaf points: so many points, reaching `tip` times the
- * lobe's radius out, with notches `notch` times its radius in between.
- */
-const MASS_LEAF = { points: 7, tip: 1.12, notch: 0.74 } as const;
 /** Turn between one cluster of a mound and the next, so they spread evenly. */
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-/** Lobes of a cluster shown as a puff, around its middle at height 0.6. */
-const PUFF: readonly { x: number; y: number; r: number }[] = [
-  { x: -0.31, y: 0.5, r: 0.22 },
-  { x: 0.32, y: 0.52, r: 0.21 },
-  { x: -0.15, y: 0.74, r: 0.23 },
-  { x: 0.17, y: 0.76, r: 0.22 },
-  { x: 0.01, y: 0.55, r: 0.26 },
+/**
+ * How cherry clusters and maple sprays look from afar, after the populated trees in the
+ * references: every blossom or leaf a flat mark with no outline.
+ */
+const MARKS = {
+  /** Radius of one blossom or leaf, as a fraction of its cluster's size. */
+  radius: { cherry: 0.155, maple: 0.2 },
+  /**
+   * A cluster whose blossoms or leaves show smaller in radius than somewhere between these, in
+   * CSS pixels, is painted as marks; larger, in full detail.
+   */
+  detailPx: { from: 7, to: 10 },
+  /** Marks at least this large in radius, in CSS pixels, take their blossom's or leaf's shape. */
+  shapedPx: 2.5,
+  /** A blossom's mark at least this large in radius shows its heart, this much darker. */
+  heartPx: 5,
+  heartShade: 0.78,
+  /** No mark is smaller than this in radius; a far mound is painted with fewer, larger ones. */
+  minPx: 1.8,
+  /** Most marks painted in a frame; past it, every flower is painted with fewer, larger ones. */
+  budget: 16000,
+  /** Most blossoms and leaves drawn in detail in a frame. */
+  detailBudget: 1500,
+  /**
+   * How a mark's tone is chosen: from how high its cluster sits in its mound, how open its mound
+   * is to the sky, whether it sits at the front of its cluster, and a little at random. Below
+   * `shadow` it takes the shadow tone, from `light` up the light one, and the middle tone between.
+   */
+  tone: {
+    lit: 0.35,
+    exposure: 0.5,
+    front: 0.25,
+    jitter: 0.45,
+    shadow: 0.28,
+    light: 0.6,
+  },
+  /** A mound's exposure is taken in this many steps, so its marks are rebuilt only now and then. */
+  exposureSteps: 6,
+} as const;
+
+/**
+ * A blossom's mark: the notches between its petals this far out, as a fraction of their reach,
+ * and the pull of each petal's curve, enough to bring its tip out to the full reach.
+ */
+const BLOSSOM_MARK = { notch: 0.5, pull: 1.6 } as const;
+/** The notches between a leaf mark's lobes, as a fraction of the shorter lobe's length. */
+const LEAF_MARK_NOTCH = 0.3;
+
+/**
+ * The shadow, middle and light tones marks are painted in: so far from a petal's or leaf's color
+ * at its base toward the color at its tip, then darkened to `shade`.
+ */
+const TONES: readonly { toTip: number; shade: number }[] = [
+  { toTip: 0.2, shade: 0.86 },
+  { toTip: 0.6, shade: 1 },
+  { toTip: 0.95, shade: 1 },
 ];
 
 /** A curve in a part's own frame, as a start point and then three points per cubic bezier. */
@@ -202,6 +226,11 @@ const CHERRY_BUDS: readonly {
 const CHERRY_SPUR = 0.1;
 /** Stamens ringing a cherry blossom's heart. */
 const CHERRY_STAMENS = 9;
+/** Radius of a cherry blossom's deep heart, as a fraction of its petals' reach. */
+const CHERRY_HEART = 0.2;
+/** Shade of the blossoms at the back of a cherry cluster, and of a blossom's heart. */
+const CHERRY_BACK_SHADE = 0.86;
+const HEART_SHADE = 0.62;
 /** A cherry bud from its stalk out along +y: a plump teardrop. */
 const CHERRY_BUD: Curve = [
   [0, 0],
@@ -248,8 +277,9 @@ const MAPLE: readonly {
   { turn: 0.56, reach: 0.12, size: 0.4, squash: 0.95 },
   { turn: -0.6, reach: 0.12, size: 0.4, squash: 0.92 },
 ];
-/** The leaves before this index in `MAPLE` sit behind the rest, in their shade. */
+/** The leaves before this index in `MAPLE` sit behind the rest, in their shade, this dark. */
 const MAPLE_BACK = 3;
+const MAPLE_BACK_SHADE = 0.8;
 /** Length of a maple spray's twig, where its leaf stalks leave it. */
 const MAPLE_TWIG = 0.2;
 /** A maple leaf's seven lobes: each one's lean to the left of the midrib, and its length. */
@@ -308,6 +338,8 @@ export interface FlowerLook {
   variant: number;
   /** How many times the size of one cluster a mound of clusters spans; 1 for a lone flower. */
   clusters: number;
+  /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
+  exposure: number;
   /** Multipliers on every color, for the light at this time of day. */
   light: Rgb;
 }
@@ -341,11 +373,20 @@ export function drawFlower(
   };
   const colors = petalColors(look.kind, look.age);
   const ink = lit(INK, look.light);
+  const outline =
+    look.kind === "lotus"
+      ? OUTLINE_ALPHA
+      : OUTLINE_ALPHA *
+        lerp(
+          OUTLINE_FADE.faint,
+          1,
+          smoothstep(OUTLINE_FADE.from, OUTLINE_FADE.to, part),
+        );
   const paint: Paint = {
     base: lit(colors.base, look.light),
     tip: lit(colors.tip, look.light),
     ink: css(ink),
-    outline: `rgba(${Math.round(ink[0])}, ${Math.round(ink[1])}, ${Math.round(ink[2])}, ${OUTLINE_ALPHA})`,
+    outline: `rgba(${Math.round(ink[0])}, ${Math.round(ink[1])}, ${Math.round(ink[2])}, ${outline})`,
   };
   const wilt = smoothstep(WILT.from, WILT.to, look.age);
   const open = easeInOut(look.openness);
@@ -358,29 +399,8 @@ export function drawFlower(
       break;
     case "cherry":
     case "maple": {
-      // Each mound shows its clusters one by one at a size of its own between the limits, so
-      // a canopy comes into detail a few clusters at a time as the view closes in.
-      const threshold = lerp(
-        CLUSTER_DETAIL_PX.from,
-        CLUSTER_DETAIL_PX.to,
-        look.variant,
-      );
-      if (size / look.clusters < threshold) {
-        drawMass(
-          ctx,
-          look.kind,
-          look.clusters,
-          look.variant,
-          open,
-          wilt,
-          paint,
-          line,
-          vein,
-        );
-      } else {
-        const members = moundLayout(look.clusters, look.variant);
-        drawMound(ctx, look.kind, members, open, wilt, paint, line, vein);
-      }
+      const members = moundLayout(look.clusters, look.variant);
+      drawMound(ctx, look.kind, members, open, wilt, paint, line, vein);
       break;
     }
     default: {
@@ -642,6 +662,13 @@ function drawSeedHead(
   ctx.restore();
 }
 
+/** How many clusters a mound `clusters` times the size of one is packed with. */
+function memberCount(clusters: number): number {
+  return clusters <= 1
+    ? 1
+    : Math.max(2, Math.round(MOUND.fill * clusters * clusters));
+}
+
 /** One cluster of a mound: its base and size in the mound's units, and its own variant. */
 interface Member {
   x: number;
@@ -659,7 +686,7 @@ function moundLayout(clusters: number, variant: number): Member[] {
   if (clusters <= 1) {
     return [{ x: 0, y: 0, scale: 1, variant }];
   }
-  const count = Math.max(2, Math.round(MOUND.fill * clusters * clusters));
+  const count = memberCount(clusters);
   const scale = 1 / clusters;
   const members: Member[] = [];
   for (let i = 0; i < count; i += 1) {
@@ -676,231 +703,6 @@ function moundLayout(clusters: number, variant: number): Member[] {
     });
   }
   return members.sort((a, b) => b.y - a.y);
-}
-
-/**
- * A mound of cherry clusters or maple sprays too small to show their blossoms or leaves: the puffs
- * of every cluster run together into one mass on a spur of ink, pale where the light falls on its
- * top and deeper beneath. A cherry's puffs are round, flecked with the deep hearts of their
- * blossoms; a maple's are jagged with the points of their leaves. A line is carved along the top
- * of each cluster that lies over others.
- */
-function drawMass(
-  ctx: CanvasRenderingContext2D,
-  kind: "cherry" | "maple",
-  clusters: number,
-  variant: number,
-  open: number,
-  wilt: number,
-  paint: Paint,
-  line: number,
-  vein: Vein,
-): void {
-  // A fine line is `VEIN_PX` pixels wide, which gives the mound's pixels per unit.
-  const pixels = VEIN_PX / vein.width;
-  // Lobes too small for their edges to show are drawn half as many and larger.
-  const coarse =
-    clusters > 1 && (MOUND.lobe * pixels) / clusters < MOUND.coarsePx;
-  const mass = massShapes(kind, clusters, variant, open, wilt, line, coarse);
-  const lobePx = mass.lobe * pixels;
-
-  ctx.strokeStyle = paint.ink;
-  ctx.lineWidth = line * 1.6;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, lerp(mass.bottom, mass.top, 0.4));
-  ctx.stroke();
-
-  ctx.fillStyle = paint.outline;
-  ctx.fill(mass.outline);
-  const fill = ctx.createLinearGradient(0, mass.top, 0, mass.bottom);
-  fill.addColorStop(0, css(paint.tip));
-  fill.addColorStop(1, css(paint.base));
-  ctx.fillStyle = fill;
-  ctx.fill(mass.body);
-
-  const flecks =
-    mass.flecks === undefined
-      ? 0
-      : smoothstep(MOUND.fleckPx.from, MOUND.fleckPx.to, lobePx);
-  if (mass.flecks !== undefined && flecks > 0) {
-    ctx.save();
-    ctx.globalAlpha *= flecks * MOUND.fleck.alpha;
-    ctx.fillStyle = css(paint.base, MOUND.fleck.shade);
-    ctx.fill(mass.flecks);
-    ctx.restore();
-  }
-
-  // The carved lines show once each cluster's lobe is a few pixels across.
-  const carving =
-    mass.carving === undefined
-      ? 0
-      : smoothstep(MOUND.carvedPx.from, MOUND.carvedPx.to, lobePx);
-  if (mass.carving !== undefined && carving > 0) {
-    ctx.save();
-    ctx.globalAlpha *= MOUND.carving * carving;
-    ctx.lineWidth = Math.max(vein.width, line);
-    ctx.stroke(mass.carving);
-    ctx.restore();
-  }
-}
-
-/** The shapes of a mound's mass, in the mound's units. */
-interface MassShapes {
-  /** Every lobe grown by a line, filled in ink so its outer edge shows around the body. */
-  outline: Path2D;
-  body: Path2D;
-  /** The deep hearts flecking a cherry's mass. */
-  flecks: Path2D | undefined;
-  /** The lines carved along the tops of a mound's clusters. */
-  carving: Path2D | undefined;
-  top: number;
-  bottom: number;
-  /** Radius of its first lobe. */
-  lobe: number;
-}
-
-/**
- * Masses built so far, so a mound that keeps its shape from one frame to the next is not built
- * again. Cleared once it holds this many.
- */
-const massCache = new Map<string, MassShapes>();
-const MASS_CACHE_LIMIT = 4000;
-
-/**
- * The shapes of a mound's mass, built once for each shape it takes. Openness, wilting and the
- * width of its outline change in small steps, so a mound growing in or zoomed past is rebuilt
- * only now and then.
- */
-function massShapes(
-  kind: "cherry" | "maple",
-  clusters: number,
-  variant: number,
-  open: number,
-  wilt: number,
-  line: number,
-  coarse: boolean,
-): MassShapes {
-  const step = {
-    open: Math.round(open * 40) / 40,
-    wilt: Math.round(wilt * 40) / 40,
-    line: Math.exp(Math.round(Math.log(line) * 20) / 20),
-  };
-  const key = `${kind} ${clusters} ${variant} ${step.open} ${step.wilt} ${step.line} ${coarse}`;
-  const cached = massCache.get(key);
-  if (cached !== undefined) {
-    return cached;
-  }
-  if (massCache.size >= MASS_CACHE_LIMIT) {
-    massCache.clear();
-  }
-  const built = buildMass(
-    kind,
-    clusters,
-    variant,
-    step.open,
-    step.wilt,
-    step.line,
-    coarse,
-  );
-  massCache.set(key, built);
-  return built;
-}
-
-function buildMass(
-  kind: "cherry" | "maple",
-  clusters: number,
-  variant: number,
-  open: number,
-  wilt: number,
-  line: number,
-  coarse: boolean,
-): MassShapes {
-  const members = coarse
-    ? moundLayout(clusters, variant)
-        .filter((_, i) => i % 2 === 0)
-        .map((m) => ({ ...m, scale: m.scale * MOUND.coarseGrowth }))
-    : moundLayout(clusters, variant);
-  const gather = lerp(0.4, 1, open);
-  const middle = lerp(0.3, 0.6, open) - 0.08 * wilt;
-  const swell = lerp(0.55, 1, open) * (1 - 0.15 * wilt);
-  // A lone cluster shows the lobes of its puff; in a mound each cluster is one lobe of the mass.
-  const lone = members.length === 1;
-  const lobes = lone
-    ? [
-        ...PUFF.map((lobe, i) => ({
-          x: (variant < 0.5 ? -1 : 1) * lobe.x * gather,
-          y: middle + (lobe.y - 0.6) * gather,
-          r: lobe.r * swell,
-          turn: i * 1.3,
-        })),
-        // Fills the gaps the lobes leave between them, where their outlines would show through.
-        { x: 0, y: middle, r: 0.3 * gather, turn: 0 },
-      ]
-    : members.map((m) => ({
-        x: m.x,
-        y: m.y + middle * m.scale,
-        r: MOUND.lobe * swell * m.scale,
-        turn: m.variant * Math.PI * 2,
-      }));
-
-  // Filling is much quicker than stroking so many circles, so the outline is the lobes grown by
-  // a line and filled in ink; the body filled over it leaves only their shared outer edge.
-  const shapes = (grow: number): Path2D => {
-    const path = new Path2D();
-    for (const lobe of lobes) {
-      if (kind === "maple") {
-        leafPoints(path, lobe.x, lobe.y, lobe.r + grow, lobe.turn);
-      } else {
-        path.moveTo(lobe.x + lobe.r + grow, lobe.y);
-        path.arc(lobe.x, lobe.y, lobe.r + grow, 0, Math.PI * 2);
-      }
-    }
-    return path;
-  };
-
-  let flecks: Path2D | undefined;
-  if (kind === "cherry") {
-    flecks = new Path2D();
-    // A lone cluster's lobes are a blossom each; a mound's are a cluster each.
-    const each = lone ? 1 : MOUND.fleck.perCluster;
-    for (const [i, lobe] of lobes.entries()) {
-      for (let k = 0; k < each; k += 1) {
-        const a = hash(i * each + k, 0.37) * Math.PI * 2;
-        const d = (lone ? 0.2 : 0.62) * hash(i * each + k, 0.71) * lobe.r;
-        const x = lobe.x + Math.cos(a) * d;
-        const y = lobe.y + Math.sin(a) * d;
-        const r = (lone ? 0.18 : 0.09) * lobe.r;
-        flecks.moveTo(x + r, y);
-        flecks.arc(x, y, r, 0, Math.PI * 2);
-      }
-    }
-  }
-
-  let carving: Path2D | undefined;
-  if (!lone) {
-    carving = new Path2D();
-    // The first clusters lie at the back, under the rest.
-    for (const lobe of lobes.slice(MOUND.carvedFrom)) {
-      const r = 0.9 * lobe.r;
-      const y = lobe.y - 0.08 * lobe.r;
-      carving.moveTo(
-        lobe.x + r * Math.cos(0.22 * Math.PI),
-        y + r * Math.sin(0.22 * Math.PI),
-      );
-      carving.arc(lobe.x, y, r, 0.22 * Math.PI, 0.78 * Math.PI);
-    }
-  }
-
-  return {
-    outline: shapes(line),
-    body: shapes(0),
-    flecks,
-    carving,
-    top: Math.max(...lobes.map((l) => l.y + l.r)),
-    bottom: Math.min(...lobes.map((l) => l.y - l.r)),
-    lobe: at(lobes, 0).r,
-  };
 }
 
 /**
@@ -964,27 +766,403 @@ function drawMound(
   }
 }
 
-/** Adds a lobe of a maple's mass to the path: a ring of leaf points `r` out around (x, y). */
-function leafPoints(
-  ctx: CanvasPath,
-  x: number,
-  y: number,
-  r: number,
-  turn: number,
+/**
+ * Which of the flowers in view are drawn in detail; the rest are painted as marks by `drawMarks`.
+ * A lotus is always drawn in detail. A cherry cluster or maple spray comes into detail once its
+ * blossoms or leaves show large enough, each at a size of its own within `MARKS.detailPx`, so a
+ * canopy comes into detail a few clusters at a time as the view closes in. Only so many blossoms
+ * and leaves are drawn in detail at once, those nearest `focus` first, so a full canopy filling
+ * the view stays quick to draw: the detail spreads out from the middle of the view as it closes
+ * in.
+ */
+export function inDetail(
+  looks: readonly FlowerLook[],
+  focus: { x: number; y: number },
+): boolean[] {
+  const detailed = looks.map((look) => look.kind === "lotus");
+  const ready = looks.flatMap((look, i) => {
+    if (look.kind === "lotus") {
+      return [];
+    }
+    const size = lerp(MARKS.detailPx.from, MARKS.detailPx.to, look.variant);
+    return markRadius(look.kind, look) < size
+      ? []
+      : [
+          {
+            i,
+            parts: partsOf(look.kind, look.clusters),
+            distance: Math.hypot(look.x - focus.x, look.y - focus.y),
+          },
+        ];
+  });
+  ready.sort((a, b) => a.distance - b.distance);
+  let left = MARKS.detailBudget;
+  for (const { i, parts } of ready) {
+    if (parts > left) {
+      break;
+    }
+    left -= parts;
+    detailed[i] = true;
+  }
+  return detailed;
+}
+
+/**
+ * Paints cherry clusters and maple sprays too small to show in detail, after the populated trees
+ * of the references: every blossom or leaf a flat mark with no outline, in a shadow, a middle or
+ * a light tone. They are all painted together, a tone at a time, the shadow first, so light lies
+ * over the top of a canopy and shade gathers inside it. Sets the transform itself, so the
+ * caller's is lost.
+ */
+export function drawMarks(
+  ctx: CanvasRenderingContext2D,
+  dpr: number,
+  looks: readonly FlowerLook[],
 ): void {
-  const { points, tip, notch } = MASS_LEAF;
-  for (let k = 0; k < 2 * points; k += 1) {
-    const a = turn + (k * Math.PI) / points;
-    const reach = r * (k % 2 === 0 ? tip : notch);
-    const px = x + Math.cos(a) * reach;
-    const py = y + Math.sin(a) * reach;
-    if (k === 0) {
-      ctx.moveTo(px, py);
-    } else {
-      ctx.lineTo(px, py);
+  // Flowers within a step of each other in age and fading share their colors, and are painted
+  // as one.
+  const groups = new Map<
+    string,
+    {
+      kind: "cherry" | "maple";
+      age: number;
+      alpha: number;
+      light: Rgb;
+      tones: Path2D[];
+      hearts: Path2D[];
+    }
+  >();
+  // Each flower's marks are as many as keeps each of them a few pixels across; if all of them
+  // together would be more than a frame can afford, every flower is painted with fewer, larger
+  // ones.
+  const sized = looks.map((look) => {
+    const { kind } = look;
+    invariant(kind !== "lotus", "A lotus is always drawn in detail.");
+    const radius = markRadius(kind, look);
+    return { look, kind, radius, every: everyFor(radius) };
+  });
+  const total = sized.reduce(
+    (sum, s) => sum + partsOf(s.kind, s.look.clusters) / s.every,
+    0,
+  );
+  const thinning =
+    total > MARKS.budget ? 2 ** Math.ceil(Math.log2(total / MARKS.budget)) : 1;
+
+  for (const { look, kind, radius, every } of sized) {
+    const age = Math.round(look.age * 50) / 50;
+    const alpha = Math.round(look.alpha * 10) / 10;
+    const key = `${kind} ${age} ${alpha} ${look.light.join(" ")}`;
+    let group = groups.get(key);
+    if (group === undefined) {
+      group = {
+        kind,
+        age,
+        alpha,
+        light: look.light,
+        tones: TONES.map(() => new Path2D()),
+        hearts: TONES.map(() => new Path2D()),
+      };
+      groups.set(key, group);
+    }
+    const marks = marksOf(look, kind, markLevel(radius, every * thinning));
+    const sin = Math.sin(look.angle);
+    const cos = Math.cos(look.angle);
+    // The same frame `drawFlower` draws in.
+    const placed = new DOMMatrix([
+      look.size * sin * dpr,
+      look.size * cos * dpr,
+      look.size * cos * dpr,
+      -look.size * sin * dpr,
+      look.x * dpr,
+      look.y * dpr,
+    ]);
+    for (const [i, path] of marks.tones.entries()) {
+      at(group.tones, i).addPath(path, placed);
+    }
+    for (const [i, path] of (marks.hearts ?? []).entries()) {
+      at(group.hearts, i).addPath(path, placed);
     }
   }
-  ctx.closePath();
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const group of groups.values()) {
+    const { base, tip } = petalColors(group.kind, group.age);
+    ctx.globalAlpha = group.alpha;
+    for (const [i, tone] of TONES.entries()) {
+      ctx.fillStyle = css(
+        lit(mix(base, tip, tone.toTip), group.light),
+        tone.shade,
+      );
+      ctx.fill(at(group.tones, i));
+      ctx.fillStyle = css(lit(base, group.light), MARKS.heartShade);
+      ctx.fill(at(group.hearts, i));
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Radius of one of a cluster's blossoms or leaves as it shows, in CSS pixels. */
+function markRadius(
+  kind: "cherry" | "maple",
+  look: { size: number; clusters: number },
+): number {
+  return (MARKS.radius[kind] * look.size) / look.clusters;
+}
+
+/** How many blossoms or leaves a mound `clusters` times the size of one cluster carries. */
+function partsOf(kind: "cherry" | "maple", clusters: number): number {
+  return (kind === "cherry" ? CHERRY : MAPLE).length * memberCount(clusters);
+}
+
+/**
+ * How few of a flower's blossoms or leaves `radius` pixels across get a mark, one in so many,
+ * so that grown to cover for the rest, none is smaller than the smallest mark.
+ */
+function everyFor(radius: number): number {
+  return radius >= MARKS.minPx
+    ? 1
+    : 2 ** Math.ceil(Math.log2((MARKS.minPx / radius) ** 2));
+}
+
+/** How a far flower's marks are drawn at the size it shows. */
+interface MarkLevel {
+  /** Whether each mark takes its blossom's or leaf's shape, or is a plain oval. */
+  shaped: boolean;
+  /** Whether a blossom's mark shows its deep heart. */
+  hearts: boolean;
+  /** Only one in this many blossoms or leaves gets a mark, grown to cover for the rest. */
+  every: number;
+}
+
+/** How the marks of blossoms or leaves `radius` pixels across are drawn, one in `every`. */
+function markLevel(radius: number, every: number): MarkLevel {
+  const drawn = radius * Math.sqrt(every);
+  return {
+    shaped: drawn >= MARKS.shapedPx,
+    hearts: drawn >= MARKS.heartPx,
+    every,
+  };
+}
+
+/** A far flower's marks in its own units: a path for each tone, and the hearts on each. */
+interface Marks {
+  tones: readonly Path2D[];
+  hearts: readonly Path2D[] | undefined;
+}
+
+/**
+ * Marks built so far, so a flower that keeps its shape and its size on screen from one frame to
+ * the next is not built again. Cleared once it holds this many.
+ */
+const marksCache = new Map<string, Marks>();
+const MARKS_CACHE_LIMIT = 4000;
+
+/**
+ * A far flower's marks, built once for each shape it takes. Openness and wilting change in small
+ * steps, so a flower growing in or wilting is rebuilt only now and then.
+ */
+function marksOf(
+  look: FlowerLook,
+  kind: "cherry" | "maple",
+  level: MarkLevel,
+): Marks {
+  const open = Math.round(easeInOut(look.openness) * 40) / 40;
+  const wilt = Math.round(smoothstep(WILT.from, WILT.to, look.age) * 40) / 40;
+  const steps = MARKS.exposureSteps - 1;
+  const exposure = Math.round(look.exposure * steps) / steps;
+  const key = `${kind} ${look.clusters} ${look.variant} ${open} ${wilt} ${exposure} ${level.shaped} ${level.hearts} ${level.every}`;
+  const cached = marksCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  if (marksCache.size >= MARKS_CACHE_LIMIT) {
+    marksCache.clear();
+  }
+  const built = buildMarks(
+    kind,
+    look.clusters,
+    look.variant,
+    open,
+    wilt,
+    exposure,
+    level,
+  );
+  marksCache.set(key, built);
+  return built;
+}
+
+/**
+ * The marks of a mound `clusters` times the size of one cluster, laid where its blossoms or
+ * leaves lie when drawn in detail, so each mark becomes its blossom or leaf as the view closes
+ * in. A mound open to the sky, a cluster near the top of its mound and a blossom or leaf at the
+ * front of its cluster are each the likelier to take the light tone.
+ */
+function buildMarks(
+  kind: "cherry" | "maple",
+  clusters: number,
+  variant: number,
+  open: number,
+  wilt: number,
+  exposure: number,
+  level: MarkLevel,
+): Marks {
+  const members = moundLayout(clusters, variant);
+  const heights = members.map((m) => m.y);
+  const low = Math.min(...heights);
+  const high = Math.max(...heights);
+  const tones = TONES.map(() => new Path2D());
+  const hearts = level.hearts ? TONES.map(() => new Path2D()) : undefined;
+  const grow = Math.sqrt(level.every);
+  let count = 0;
+  // The tone the next blossom or leaf takes, or nothing if it is one of those left out.
+  const toneOf = (lit: number, back: boolean): number | undefined => {
+    count += 1;
+    if (count % level.every !== 0) {
+      return undefined;
+    }
+    const { tone } = MARKS;
+    const t =
+      tone.lit * lit +
+      tone.exposure * (exposure - 0.5) +
+      (back ? 0 : tone.front) +
+      tone.jitter * (hash(count, variant) - 0.5);
+    return t < tone.shadow ? 0 : t < tone.light ? 1 : 2;
+  };
+
+  for (const m of members) {
+    const lit = high > low ? (m.y - low) / (high - low) : 0.5;
+    if (kind === "cherry") {
+      const { blossoms, buds, petal } = cherryLayout(open, wilt, m.variant);
+      for (const b of blossoms) {
+        const t = toneOf(lit, b.back);
+        if (t === undefined) {
+          continue;
+        }
+        const placed: Blossom = {
+          ...b,
+          x: m.x + b.x * m.scale,
+          y: m.y + b.y * m.scale,
+          r: b.r * m.scale * grow,
+        };
+        const path = at(tones, t);
+        if (level.shaped) {
+          const reach = placed.r * petal;
+          const f = frame(
+            placed.x,
+            placed.y,
+            placed.turn,
+            reach,
+            reach * placed.squash,
+          );
+          blossomMark(path, f, placed.spin);
+        } else {
+          const r = placed.r * petal;
+          oval(path, placed.x, placed.y, r, r * placed.squash, placed.turn);
+        }
+        if (hearts !== undefined) {
+          blossomHeart(at(hearts, t), placed, petal);
+        }
+      }
+      // Buds show only while every blossom has its own mark, in the shadow tone.
+      if (level.every === 1) {
+        for (const bud of buds) {
+          const length = bud.length * m.scale;
+          const reach = 0.5 * length;
+          oval(
+            at(tones, 0),
+            m.x + bud.x * m.scale - Math.sin(bud.turn) * reach,
+            m.y + bud.y * m.scale + Math.cos(bud.turn) * reach,
+            0.42 * length,
+            0.5 * length,
+            bud.turn,
+          );
+        }
+      }
+    } else {
+      for (const leaf of mapleLayout(open, wilt, m.variant).leaves) {
+        const t = toneOf(lit, leaf.back);
+        if (t === undefined) {
+          continue;
+        }
+        const placed: Leaf = {
+          ...leaf,
+          x: m.x + leaf.x * m.scale,
+          y: m.y + leaf.y * m.scale,
+          size: leaf.size * m.scale * grow,
+        };
+        const path = at(tones, t);
+        if (level.shaped) {
+          leafMark(path, leafFrame(placed));
+        } else {
+          // An oval over the middle of the leaf.
+          const reach = 0.42 * placed.size;
+          oval(
+            path,
+            placed.x - Math.sin(placed.turn) * reach,
+            placed.y + Math.cos(placed.turn) * reach,
+            0.55 * placed.size * placed.squash,
+            0.5 * placed.size,
+            placed.turn,
+          );
+        }
+      }
+    }
+  }
+  return { tones, hearts };
+}
+
+/**
+ * Adds a blossom's mark to the path: five rounded petals reaching the edge of its frame `f`,
+ * the first turned `spin`, as in the blossom drawn in detail.
+ */
+function blossomMark(path: CanvasPath, f: Frame, spin: number): void {
+  // Each petal is one curve from the notch before it to the notch after it, pulled out far
+  // enough that it reaches the frame's edge.
+  const point = (a: number, reach: number): [number, number] =>
+    place(f, -Math.sin(a) * reach, Math.cos(a) * reach);
+  const step = (Math.PI * 2) / 5;
+  const [x0, y0] = point(spin - step / 2, BLOSSOM_MARK.notch);
+  path.moveTo(x0, y0);
+  for (let k = 0; k < 5; k += 1) {
+    const a = spin + k * step;
+    const [cx, cy] = point(a, BLOSSOM_MARK.pull);
+    const [x, y] = point(a + step / 2, BLOSSOM_MARK.notch);
+    path.quadraticCurveTo(cx, cy, x, y);
+  }
+  path.closePath();
+}
+
+/** Adds a leaf's mark to the path: a star of its seven lobes, in the leaf's frame `f`. */
+function leafMark(path: CanvasPath, f: Frame): void {
+  const point = (a: number, reach: number): [number, number] =>
+    place(f, -Math.sin(a) * reach, Math.cos(a) * reach);
+  path.moveTo(f.x, f.y);
+  for (const [i, lobe] of MAPLE_LOBES.entries()) {
+    if (i > 0) {
+      const before = at(MAPLE_LOBES, i - 1);
+      const [nx, ny] = point(
+        (before.turn + lobe.turn) / 2,
+        LEAF_MARK_NOTCH * Math.min(before.length, lobe.length),
+      );
+      path.lineTo(nx, ny);
+    }
+    const [x, y] = point(lobe.turn, lobe.length);
+    path.lineTo(x, y);
+  }
+  path.closePath();
+}
+
+/** Adds an oval to the path, `rx` across and `ry` along, its axes turned `turn` to the left. */
+function oval(
+  path: CanvasPath,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  turn: number,
+): void {
+  path.moveTo(x + rx * Math.cos(turn), y + rx * Math.sin(turn));
+  path.ellipse(x, y, rx, ry, turn, 0, Math.PI * 2);
 }
 
 /** A number from 0 to 1 that looks random, fixed for each `i` and `seed`. */
@@ -993,19 +1171,37 @@ function hash(i: number, seed: number): number {
   return x - Math.floor(x);
 }
 
+/** A cherry blossom of a cluster, in the cluster's units. */
+interface Blossom {
+  x: number;
+  y: number;
+  r: number;
+  /** Turn of the axis it tips away from the viewer about, and how much of its height shows. */
+  turn: number;
+  squash: number;
+  /** Whether it sits behind the others, in their shade. */
+  back: boolean;
+  /** Turn of its first petal. */
+  spin: number;
+}
+
+/** A cherry bud, from its stalk out along a lean to the left of `turn`, in the cluster's units. */
+interface Bud {
+  x: number;
+  y: number;
+  length: number;
+  turn: number;
+}
+
 /**
- * A cherry cluster: blossoms on long thin stalks from one spur, each of five notched petals, deep
- * pink at its heart and pale at its rim, ringed with stamens; and a bud or two among them.
+ * Where a cherry cluster's blossoms and buds lie as it opens and wilts, back to front, and the
+ * length of their petals as a fraction of each blossom's radius.
  */
-function drawCherry(
-  ctx: CanvasRenderingContext2D,
+function cherryLayout(
   open: number,
   wilt: number,
-  paint: Paint,
-  line: number,
-  vein: Vein,
   variant: number,
-): void {
+): { blossoms: Blossom[]; buds: Bud[]; petal: number } {
   const flip = variant < 0.5 ? -1 : 1;
   // A third of the clusters carry one blossom fewer.
   const missing = Math.floor(variant * 12) % 3 === 0 ? 2 : -1;
@@ -1022,7 +1218,7 @@ function drawCherry(
             r: b.r * lerp(0.4, 1, open),
             turn: flip * b.turn,
             squash: b.squash * (1 - 0.3 * wilt),
-            shade: i < CHERRY_BACK ? 0.86 : 1,
+            back: i < CHERRY_BACK,
             spin: variant * 7 + i * 1.3 + 0.3 * wilt,
           },
         ],
@@ -1033,7 +1229,27 @@ function drawCherry(
     length: bud.length * lerp(0.6, 1, open),
     turn: flip * bud.turn,
   }));
-  const petal = lerp(0.6, 1, open) * (1 - 0.12 * wilt);
+  return {
+    blossoms,
+    buds,
+    petal: lerp(0.6, 1, open) * (1 - 0.12 * wilt),
+  };
+}
+
+/**
+ * A cherry cluster: blossoms on long thin stalks from one spur, each of five notched petals, deep
+ * pink at its heart and pale at its rim, ringed with stamens; and a bud or two among them.
+ */
+function drawCherry(
+  ctx: CanvasRenderingContext2D,
+  open: number,
+  wilt: number,
+  paint: Paint,
+  line: number,
+  vein: Vein,
+  variant: number,
+): void {
+  const { blossoms, buds, petal } = cherryLayout(open, wilt, variant);
 
   // The spur, and a stalk from it to each blossom and bud.
   ctx.strokeStyle = paint.ink;
@@ -1073,13 +1289,12 @@ function drawCherry(
 
   for (const b of blossoms) {
     const f = frame(b.x, b.y, b.turn, b.r, b.r * b.squash);
+    const shade = b.back ? CHERRY_BACK_SHADE : 1;
     ctx.beginPath();
-    for (let k = 0; k < 5; k += 1) {
-      trace(ctx, CHERRY_PETAL, f, b.spin + (k / 5) * Math.PI * 2, petal);
-    }
+    blossomPetals(ctx, f, b.spin, petal);
     const fill = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * petal);
-    fill.addColorStop(0.15, css(paint.base, b.shade));
-    fill.addColorStop(1, css(paint.tip, b.shade));
+    fill.addColorStop(0.15, css(paint.base, shade));
+    fill.addColorStop(1, css(paint.tip, shade));
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = paint.outline;
@@ -1087,22 +1302,33 @@ function drawCherry(
     ctx.stroke();
 
     // Its heart, a deeper eye.
-    ctx.fillStyle = css(paint.base, 0.62 * b.shade);
+    ctx.fillStyle = css(paint.base, HEART_SHADE * shade);
     ctx.beginPath();
-    ctx.ellipse(
-      b.x,
-      b.y,
-      0.2 * b.r * petal,
-      0.2 * b.r * petal * b.squash,
-      b.turn,
-      0,
-      Math.PI * 2,
-    );
+    blossomHeart(ctx, b, petal);
     ctx.fill();
     if (vein.alpha > 0.01) {
       drawCherryDetail(ctx, f, b.spin, petal, paint, vein);
     }
   }
+}
+
+/** Adds a cherry blossom's five petals to the path, in the blossom's frame `f`. */
+function blossomPetals(
+  path: CanvasPath,
+  f: Frame,
+  spin: number,
+  petal: number,
+): void {
+  for (let k = 0; k < 5; k += 1) {
+    trace(path, CHERRY_PETAL, f, spin + (k / 5) * Math.PI * 2, petal);
+  }
+}
+
+/** Adds a cherry blossom's heart to the path, `CHERRY_HEART` of its petals' reach across. */
+function blossomHeart(path: CanvasPath, b: Blossom, petal: number): void {
+  const rx = CHERRY_HEART * b.r * petal;
+  path.moveTo(b.x + rx * Math.cos(b.turn), b.y + rx * Math.sin(b.turn));
+  path.ellipse(b.x, b.y, rx, rx * b.squash, b.turn, 0, Math.PI * 2);
 }
 
 /** The stamens ringing a cherry blossom's heart, and a line carved down each petal. */
@@ -1154,19 +1380,26 @@ function drawCherryDetail(
   ctx.restore();
 }
 
-/**
- * A spray of Japanese maple leaves fanned out from one twig: each leaf seven slender pointed lobes
- * on a stalk, crimson at its heart and scarlet at its tips, with a vein carved down each lobe.
- */
-function drawMaple(
-  ctx: CanvasRenderingContext2D,
+/** A maple leaf of a spray, in the spray's units. */
+interface Leaf {
+  /** Where its stalk ends and its midrib starts. */
+  x: number;
+  y: number;
+  /** Lean of its midrib to the left of the spray's axis. */
+  turn: number;
+  size: number;
+  /** How much of its width shows as it turns on its midrib. */
+  squash: number;
+  /** Whether it sits behind the others, in their shade. */
+  back: boolean;
+}
+
+/** Where a maple spray's leaves lie as it opens and wilts, back to front, and its twig's length. */
+function mapleLayout(
   open: number,
   wilt: number,
-  paint: Paint,
-  line: number,
-  vein: Vein,
   variant: number,
-): void {
+): { twig: number; leaves: Leaf[] } {
   const flip = variant < 0.5 ? -1 : 1;
   // A third of the sprays carry one leaf fewer.
   const missing = Math.floor(variant * 12) % 3 === 0 ? 2 : -1;
@@ -1187,10 +1420,39 @@ function drawMaple(
         size: leaf.size * lerp(0.35, 1, open) * (1 - 0.1 * wilt),
         // A leaf unfolds as it grows in, and curls as it wilts.
         squash: leaf.squash * lerp(0.35, 1, open) * (1 - 0.35 * wilt),
-        shade: i < MAPLE_BACK ? 0.8 : 1,
+        back: i < MAPLE_BACK,
       },
     ];
   });
+  return { twig, leaves };
+}
+
+/** A maple leaf's frame, its midrib along +y, from its base to its longest tip. */
+function leafFrame(leaf: Leaf): Frame {
+  return frame(leaf.x, leaf.y, leaf.turn, leaf.size * leaf.squash, leaf.size);
+}
+
+/** Adds a maple leaf's seven lobes to the path, in the leaf's frame `f`. */
+function leafLobes(path: CanvasPath, f: Frame): void {
+  for (const lobe of MAPLE_LOBES) {
+    trace(path, MAPLE_LOBE, f, lobe.turn, lobe.length);
+  }
+}
+
+/**
+ * A spray of Japanese maple leaves fanned out from one twig: each leaf seven slender pointed lobes
+ * on a stalk, crimson at its heart and scarlet at its tips, with a vein carved down each lobe.
+ */
+function drawMaple(
+  ctx: CanvasRenderingContext2D,
+  open: number,
+  wilt: number,
+  paint: Paint,
+  line: number,
+  vein: Vein,
+  variant: number,
+): void {
+  const { twig, leaves } = mapleLayout(open, wilt, variant);
 
   // The twig, and a stalk from its end to each leaf.
   ctx.strokeStyle = paint.ink;
@@ -1208,22 +1470,15 @@ function drawMaple(
   ctx.stroke();
 
   for (const leaf of leaves) {
-    const f = frame(
-      leaf.x,
-      leaf.y,
-      leaf.turn,
-      leaf.size * leaf.squash,
-      leaf.size,
-    );
+    const f = leafFrame(leaf);
     ctx.beginPath();
-    for (const lobe of MAPLE_LOBES) {
-      trace(ctx, MAPLE_LOBE, f, lobe.turn, lobe.length);
-    }
+    leafLobes(ctx, f);
     // The outline is stroked twice as wide as it shows; filling the lobes over it leaves only
     // their shared outer edge.
     ctx.strokeStyle = paint.outline;
     ctx.lineWidth = line * 2;
     ctx.stroke();
+    const shade = leaf.back ? MAPLE_BACK_SHADE : 1;
     const fill = ctx.createRadialGradient(
       leaf.x,
       leaf.y,
@@ -1232,8 +1487,8 @@ function drawMaple(
       leaf.y,
       leaf.size,
     );
-    fill.addColorStop(0, css(paint.base, leaf.shade));
-    fill.addColorStop(1, css(paint.tip, leaf.shade));
+    fill.addColorStop(0, css(paint.base, shade));
+    fill.addColorStop(1, css(paint.tip, shade));
     ctx.fillStyle = fill;
     ctx.fill();
     if (vein.alpha <= 0.01) {
@@ -1290,7 +1545,7 @@ function place(f: Frame, u: number, v: number): [number, number] {
 
 /** Adds `curve` to the path, scaled to `length` and leaning `turn` to the left within the part. */
 function trace(
-  ctx: CanvasRenderingContext2D,
+  ctx: CanvasPath,
   curve: Curve,
   f: Frame,
   turn: number,

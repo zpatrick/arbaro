@@ -131,11 +131,18 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] Raising the size past one grows each cherry cluster or maple spray into a mound of
       clusters of their true size, rather than one larger cluster, and the mounds keep the
       spacing they had, so they run together: a young tree's few sparse clusters become a full,
-      clustered crown. A larger mound keeps closer to its limb.
-- [x] Seen from afar, a mound is one scalloped mass, pale where the light falls on its top and
-      deeper beneath, with a line carved along the top of each cluster; a maple's mass is jagged
-      with leaf points and a cherry's flecked with the hearts of its blossoms. Closer in, mounds
-      come into detail a few at a time, blossom by blossom and leaf by leaf.
+      clustered crown, like the populated trees in the references.
+- [x] On a limb that lies near level, the clusters grow along its top, so they gather into pads
+      with the shade beneath them.
+- [x] Seen from afar, every blossom and leaf is a flat mark with no outline, where it lies when
+      drawn in detail: a blossom's five rounded petals, a leaf's star of lobes, or a plain oval
+      when smaller still. Each takes a light, middle or shadow tone, the light the likelier the
+      more open its mound is to the sky, the higher its cluster sits in its mound and the nearer
+      the front of its cluster it is, so light lies over the top of the canopy and shade gathers
+      inside it. The stalks under far clusters are fine and faint, twigs among the marks.
+- [x] Closer in, clusters come into detail a few at a time, their outlines fading in as they
+      grow, each mark becoming its blossom or leaf. Detail spreads from the middle of the view,
+      as much as a frame can afford, and too many marks for a frame are painted fewer and larger.
 - [x] Flowers only grow on thin wood, and keep to it as their limb grows, so they ride up with
       the tip.
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one
@@ -145,7 +152,7 @@ switched on in the debug panel beside the original steer-and-grow controls:
       are spaced along all of it, taking turns on either side, so a long twiggy limb carries
       many, a short one a few. Lotuses grow one and a half times their size apart, and larger
       ones fewer; cherry and maple clusters crowd closer, each on a twig of its own, mostly short
-      and a few long, at varied angles, so a limb carries a sleeve of them, not a single row.
+      and a few long, at varied angles, so a limb carries a crowd of them, not a single row.
 - [x] Lotuses open at sunrise and close into buds at sunset, and are seen opening and closing.
       Cherry blossoms and maple leaves stay open, unfolding as they grow in.
 - [x] Through autumn they turn yellow, or a maple scarlet, then orange, then brown, wilt, and
