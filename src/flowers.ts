@@ -42,8 +42,8 @@ export interface Conditions {
 }
 
 export const FLOWERS = {
-  /** Thickest wood a flower grows on, as a radius in world units. */
-  maxGirth: 0.08,
+  /** Thickest wood a flower grows on, as a radius in world units: a twig 4 cm across. */
+  maxGirth: 0.02,
   /**
    * Size of a flower at a size multiplier of one, in world units: true to life, so an open lotus
    * is about 27 cm across, a cloud blossom 17 cm and a star flower 15 cm.

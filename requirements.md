@@ -56,6 +56,10 @@ art and tree-of-life drawings.
 
 - [x] A limb is as thick as what it carries: below a fork, its cross-section is the sum of the
       limbs above it.
+- [x] Wood is true to life beside the barn and the flowers: a twig is under a centimeter across at
+      its tip and about two a meter back, and it thickens ever faster toward the trunk, as real
+      trees do. A 3.6 m sapling's trunk is about 10 cm across, and an 18 m tree's about 80 cm.
+      Flowers grow only on twigs up to 4 cm across.
 - [x] Forks blend smoothly into their parents, with a rounded crotch above and a softer collar
       below.
 - [x] Wood never shrinks. A limb that loses what it carried keeps its girth, and new growth from a

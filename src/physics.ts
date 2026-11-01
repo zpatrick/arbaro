@@ -10,9 +10,9 @@ export const PHYSICS = {
   woodDensity: 750,
   /**
    * Young's modulus of the wood, in pascals. Real green wood is closer to 9 GPa; softer wood lets
-   * a bare tree sway as visibly as a leafy one would.
+   * a bare tree sway as visibly as a leafy one would, and its thin twigs whip in the wind.
    */
-  stiffness: 1e8,
+  stiffness: 1e9,
   airDensity: 1.2,
   /**
    * Drag coefficient of a limb's cross-section. A bare cylinder's is about 1.2; this stands in for
@@ -28,16 +28,17 @@ export const PHYSICS = {
 export const FAILURE = {
   /**
    * Bending stress at which wood breaks, in pascals. Real green wood takes about 40 MPa, but it is
-   * also ninety times stiffer than the wood above, which bends visibly well before it breaks. A
-   * healthy tree carries about a quarter of this in calm air and starts losing limbs in a storm.
+   * also nine times stiffer than the wood above, which bends visibly well before it breaks. A
+   * healthy tree carries about a tenth of this in calm air, nears it in a gale and starts losing
+   * limbs in a storm.
    */
-  breakingStress: 2e6,
+  breakingStress: 8.4e6,
   /**
    * Torque the roots can hold, in newton meters per cubic meter of trunk radius at the ground. A
    * stand-in until roots are simulated: a thicker trunk is a better-rooted one. Trees uproot in
    * violent storms, after their weakest limbs have gone.
    */
-  rootHold: 2.1e6,
+  rootHold: 2.7e6,
   /** Damage per second while a joint is held exactly at its limit. It gives way at 1. */
   damageAtLimit: 0.4,
   /** Extra damage per second for each multiple of its limit a joint is pushed past it. */

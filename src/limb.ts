@@ -62,9 +62,14 @@ export const LIMB = {
   wander: 0.07,
   /** Length of one meander, in world units before scaling. */
   wanderLength: 3,
-  tipRadius: 0.01,
-  taper: 0.046,
-  taperExponent: 0.85,
+  /**
+   * An unforked limb is `tipRadius` thick at its tip and thickens by `taper` times its distance
+   * from the tip to the power `taperExponent`: as real trees do, a twig a meter from its tip is a
+   * couple of centimeters across, and the wood thickens ever faster toward the trunk.
+   */
+  tipRadius: 0.004,
+  taper: 0.007,
+  taperExponent: 1.5,
   /** Angle between a new offshoot and the limb it forks from. */
   forkAngle: 0.6,
   /**
