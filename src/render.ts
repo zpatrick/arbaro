@@ -7,7 +7,7 @@ import {
   type FlowerLook,
   inDetail,
 } from "./flower-art";
-import type { FlowerHover, FlowerView } from "./flowers";
+import { type FlowerHover, type FlowerView, middleReach } from "./flowers";
 import type { Limb } from "./limb";
 import { BARN_LINE, barnLines, barnOutline } from "./barn";
 import { Mountains } from "./mountains";
@@ -67,16 +67,9 @@ const DOT_FILL = 0.42;
 const DOT_MIN_PX = 0.9;
 /**
  * Width of a flower's stalk as a fraction of the flower's size, and its limits in CSS pixels.
- * Under a flower painted as marks it can be as narrow as `fine`, and shows `fineAlpha` as strong,
- * so the stalks read as fine twigs among the marks.
+ * Under a flower painted as marks it can be as narrow as `fine`, a twig among the marks.
  */
-const STALK = {
-  width: 0.06,
-  min: 0.9,
-  max: 2.4,
-  fine: 0.5,
-  fineAlpha: 0.55,
-} as const;
+const STALK = { width: 0.06, min: 0.9, max: 2.4, fine: 0.5 } as const;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
 /** Radius of the sun and of the moon, as fractions of the view's height. */
@@ -344,9 +337,10 @@ export class Renderer {
     }
     if (scene.flowerHover?.target !== undefined) {
       const { target } = scene.flowerHover;
+      const reach = middleReach(target.clusters) * target.size;
       const middle = camera.toScreen(
-        target.x + Math.cos(target.angle) * 0.5 * target.size,
-        target.y + Math.sin(target.angle) * 0.5 * target.size,
+        target.x + Math.cos(target.angle) * reach,
+        target.y + Math.sin(target.angle) * reach,
       );
       this.ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
       this.ctx.lineWidth = 1.25;
@@ -526,7 +520,7 @@ export class Renderer {
       flower.stalk.control.y,
     );
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.globalAlpha = flower.alpha * (fine ? STALK.fineAlpha : 1);
+    ctx.globalAlpha = flower.alpha;
     ctx.strokeStyle = this.inkColor;
     ctx.lineWidth = clamp(
       size * STALK.width,

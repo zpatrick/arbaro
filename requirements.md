@@ -131,7 +131,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] Raising the size past one grows each cherry cluster or maple spray into a mound of
       clusters of their true size, rather than one larger cluster, and the mounds keep the
       spacing they had, so they run together: a young tree's few sparse clusters become a full,
-      clustered crown, like the populated trees in the references.
+      clustered crown, like the populated trees in the references. A mound sits around the end
+      of its twig, which runs into it like a branch into its leaves, so most mounds wrap their
+      limb and only the furthest stand out from it, on a short twig. A cluster settles into this
+      as it grows from one cluster across to two, so flowers can grow from small to large.
 - [x] On a limb that lies near level, the clusters grow along its top, so they gather into pads
       with the shade beneath them.
 - [x] Seen from afar, every blossom and leaf is a flat mark with no outline, where it lies when
@@ -139,7 +142,7 @@ switched on in the debug panel beside the original steer-and-grow controls:
       when smaller still. Each takes a light, middle or shadow tone, the light the likelier the
       more open its mound is to the sky, the higher its cluster sits in its mound and the nearer
       the front of its cluster it is, so light lies over the top of the canopy and shade gathers
-      inside it. The stalks under far clusters are fine and faint, twigs among the marks.
+      inside it. The stalks under far clusters are fine, twigs among the marks.
 - [x] Closer in, clusters come into detail a few at a time, their outlines fading in as they
       grow, each mark becoming its blossom or leaf. Detail spreads from the middle of the view,
       as much as a frame can afford, and too many marks for a frame are painted fewer and larger.

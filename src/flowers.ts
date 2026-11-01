@@ -6,6 +6,7 @@ import {
   at,
   clamp,
   invariant,
+  lerp,
   Rng,
   smoothstep,
   valueNoise,
@@ -69,6 +70,12 @@ export const FLOWERS = {
    * slope, from 0 for upright to 1 for level.
    */
   onTop: 0.5,
+  /**
+   * Length of a mound's twig, as a multiple of the mound's size, from the shortest to the
+   * longest: the twig's end, the mound's middle, lies within about the mound's own reach of its
+   * limb for most mounds, so they wrap it.
+   */
+  moundTwig: { from: 0.35, to: 1.8 },
   /** The tree keeps its flowers this far from where a limb starts, in world units. */
   clearOfBase: 0.5,
   /** Seconds the tree takes to grow back a flower it lost to the wind. */
@@ -901,7 +908,11 @@ export class Flowers {
         continue;
       }
       const pose = this.poseOf(flower, settings);
-      const middle = along(pose, pose.angle, 0.5 * pose.size);
+      const middle = along(
+        pose,
+        pose.angle,
+        middleReach(pose.clusters) * pose.size,
+      );
       const distance = Math.hypot(x - middle.x, y - middle.y);
       if (
         distance <= Math.max(0.6 * pose.size, reach) &&
@@ -976,6 +987,23 @@ function position(flower: Flower, tree: Tree): number | undefined {
 }
 
 /**
+ * How far a flower's middle lies beyond the end of its stalk, the way it faces, as a fraction of
+ * its size. A lone flower or cluster sits beyond its stalk, but a mound two or more clusters
+ * across sits around the end of its twig, which runs into it like a branch into its leaves.
+ */
+export function middleReach(clusters: number): number {
+  return 0.5 * (1 - moundness(clusters));
+}
+
+/**
+ * How far a flower `clusters` clusters across has grown from a lone cluster, at 0, into a mound
+ * that sits around the end of its twig, at 1, as it goes from one cluster across to two.
+ */
+function moundness(clusters: number): number {
+  return smoothstep(1, 2, clusters);
+}
+
+/**
  * Whether `side` of `limb` at `s` faces the ground: on a limb that lies near level, the tree grows
  * its clusters along the top, so they gather into pads with the shade beneath them.
  */
@@ -1027,8 +1055,16 @@ function flowerPose(
       stalk: { from: { x: p.x, y: p.y }, control },
     };
   }
-  // From the side, its stalk leaves the wood square on and curves up toward the sky.
-  const stalk = (habit.stalk + habit.twig * traits.reach) * span;
+  // From the side, its stalk leaves the wood square on and curves up toward the sky. A mound
+  // sits around the end of a shorter twig, so most mounds wrap their limb and only the furthest
+  // stand out from it on a twig of their own.
+  const lone = habit.stalk + habit.twig * traits.reach;
+  const mound = lerp(
+    FLOWERS.moundTwig.from,
+    FLOWERS.moundTwig.to,
+    traits.reach,
+  );
+  const stalk = lerp(lone, mound, moundness(clusters)) * span;
   const normal = p.heading + (side * Math.PI) / 2;
   const angle =
     turnToward(normal, UPRIGHT, habit.skyward) +

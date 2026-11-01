@@ -1,4 +1,4 @@
-import type { FlowerKind } from "./flowers";
+import { type FlowerKind, middleReach } from "./flowers";
 import type { Rgb } from "./sky";
 import { at, clamp, invariant, lerp, smoothstep } from "./util";
 
@@ -116,12 +116,11 @@ const CLUSTER_PART = 0.25;
 
 /**
  * How a mound packs its clusters: as many as `fill` times the square of how many clusters across
- * it is, in a dome around `middle` reaching `top` above it and `underside` below, as fractions of
- * the mound's height.
+ * it is, in a dome reaching `top` above its middle and `underside` below, as fractions of the
+ * mound's height.
  */
 const MOUND = {
   fill: 1.1,
-  middle: 0.48,
   top: 0.44,
   underside: 0.26,
 } as const;
@@ -679,8 +678,8 @@ interface Member {
 
 /**
  * The clusters of a mound `clusters` times the size of one, back to front: packed into a dome
- * with a flattened underside over the mound's base, each turned its own way. A mound of one is a
- * single cluster.
+ * with a flattened underside, each turned its own way, its middle as far beyond the mound's base
+ * as `middleReach` says. A mound of one is a single cluster.
  */
 function moundLayout(clusters: number, variant: number): Member[] {
   if (clusters <= 1) {
@@ -688,6 +687,7 @@ function moundLayout(clusters: number, variant: number): Member[] {
   }
   const count = memberCount(clusters);
   const scale = 1 / clusters;
+  const middle = middleReach(clusters);
   const members: Member[] = [];
   for (let i = 0; i < count; i += 1) {
     const r = Math.sqrt((i + 0.5) / count);
@@ -697,7 +697,7 @@ function moundLayout(clusters: number, variant: number): Member[] {
     members.push({
       x: r * Math.cos(a) * (0.5 - 0.55 * scale),
       // Its base, below the middle of its cluster.
-      y: MOUND.middle + r * up * depth * (1 - scale) - 0.55 * scale,
+      y: middle + r * up * depth * (1 - scale) - 0.55 * scale,
       scale: scale * (0.88 + 0.24 * hash(i, variant)),
       variant: hash(i + 101, variant),
     });
