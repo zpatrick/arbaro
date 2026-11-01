@@ -27,7 +27,7 @@ art and tree-of-life drawings.
 - [x] The trunk flares into the ground with concave root curves that melt into it.
 - [x] The ground and the tree are the same dark ink. That reads well and should stay the default
       view.
-- [ ] Mountains drawn with flowing organic lines, as in the references.
+- [x] Mountains drawn with flowing organic lines, as in the references.
 - [x] Lotus flowers as a motif.
 - [ ] A minimal UI drawn from the same language, such as parallel lines of different lengths.
 - [ ] Twigs and root hairs curl into spirals when they reach full length.
@@ -111,6 +111,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 - [x] Three kinds, drawn from the references: the lotus, the scalloped cloud blossoms of the
       tree-of-life drawings, and the five-petal star flowers on their mound.
+- [x] The open lotus follows references 12 and 08: an outer row of long, narrow, pointed petals
+      spread nearly flat with their tips turned up, a middle row, and a cup of upright petals,
+      each petal carved with a second outline and a midrib, and stamens rising from its heart.
+      Closed, it is a smooth pointed bud.
 - [x] Flowers only grow on thin wood, and keep to it as their limb grows, so they ride up with
       the tip.
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one

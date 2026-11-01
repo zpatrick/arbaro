@@ -39,23 +39,41 @@ const WILT = { from: 0.55, to: 0.9 } as const;
 interface LotusPetal {
   /** Angle from the flower's axis when fully open, in radians. Mirrored to both sides unless 0. */
   angle: number;
+  /** Length closed in the bud, where the front petals are the longest, and fully open. */
+  bud: number;
   length: number;
   width: number;
   /** How dark the petal is, for depth: petals further back are darker. */
   shade: number;
-  /** How far the tip curls outward when fully open. */
-  curl: number;
+  /** How far the tip turns up toward upright when fully open, as a fraction of its length. */
+  lift: number;
 }
 
-/** A lotus seen from the side, its petals listed from the back to the front. */
+/**
+ * A lotus seen from the side, after the sand drawings, its petals listed from the back to the
+ * front: an outer row spread nearly flat, long and narrow with their tips turned up, a middle
+ * row, and a cup of upright petals in the middle.
+ */
 const LOTUS: readonly LotusPetal[] = [
-  { angle: 1.32, length: 0.5, width: 0.3, shade: 0.8, curl: 1 },
-  { angle: 0.96, length: 0.7, width: 0.38, shade: 0.86, curl: 0.6 },
-  { angle: 0.6, length: 0.86, width: 0.4, shade: 0.9, curl: 0.3 },
-  { angle: 0, length: 0.98, width: 0.42, shade: 0.85, curl: 0 },
-  { angle: 0.32, length: 0.84, width: 0.44, shade: 0.96, curl: 0.15 },
-  { angle: 0, length: 0.8, width: 0.48, shade: 1, curl: 0 },
+  { angle: 1.5, bud: 0.43, length: 0.9, width: 0.27, shade: 0.8, lift: 0.22 },
+  { angle: 1.08, bud: 0.6, length: 0.86, width: 0.31, shade: 0.86, lift: 0.16 },
+  { angle: 0.7, bud: 0.74, length: 0.82, width: 0.32, shade: 0.9, lift: 0.1 },
+  { angle: 0, bud: 0.84, length: 0.78, width: 0.33, shade: 0.84, lift: 0 },
+  { angle: 0.36, bud: 0.72, length: 0.72, width: 0.35, shade: 0.95, lift: 0.04 },
+  { angle: 0, bud: 0.69, length: 0.62, width: 0.37, shade: 1, lift: 0 },
 ];
+/** Petals from this index on stand in front of the stamens. */
+const LOTUS_FRONT = 4;
+/** Stamens rising from the heart of an open lotus: their lean from upright and their length. */
+const STAMENS: readonly { lean: number; length: number }[] = [
+  { lean: -0.42, length: 0.6 },
+  { lean: -0.18, length: 0.72 },
+  { lean: 0.05, length: 0.76 },
+  { lean: 0.26, length: 0.7 },
+  { lean: 0.46, length: 0.58 },
+];
+/** Color of the stamens' tips. */
+const POLLEN: Rgb = [226, 178, 82];
 
 /** A cloud blossom's lobes when open, around the middle of the cluster at height 0.52. */
 const CLOUD: readonly { x: number; y: number; r: number }[] = [
@@ -199,37 +217,22 @@ function drawLotus(
   ctx.ellipse(0, 0.05, 0.085, 0.07, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  for (const petal of LOTUS) {
-    const outer = petal.angle / 1.32;
-    const spread = petal.angle * lerp(0.07, 1, open) + 0.45 * wilt * outer;
-    const length = petal.length * lerp(0.86, 1, open) * (1 - 0.12 * wilt);
-    const width = petal.width * lerp(0.78, 1, open) * (1 - 0.3 * wilt);
-    const curl = petal.curl * open + 0.8 * wilt * outer;
+  LOTUS.forEach((petal, index) => {
+    if (index === LOTUS_FRONT) {
+      drawStamens(ctx, open * (1 - wilt), paint, vein);
+    }
+    const outer = petal.angle / 1.5;
+    const spread = petal.angle * lerp(0.07, 1, open) + 0.3 * wilt * outer;
+    const length = lerp(petal.bud, petal.length, open) * (1 - 0.12 * wilt);
+    const width = petal.width * (1 - 0.3 * wilt);
+    // Open, the tips turn up toward upright; wilting, they droop.
+    const lift = (petal.lift * open - 0.25 * wilt * outer) * length;
     for (const side of petal.angle === 0 ? [1] : [-1, 1]) {
       ctx.save();
       ctx.translate(side * 0.05 * Math.sin(spread), 0.06);
       ctx.scale(side, 1);
       ctx.rotate(-spread);
-      const tipX = curl * 0.12 * length;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(
-        -width * 0.6,
-        length * 0.22,
-        -width * 0.52,
-        length * 0.7,
-        tipX,
-        length,
-      );
-      ctx.bezierCurveTo(
-        width * 0.58 + tipX * 0.3,
-        length * 0.68,
-        width * 0.62,
-        length * 0.2,
-        0,
-        0,
-      );
-      ctx.closePath();
+      lotusPetal(ctx, length, width, lift);
       const fill = ctx.createLinearGradient(0, 0, 0, length);
       fill.addColorStop(0, css(paint.base, petal.shade));
       fill.addColorStop(1, css(paint.tip, petal.shade));
@@ -238,32 +241,87 @@ function drawLotus(
       ctx.strokeStyle = paint.outline;
       ctx.lineWidth = line;
       ctx.stroke();
-      // A carved midrib, with two fainter veins beside it on the broad front petals.
+      // Carved inside it, a second outline following the first, and a midrib.
       ctx.lineWidth = vein.width;
-      ctx.globalAlpha *= 0.32 * vein.alpha;
-      ctx.beginPath();
-      ctx.moveTo(0, length * 0.14);
+      ctx.globalAlpha *= 0.4 * vein.alpha;
+      ctx.save();
+      ctx.translate(0, length * 0.1);
+      lotusPetal(ctx, length * 0.82, width * 0.58, lift * 0.82);
+      ctx.restore();
+      ctx.moveTo(0, length * 0.16);
       ctx.quadraticCurveTo(
-        tipX * 0.2,
-        length * 0.55,
-        tipX * 0.8,
-        length * 0.84,
+        -lift * 0.2,
+        length * 0.5,
+        -lift * 0.75,
+        length * 0.8,
       );
-      if (petal.shade >= 0.95) {
-        for (const lean of [-1, 1]) {
-          ctx.moveTo(0, length * 0.18);
-          ctx.quadraticCurveTo(
-            lean * width * 0.26,
-            length * 0.48,
-            lean * width * 0.14 + tipX * 0.6,
-            length * 0.76,
-          );
-        }
-      }
       ctx.stroke();
       ctx.restore();
     }
+  });
+}
+
+/**
+ * A lotus petal along +y from its base at the origin, as the current path: swelling out from the
+ * base and narrowing to a sharp tip, which turns `lift` to the petal's left, toward upright once
+ * the petal is spread out to the right.
+ */
+function lotusPetal(
+  ctx: CanvasRenderingContext2D,
+  length: number,
+  width: number,
+  lift: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(
+    -width * 0.62,
+    length * 0.28,
+    -width * 0.4 - lift * 0.9,
+    length * 0.78,
+    -lift,
+    length,
+  );
+  ctx.bezierCurveTo(
+    width * 0.42 - lift * 0.4,
+    length * 0.74,
+    width * 0.66,
+    length * 0.26,
+    0,
+    0,
+  );
+  ctx.closePath();
+}
+
+/** Stamens rising from the heart of the flower, fading in as it opens by `amount`. */
+function drawStamens(
+  ctx: CanvasRenderingContext2D,
+  amount: number,
+  paint: Paint,
+  vein: Vein,
+): void {
+  const strength = amount * vein.alpha;
+  if (strength <= 0.01) {
+    return;
   }
+  ctx.save();
+  ctx.globalAlpha *= strength;
+  ctx.strokeStyle = paint.outline;
+  ctx.lineWidth = vein.width * 1.3;
+  ctx.fillStyle = css(POLLEN, Math.min(1, paint.base[0] / 248));
+  for (const stamen of STAMENS) {
+    const length = stamen.length * lerp(0.5, 1, amount);
+    const tipX = Math.sin(stamen.lean) * length;
+    const tipY = 0.08 + Math.cos(stamen.lean) * length;
+    ctx.beginPath();
+    ctx.moveTo(0, 0.1);
+    ctx.quadraticCurveTo(tipX * 0.2, 0.08 + length * 0.6, tipX, tipY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(tipX, tipY, 0.022, 0.036, -stamen.lean, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawCloud(
