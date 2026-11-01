@@ -11,7 +11,7 @@ import {
   type WindSettings,
 } from "./wind";
 
-const STORAGE_KEY = "arbaro.debug.v6";
+const STORAGE_KEY = "arbaro.debug.v7";
 /** Strength and flower size sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
 /** Fastest flow the slider allows, as a multiple of the usual flow. */
@@ -47,8 +47,8 @@ const FLOWER_PLACEMENTS: readonly {
 
 const FLOWER_CHOICES: readonly { id: FlowerChoice; name: string }[] = [
   { id: "lotus", name: "Lotus" },
-  { id: "cloud", name: "Cloud blossom" },
-  { id: "star", name: "Star flower" },
+  { id: "cherry", name: "Cherry blossom" },
+  { id: "maple", name: "Maple leaves" },
   { id: "mixed", name: "Mixed" },
 ];
 

@@ -283,7 +283,12 @@ export class Renderer {
         this.drawDots(camera, scene.tree, scene.flow.dots);
       }
     }
-    for (const flower of scene.flowers) {
+    const shown = scene.flowers.filter((flower) => inView(camera, flower));
+    // Every stalk first, so the flowers cover the stalks of their neighbors.
+    for (const flower of shown) {
+      this.drawStalk(camera, flower);
+    }
+    for (const flower of shown) {
       this.drawFlower(camera, flower, scene.light.flowerLight);
     }
     if (scene.tree !== undefined) {
@@ -298,6 +303,7 @@ export class Renderer {
       this.drawGuides(camera, scene.tree, scene.hover);
     }
     if (scene.flowerHover?.ghost !== undefined) {
+      this.drawStalk(camera, scene.flowerHover.ghost);
       this.drawFlower(camera, scene.flowerHover.ghost, scene.light.flowerLight);
     }
     if (scene.flowerHover?.target !== undefined) {
@@ -469,34 +475,44 @@ export class Renderer {
     ctx.fill();
   }
 
-  /** Draws a flower on its stalk, if it has one, in the light of `light`. */
+  /** Draws the stalk a flower grows on, if it has one. */
+  private drawStalk(camera: Camera, flower: FlowerView): void {
+    if (flower.stalk === undefined) {
+      return;
+    }
+    const ctx = this.ctx;
+    // A mound of clusters grows on a twig as stout as one cluster's stalk.
+    const size = (flower.size / flower.clusters) * camera.scale;
+    const base = camera.toScreen(flower.x, flower.y);
+    const from = camera.toScreen(flower.stalk.from.x, flower.stalk.from.y);
+    const control = camera.toScreen(
+      flower.stalk.control.x,
+      flower.stalk.control.y,
+    );
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.globalAlpha = flower.alpha;
+    ctx.strokeStyle = this.inkColor;
+    ctx.lineWidth = clamp(size * STALK.width, STALK.min, STALK.max);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.quadraticCurveTo(control.x, control.y, base.x, base.y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /** Draws a flower, in the light of `light`. */
   private drawFlower(camera: Camera, flower: FlowerView, light: Rgb): void {
     const ctx = this.ctx;
     const size = flower.size * camera.scale;
     const base = camera.toScreen(flower.x, flower.y);
-    if (flower.stalk !== undefined) {
-      const from = camera.toScreen(flower.stalk.from.x, flower.stalk.from.y);
-      const control = camera.toScreen(
-        flower.stalk.control.x,
-        flower.stalk.control.y,
-      );
-      ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-      ctx.globalAlpha = flower.alpha;
-      ctx.strokeStyle = this.inkColor;
-      ctx.lineWidth = clamp(size * STALK.width, STALK.min, STALK.max);
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.quadraticCurveTo(control.x, control.y, base.x, base.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
     drawFlower(ctx, camera.dpr, {
       kind: flower.kind,
       x: base.x,
       y: base.y,
       angle: flower.angle,
       size,
+      clusters: flower.clusters,
       openness: flower.openness,
       age: flower.age,
       alpha: flower.alpha,
@@ -764,6 +780,27 @@ export class Renderer {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+}
+
+/** Whether any of a flower or its stalk could show in the view. */
+function inView(camera: Camera, flower: FlowerView): boolean {
+  const base = camera.toScreen(flower.x, flower.y);
+  // A flower reaches no further than its size from its base, whichever way it faces.
+  const reach = flower.size * camera.scale;
+  let left = base.x - reach;
+  let right = base.x + reach;
+  let top = base.y - reach;
+  let bottom = base.y + reach;
+  if (flower.stalk !== undefined) {
+    const from = camera.toScreen(flower.stalk.from.x, flower.stalk.from.y);
+    left = Math.min(left, from.x);
+    right = Math.max(right, from.x);
+    top = Math.min(top, from.y);
+    bottom = Math.max(bottom, from.y);
+  }
+  return (
+    right >= 0 && left <= camera.width && bottom >= 0 && top <= camera.height
+  );
 }
 
 /**

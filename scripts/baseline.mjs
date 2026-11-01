@@ -55,7 +55,7 @@ const flowering = (settings, time = {}) => [
 
 /**
  * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
- * fraction of its length, selects a limb, cuts limb `cut` at a fraction of its length, sets the
+ * fraction of its length, selects a limb, prunes limb `prune` at a fraction of its length, sets the
  * wind, sets how much the tree can take, changes the flowers, or grows a flower by hand on limb
  * `flower` at a fraction of its length, all through the dev-only debug hook on a freshly loaded
  * page so every scene starts from the same seed. `crop` frames a close-up around the trunk's
@@ -138,17 +138,17 @@ const SCENES = [
   },
   {
     file: "20-pruned",
-    actions: [...TREE_OF_LIFE, still(2), { cut: 3, at: 0.35 }, still(3)],
+    actions: [...TREE_OF_LIFE, still(2), { prune: 3, at: 0.35 }, still(3)],
   },
   {
     file: "21-pruned-stub-detail",
     scale: 3,
     crop: "tip3",
-    actions: [...TREE_OF_LIFE, still(2), { cut: 3, at: 0.35 }, still(3)],
+    actions: [...TREE_OF_LIFE, still(2), { prune: 3, at: 0.35 }, still(3)],
   },
   {
     file: "22-felled",
-    actions: [...TREE_OF_LIFE, still(2), { cut: 0, at: 0.35 }, still(5)],
+    actions: [...TREE_OF_LIFE, still(2), { prune: 0, at: 0.35 }, still(5)],
   },
   {
     file: "23-uprooted",
@@ -198,22 +198,22 @@ const SCENES = [
     actions: [
       ...TREE_OF_LIFE,
       still(2),
-      { cut: 2, at: 0.45 },
+      { prune: 2, at: 0.45 },
       still(3),
       { select: 2 },
       grow(2.5),
     ],
   },
   { file: "27-lotus", actions: flowering({ kind: "lotus" }) },
-  { file: "28-cloud-blossoms", actions: flowering({ kind: "cloud" }) },
-  { file: "29-star-flowers", actions: flowering({ kind: "star" }) },
+  { file: "28-cherry-blossoms", actions: flowering({ kind: "cherry" }) },
+  { file: "29-maple-leaves", actions: flowering({ kind: "maple" }) },
   {
     file: "30-flowers-detail",
     scale: 3,
     crop: "tip5",
     actions: flowering({ kind: "mixed" }),
   },
-  // At night the flowers close into buds.
+  // At night the lotuses close into buds; cherry blossoms and maple leaves stay open.
   {
     file: "31-night",
     actions: flowering({ kind: "mixed" }, { timeOfDay: 0 }),
@@ -239,9 +239,9 @@ const SCENES = [
       still(2),
       { flowers: { placement: "hand", kind: "lotus" } },
       { flower: 3, at: 0.98, side: 1 },
-      { flowers: { kind: "star" } },
+      { flowers: { kind: "maple" } },
       { flower: 3, at: 0.8, side: -1 },
-      { flowers: { kind: "cloud" } },
+      { flowers: { kind: "cherry" } },
       { flower: 3, at: 0.6, side: 1 },
       { flower: 2, at: 0.9, side: -1 },
       still(2),
@@ -302,8 +302,8 @@ try {
           debug.fork(action.fork, action.at, action.side);
         } else if (action.select !== undefined) {
           debug.select(action.select);
-        } else if (action.cut !== undefined) {
-          debug.cut(action.cut, action.at);
+        } else if (action.prune !== undefined) {
+          debug.prune(action.prune, action.at);
         } else if (action.strength !== undefined) {
           debug.strength(action.strength);
         } else if (action.growth !== undefined) {

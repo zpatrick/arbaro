@@ -13,13 +13,17 @@ import {
 } from "./util";
 import type { Vec, Wind } from "./wind";
 
-export type FlowerKind = "lotus" | "cloud" | "star";
+/**
+ * A single lotus, or a cluster: a spray of cherry blossoms or of Japanese maple leaves. Clusters
+ * grow close together and further back along the wood, so a grown tree fills out into a canopy.
+ */
+export type FlowerKind = "lotus" | "cherry" | "maple";
 /** A kind of flower to grow, or a mix of every kind. */
 export type FlowerChoice = FlowerKind | "mixed";
 /** Who decides where flowers grow: the player, by hand, or the tree itself. */
 export type FlowerPlacement = "hand" | "tree";
 
-export const FLOWER_KINDS: readonly FlowerKind[] = ["lotus", "cloud", "star"];
+export const FLOWER_KINDS: readonly FlowerKind[] = ["lotus", "cherry", "maple"];
 
 export interface FlowerSettings {
   placement: FlowerPlacement;
@@ -32,7 +36,10 @@ export interface FlowerSettings {
 export interface Conditions {
   /** Time of year, from midsummer at 0 to winter at 1. Flowers turn, wilt and drop as it passes. */
   season: number;
-  /** Whether it is day. Flowers open by day and close at night, taking a few seconds to change. */
+  /**
+   * Whether it is day. Lotuses open by day and close at night, taking a few seconds to change;
+   * cherry blossoms and maple leaves stay open.
+   */
   day: boolean;
   wind: Wind;
   /** Multiplier on how hard flower stems hold. */
@@ -42,11 +49,10 @@ export interface Conditions {
 }
 
 export const FLOWERS = {
-  /** Thickest wood a flower grows on, as a radius in world units: a twig 4 cm across. */
-  maxGirth: 0.02,
   /**
    * Size of a flower at a size multiplier of one, in world units: true to life, so an open lotus
-   * is about 27 cm across, a cloud blossom 17 cm and a star flower 15 cm.
+   * is about 27 cm across, a cherry cluster about 17 cm, of blossoms 4 cm across, and a maple
+   * spray about 15 cm, of leaves 7 cm across.
    */
   size: 0.14,
   /** A flower placed this close to its limb's tip, in world units, crowns the tip instead. */
@@ -54,11 +60,10 @@ export const FLOWERS = {
   /** A limb flowers once it is this long, in world units, when the tree places the flowers. */
   firstBloom: 1.2,
   /**
-   * Spacing of the flowers the tree places along a limb, back from its tip, as a multiple of
-   * their size, so larger flowers grow further apart. Neighbors take turns on either side, so
-   * flowers on the same side are twice this apart.
+   * The tree grows each flower on the side of a limb up to this fraction of their spacing nearer
+   * the tip than its place in the row, so they never line up exactly.
    */
-  spacing: 1.5,
+  jitter: 0.4,
   /** The tree keeps its flowers this far from where a limb starts, in world units. */
   clearOfBase: 0.5,
   /** Seconds the tree takes to grow back a flower it lost to the wind. */
@@ -111,8 +116,75 @@ export const FLOWERS = {
   flutter: 0.18,
 } as const;
 
-/** Length of each kind's stalk, as a multiple of the usual. */
-const STALK: Record<FlowerKind, number> = { lotus: 1.3, cloud: 0.9, star: 1 };
+/** How each kind grows. */
+interface KindHabit {
+  /** Length of its stalk, as a multiple of the usual. */
+  stalk: number;
+  /**
+   * Most extra length the stalk of one on the side of a limb grows, as a multiple of the usual:
+   * a cluster rides out on a twig of its own, most of them short and a few long, so a limb
+   * carries a sleeve of them around it rather than a single row.
+   */
+  twig: number;
+  /** How far one on the side of a limb turns from square off the wood toward the sky, 0 to 1. */
+  skyward: number;
+  /** Multiplier on how far each one leans off its usual angle. */
+  splay: number;
+  /**
+   * Whether, as the size multiplier rises past one, each grows into a mound of clusters of its
+   * true size, rather than growing larger itself.
+   */
+  mounds: boolean;
+  /**
+   * Spacing of the ones the tree places along a limb, back from its tip, as a multiple of their
+   * size at a size multiplier of one. Larger ones grow further apart, in step with their size,
+   * except that mounds keep the spacing of clusters of the usual size. Neighbors take turns on
+   * either side, so those on the same side are twice this apart.
+   */
+  spacing: number;
+  /** Thickest wood it grows on, as a radius in world units. */
+  maxGirth: number;
+  /** Whether it closes at night. */
+  closes: boolean;
+}
+
+/**
+ * A lotus grows alone on twigs up to 4 cm across. Cherry clusters crowd each other and grow on
+ * wood up to 7 cm across, maple sprays on wood up to 8 cm, so a grown tree carries pads of them
+ * back along each limb, not just at its tips.
+ */
+const HABITS: Record<FlowerKind, KindHabit> = {
+  lotus: {
+    stalk: 1.3,
+    twig: 0,
+    skyward: 0.6,
+    splay: 1,
+    mounds: false,
+    spacing: 1.5,
+    maxGirth: 0.02,
+    closes: true,
+  },
+  cherry: {
+    stalk: 0.5,
+    twig: 2.2,
+    skyward: 0.4,
+    splay: 6,
+    mounds: true,
+    spacing: 0.75,
+    maxGirth: 0.035,
+    closes: false,
+  },
+  maple: {
+    stalk: 0.55,
+    twig: 2.2,
+    skyward: 0.4,
+    splay: 6,
+    mounds: true,
+    spacing: 0.7,
+    maxGirth: 0.04,
+    closes: false,
+  },
+};
 
 /** How a flower moves once it comes off the tree. */
 const FALLING = {
@@ -134,6 +206,8 @@ interface Traits {
   size: number;
   /** How far it leans off its usual angle, in radians. */
   tilt: number;
+  /** How much of the most extra stalk its kind can grow it grows, from 0 to 1. */
+  reach: number;
   /** Seconds it takes to open or close. */
   opening: number;
   /** Its stem's hold, as a fraction of the usual for its size. */
@@ -150,6 +224,7 @@ interface Traits {
 const TYPICAL: Traits = {
   size: 1,
   tilt: 0,
+  reach: 0,
   opening: FLOWERS.opening,
   hold: 1,
   early: 0,
@@ -191,6 +266,7 @@ interface Falling {
   readonly kind: FlowerKind;
   readonly traits: Traits;
   readonly size: number;
+  readonly clusters: number;
   readonly openness: number;
   x: number;
   y: number;
@@ -212,6 +288,8 @@ interface Pose {
   /** The way it faces, in radians counterclockwise from +x. */
   angle: number;
   size: number;
+  /** How many times the size of one cluster a mound of clusters spans; 1 for a lone flower. */
+  clusters: number;
   /** The stalk from inside the wood to the flower's base, curving through `control`. */
   stalk: { from: Vec; control: Vec };
 }
@@ -225,6 +303,8 @@ export interface FlowerView {
   /** The way it faces, in radians counterclockwise from +x. */
   angle: number;
   size: number;
+  /** How many times the size of one cluster a mound of clusters spans; 1 for a lone flower. */
+  clusters: number;
   /** From 0, closed into a bud, to 1, fully open. */
   openness: number;
   /** The time of year it shows, from midsummer at 0 to winter at 1. */
@@ -313,13 +393,12 @@ export class Flowers {
    * Returns false if no wood on the limb is thin enough.
    */
   place(pick: Pick, settings: FlowerSettings): boolean {
-    const spot = this.spot(pick);
+    const kind = this.kindToPlace(settings.kind);
+    const spot = this.spot(pick, kind);
     if (spot === undefined) {
       return false;
     }
-    this.flowers.push(
-      this.flower("hand", pick.limb, spot, this.kindToPlace(settings.kind)),
-    );
+    this.flowers.push(this.flower("hand", pick.limb, spot, kind));
     if (settings.kind === "mixed") {
       this.nextMixed = this.randomKind();
     }
@@ -361,11 +440,11 @@ export class Flowers {
     if (target !== undefined) {
       return { ghost: undefined, target: this.view(target, settings, season) };
     }
-    const spot = pick === undefined ? undefined : this.spot(pick);
+    const kind = this.kindToPlace(settings.kind);
+    const spot = pick === undefined ? undefined : this.spot(pick, kind);
     if (pick === undefined || spot === undefined) {
       return { ghost: undefined, target: undefined };
     }
-    const kind = this.kindToPlace(settings.kind);
     const pose = flowerPose(
       pick.limb,
       spot.s,
@@ -380,7 +459,7 @@ export class Flowers {
       ghost: {
         kind,
         ...pose,
-        openness: day ? 1 : 0,
+        openness: day || !HABITS[kind].closes ? 1 : 0,
         age: season,
         alpha: 0.45,
         variant: TYPICAL.variant,
@@ -404,6 +483,7 @@ export class Flowers {
         y: flower.y,
         angle: flower.angle,
         size: flower.size,
+        clusters: flower.clusters,
         openness: flower.openness,
         age: ageOf(flower.traits, season),
         alpha: flower.alpha,
@@ -428,6 +508,7 @@ export class Flowers {
       traits: {
         size: 0.88 + 0.24 * this.rng.next(),
         tilt: (this.rng.next() - 0.5) * 0.3,
+        reach: this.rng.next() ** 2,
         opening: FLOWERS.opening * (0.8 + 0.45 * this.rng.next()),
         hold: Math.exp(FLOWERS.holdSpread * this.normal()),
         early: (this.rng.next() - 0.5) * 0.08,
@@ -447,10 +528,13 @@ export class Flowers {
     };
   }
 
-  /** Where a flower placed by hand at `pick` would grow, or nothing if the wood is too thick. */
-  private spot(pick: Pick): Spot | undefined {
+  /**
+   * Where a flower of `kind` placed by hand at `pick` would grow, or nothing if the wood is too
+   * thick for it.
+   */
+  private spot(pick: Pick, kind: FlowerKind): Spot | undefined {
     const { limb } = pick;
-    const thin = thinFrom(limb, FLOWERS.maxGirth);
+    const thin = thinFrom(limb, HABITS[kind].maxGirth);
     if (thin === undefined) {
       return undefined;
     }
@@ -478,12 +562,18 @@ export class Flowers {
       if (limb.length < FLOWERS.firstBloom) {
         continue;
       }
-      const spacing = FLOWERS.spacing * FLOWERS.size * settings.size;
+      const habit = HABITS[kind];
+      // Mounds keep the spacing of the clusters they grow from, so larger ones run together
+      // into a canopy.
+      const spacing =
+        habit.spacing *
+        FLOWERS.size *
+        (habit.mounds ? Math.min(1, settings.size) : settings.size);
       invariant(spacing > 0, `Flowers ${settings.size} in size have no room.`);
       let side = this.firstSide(limb);
       for (let slot = 0; ; slot += 1) {
         const s = limb.length - slot * spacing;
-        if (s < FLOWERS.clearOfBase || limb.radiusAt(s) > FLOWERS.maxGirth) {
+        if (s < FLOWERS.clearOfBase || limb.radiusAt(s) > habit.maxGirth) {
           break;
         }
         const spot: Spot = { s, side: slot === 0 ? 0 : side };
@@ -496,7 +586,17 @@ export class Flowers {
             : f.side !== 0 && Math.abs(f.s - s) < 0.75 * spacing,
         );
         if (!taken) {
-          const flower = this.flower("tree", limb, spot, kind);
+          const placed: Spot =
+            spot.side === 0
+              ? spot
+              : {
+                  s: Math.min(
+                    limb.length,
+                    s + this.rng.next() * FLOWERS.jitter * spacing,
+                  ),
+                  side: spot.side,
+                };
+          const flower = this.flower("tree", limb, placed, kind);
           this.flowers.push(flower);
           own.push(flower);
         }
@@ -558,8 +658,9 @@ export class Flowers {
         0,
         1,
       );
+      const opens = conditions.day || !HABITS[flower.kind].closes;
       flower.opened = clamp(
-        flower.opened + (conditions.day ? dt : -dt) / flower.traits.opening,
+        flower.opened + (opens ? dt : -dt) / flower.traits.opening,
         0,
         1,
       );
@@ -668,6 +769,7 @@ export class Flowers {
       kind: flower.kind,
       traits: flower.traits,
       size: pose.size,
+      clusters: pose.clusters,
       openness: flower.opened,
       x: pose.x,
       y: pose.y,
@@ -795,9 +897,13 @@ function position(flower: Flower, tree: Tree): number | undefined {
     return undefined;
   }
   if (flower.side === 0) {
-    return limb.radiusAt(limb.length) <= FLOWERS.maxGirth
+    return limb.radiusAt(limb.length) <= HABITS[flower.kind].maxGirth
       ? limb.length
       : undefined;
+  }
+  // The tree's flowers change kind with the debug panel, and may then be on wood too thick.
+  if (flower.girth > HABITS[flower.kind].maxGirth) {
+    return undefined;
   }
   return thinFrom(limb, flower.girth);
 }
@@ -827,8 +933,10 @@ function flowerPose(
 ): Pose {
   const p = limb.pointAt(s);
   const span = FLOWERS.size * size * traits.size * smoothstep(0, 1, grown);
-  const stalk = STALK[kind] * span;
+  const habit = HABITS[kind];
+  const clusters = habit.mounds ? Math.max(1, size) : 1;
   if (side === 0) {
+    const stalk = habit.stalk * span;
     // Crowning a tip, it carries on the way the limb grows, leaning a little toward the sky.
     const angle = turnToward(p.heading, UPRIGHT, 0.35) + traits.tilt + sway;
     const control = along(p, p.heading, 0.12 * stalk);
@@ -836,17 +944,26 @@ function flowerPose(
       ...along(control, angle, 0.14 * stalk),
       angle,
       size: span,
+      clusters,
       stalk: { from: { x: p.x, y: p.y }, control },
     };
   }
-  // From the side, its stalk leaves the wood square on and curves up toward the sky.
+  // From the side, its stalk leaves the wood square on and curves up toward the sky. A mound's
+  // twig grows only as the square root of its size, so the larger it grows the closer it keeps
+  // to its limb.
+  const stalk =
+    (habit.stalk + (habit.twig * traits.reach) / Math.sqrt(clusters)) * span;
   const normal = p.heading + (side * Math.PI) / 2;
-  const angle = turnToward(normal, UPRIGHT, 0.6) + traits.tilt + sway;
+  const angle =
+    turnToward(normal, UPRIGHT, habit.skyward) +
+    traits.tilt * habit.splay +
+    sway;
   const control = along(p, normal, limb.radiusAt(s) + 0.14 * stalk);
   return {
     ...along(control, angle, 0.26 * stalk),
     angle,
     size: span,
+    clusters,
     stalk: { from: { x: p.x, y: p.y }, control },
   };
 }

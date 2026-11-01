@@ -59,7 +59,8 @@ art and tree-of-life drawings.
 - [x] Wood is true to life beside the barn and the flowers: a twig is under a centimeter across at
       its tip and about two a meter back, and it thickens ever faster toward the trunk, as real
       trees do. A 3.6 m sapling's trunk is about 10 cm across, and an 18 m tree's about 80 cm.
-      Flowers grow only on twigs up to 4 cm across.
+      A lotus grows only on twigs up to 4 cm across, a cherry cluster on wood up to 7 cm and a
+      maple spray up to 8 cm.
 - [x] Forks blend smoothly into their parents, with a rounded crotch above and a softer collar
       below.
 - [x] Wood never shrinks. A limb that loses what it carried keeps its girth, and new growth from a
@@ -113,24 +114,42 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 ## Flowers
 
-- [x] Three kinds, drawn from the references: the lotus, the scalloped cloud blossoms of the
-      tree-of-life drawings, and the five-petal star flowers on their mound.
-- [x] The open lotus follows references 12 and 08: an outer row of long, narrow, pointed petals
-      spread nearly flat with their tips turned up, a middle row, and a cup of upright petals,
-      each petal carved with a second outline and a midrib, and stamens rising from its heart.
+- [x] Three kinds, each fitted to the sand drawings: the lotus, clusters of cherry blossoms, and
+      sprays of Japanese maple leaves.
+- [x] The open lotus follows reference 19: a rosette seen from above, with an outer ring of broad
+      pointed petals spread nearly flat, a middle ring rising between them, and a cup of upright
+      petals around a pocked seed head, each petal carved with a second outline and a midrib.
       Closed, it is a smooth pointed bud.
-- [x] Flowers are true to life at the usual size: an open lotus is about 27 cm across, a cloud
-      blossom 17 cm and a star flower 15 cm.
+- [x] A cherry cluster is a mound of blossoms on fine stalks from one spur, with a bud or two:
+      five notched petals each, deep pink at the heart and pale at the rim, ringed with stamens.
+- [x] A maple spray is a fan of leaves from the end of one twig, each on its own stalk: seven
+      slender pointed lobes, crimson at the heart and scarlet at the tips, a vein carved down
+      each lobe, the leaves at the back in shade.
+- [x] Flowers are true to life at the usual size: an open lotus is about 27 cm across, a cherry
+      cluster about 17 cm, of blossoms 4 cm across, and a maple spray about 15 cm, of leaves 7 cm
+      across.
+- [x] Raising the size past one grows each cherry cluster or maple spray into a mound of
+      clusters of their true size, rather than one larger cluster, and the mounds keep the
+      spacing they had, so they run together: a young tree's few sparse clusters become a full,
+      clustered crown. A larger mound keeps closer to its limb.
+- [x] Seen from afar, a mound is one scalloped mass, pale where the light falls on its top and
+      deeper beneath, with a line carved along the top of each cluster; a maple's mass is jagged
+      with leaf points and a cherry's flecked with the hearts of its blossoms. Closer in, mounds
+      come into detail a few at a time, blossom by blossom and leaf by leaf.
 - [x] Flowers only grow on thin wood, and keep to it as their limb grows, so they ride up with
       the tip.
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one
       crowning each limb long enough to flower and more along the thin wood behind it. The tree
       grows back a flower the wind takes after a while.
 - [x] How many flowers a limb carries follows how much thin wood it has, not a set number: they
-      are spaced along all of it, taking turns on either side, at one and a half times their size,
-      so a long twiggy limb carries many, a short one a few, and larger flowers fewer.
-- [x] Flowers open at sunrise and close into buds at sunset, and are seen opening and closing.
-- [x] Through autumn they turn yellow, then orange, then brown, wilt, and drop.
+      are spaced along all of it, taking turns on either side, so a long twiggy limb carries
+      many, a short one a few. Lotuses grow one and a half times their size apart, and larger
+      ones fewer; cherry and maple clusters crowd closer, each on a twig of its own, mostly short
+      and a few long, at varied angles, so a limb carries a sleeve of them, not a single row.
+- [x] Lotuses open at sunrise and close into buds at sunset, and are seen opening and closing.
+      Cherry blossoms and maple leaves stay open, unfolding as they grow in.
+- [x] Through autumn they turn yellow, or a maple scarlet, then orange, then brown, wilt, and
+      drop.
 - [x] Strong wind tears flowers loose; a typical open flower starts to go in a storm. A larger
       flower grows a stouter stem, but the wind's pull grows a little faster than its hold, so
       larger flowers are somewhat more exposed. Open flowers catch more wind than closed buds.
@@ -265,4 +284,5 @@ _Open._ A button flips into a view of the roots:
       how much the wood and the roots can take; and an overlay showing how close each joint is to
       breaking.
 - [x] Flowers page: whether flowers are placed by hand or grown by the tree, their kind or a mix,
-      one size for all of them, and how hard their stems hold.
+      one size for all of them, which grows cherry and maple clusters into mounds, and how hard
+      their stems hold.
