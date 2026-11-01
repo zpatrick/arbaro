@@ -71,11 +71,11 @@ export const FLOWERS = {
    */
   onTop: 0.5,
   /**
-   * Length of a mound's twig, as a multiple of the mound's size, from the shortest to the
-   * longest: the twig's end, the mound's middle, lies within about the mound's own reach of its
-   * limb for most mounds, so they wrap it.
+   * Length of a mound's twig beyond the wood, as a multiple of the mound's size, from the shortest
+   * to the longest: the twig's end, the mound's middle, lies within about the mound's own reach of
+   * its limb for most mounds, so they wrap it.
    */
-  moundTwig: { from: 0.35, to: 1.8 },
+  moundTwig: { from: 0.14, to: 0.72 },
   /** The tree keeps its flowers this far from where a limb starts, in world units. */
   clearOfBase: 0.5,
   /** Seconds the tree takes to grow back a flower it lost to the wind. */
@@ -135,16 +135,33 @@ export const FLOWERS = {
  */
 const EXPOSURE = { width: 1.5, depth: 6, cover: 5, settle: 1 } as const;
 
+/**
+ * How a flower's stalk grows from the side of a limb. It leaves the wood leaning `lean` of the way
+ * from square toward the limb's tip, as a side shoot does, and bends evenly from there to the way
+ * the flower faces, by at most `bend` radians, so it never hooks. It starts `inset` of the way
+ * out from the middle of the wood, so it grows out of the wood however it leans.
+ */
+const STALK = { lean: 0.3, bend: 1.1, inset: 0.4 } as const;
+
 /** How each kind grows. */
 interface KindHabit {
-  /** Length of its stalk, as a multiple of the usual. */
+  /** Length of its stalk beyond the wood, as a fraction of its size. */
   stalk: number;
   /**
-   * Most extra length the stalk of one on the side of a limb grows, as a multiple of the usual:
+   * Most extra length the stalk of one on the side of a limb grows, as a fraction of its size:
    * a cluster rides out on a twig of its own, most of them short and a few long, so a limb
    * carries a sleeve of them around it rather than a single row.
    */
   twig: number;
+  /**
+   * Width of its stalk where it leaves the wood and where it meets the flower, as fractions of
+   * the size of one flower or cluster, so a larger one grows a stouter stalk. Where a cluster
+   * meets its stalk, the stalk is as wide as the cluster's own spur or twig. A mound's twig
+   * carries all its clusters, so it leaves the wood stouter by the square root of how many
+   * clusters across the mound is, and thins to one cluster's in the mound's middle, where the
+   * twigs to its clusters fork from it.
+   */
+  girth: { root: number; tip: number };
   /** How far one on the side of a limb turns from square off the wood toward the sky, 0 to 1. */
   skyward: number;
   /** Multiplier on how far each one leans off its usual angle. */
@@ -174,8 +191,9 @@ interface KindHabit {
  */
 const HABITS: Record<FlowerKind, KindHabit> = {
   lotus: {
-    stalk: 1.3,
+    stalk: 0.5,
     twig: 0,
+    girth: { root: 0.065, tip: 0.05 },
     skyward: 0.6,
     splay: 1,
     mounds: false,
@@ -184,8 +202,9 @@ const HABITS: Record<FlowerKind, KindHabit> = {
     closes: true,
   },
   cherry: {
-    stalk: 0.5,
-    twig: 2.2,
+    stalk: 0.08,
+    twig: 0.5,
+    girth: { root: 0.034, tip: 0.02 },
     skyward: 0.4,
     splay: 6,
     mounds: true,
@@ -194,8 +213,9 @@ const HABITS: Record<FlowerKind, KindHabit> = {
     closes: false,
   },
   maple: {
-    stalk: 0.55,
-    twig: 2.2,
+    stalk: 0.1,
+    twig: 0.55,
+    girth: { root: 0.032, tip: 0.018 },
     skyward: 0.4,
     splay: 6,
     mounds: true,
@@ -302,6 +322,18 @@ interface Falling {
   alpha: number;
 }
 
+/**
+ * The stalk a flower grows on, in world units: a curve from `from`, inside the wood, to the
+ * flower's base, leaving toward the first of `controls` and arriving from the second, `root` wide
+ * where it leaves the wood and tapering to `tip` wide at the base.
+ */
+export interface Stalk {
+  from: Vec;
+  controls: readonly [Vec, Vec];
+  root: number;
+  tip: number;
+}
+
 /** Where a flower is, in world units, and the stalk it grows on. */
 interface Pose {
   x: number;
@@ -311,8 +343,7 @@ interface Pose {
   size: number;
   /** How many times the size of one cluster a mound of clusters spans; 1 for a lone flower. */
   clusters: number;
-  /** The stalk from inside the wood to the flower's base, curving through `control`. */
-  stalk: { from: Vec; control: Vec };
+  stalk: Stalk;
 }
 
 /** Everything needed to draw one flower, in world units. */
@@ -335,8 +366,8 @@ export interface FlowerView {
   variant: number;
   /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
   exposure: number;
-  /** The stalk it grows on while it is on the tree, curving through `control`. */
-  stalk: { from: Vec; control: Vec } | undefined;
+  /** The stalk it grows on while it is on the tree. */
+  stalk: Stalk | undefined;
 }
 
 /** What shift-clicking the tree would do to its flowers. */
@@ -1039,44 +1070,81 @@ function flowerPose(
   sway: number,
 ): Pose {
   const p = limb.pointAt(s);
+  const radius = limb.radiusAt(s);
   const span = FLOWERS.size * size * traits.size * smoothstep(0, 1, grown);
   const habit = HABITS[kind];
   const clusters = habit.mounds ? Math.max(1, size) : 1;
+  const cluster = span / clusters;
+  // A stalk from the side of a limb is never more than half as stout as the wood, and one
+  // crowning a tip no stouter than the tip it carries on from.
+  const root = Math.min(
+    habit.girth.root * cluster * Math.sqrt(clusters),
+    side === 0 ? 2 * radius : radius,
+  );
+  const tip = Math.min(habit.girth.tip * cluster, root);
   if (side === 0) {
-    const stalk = habit.stalk * span;
-    // Crowning a tip, it carries on the way the limb grows, leaning a little toward the sky.
+    // Crowning a tip, it carries on the way the limb grows, bending a little toward the sky.
     const angle = turnToward(p.heading, UPRIGHT, 0.35) + traits.tilt + sway;
-    const control = along(p, p.heading, 0.12 * stalk);
+    const { base, controls } = bend(p, p.heading, angle, habit.stalk * span);
     return {
-      ...along(control, angle, 0.14 * stalk),
+      ...base,
       angle,
       size: span,
       clusters,
-      stalk: { from: { x: p.x, y: p.y }, control },
+      stalk: { from: { x: p.x, y: p.y }, controls, root, tip },
     };
   }
-  // From the side, its stalk leaves the wood square on and curves up toward the sky. A mound
-  // sits around the end of a shorter twig, so most mounds wrap their limb and only the furthest
-  // stand out from it on a twig of their own.
+  // A mound sits around the end of a shorter twig, so most mounds wrap their limb and only the
+  // furthest stand out from it on a twig of their own.
   const lone = habit.stalk + habit.twig * traits.reach;
   const mound = lerp(
     FLOWERS.moundTwig.from,
     FLOWERS.moundTwig.to,
     traits.reach,
   );
-  const stalk = lerp(lone, mound, moundness(clusters)) * span;
+  const length = lerp(lone, mound, moundness(clusters)) * span;
   const normal = p.heading + (side * Math.PI) / 2;
+  const leave = turnToward(normal, p.heading, STALK.lean);
+  const facing =
+    turnToward(normal, UPRIGHT, habit.skyward) + traits.tilt * habit.splay;
   const angle =
-    turnToward(normal, UPRIGHT, habit.skyward) +
-    traits.tilt * habit.splay +
-    sway;
-  const control = along(p, normal, limb.radiusAt(s) + 0.14 * stalk);
+    leave + clamp(wrapAngle(facing - leave), -STALK.bend, STALK.bend) + sway;
+  const from = along(p, normal, STALK.inset * radius);
+  const { base, controls } = bend(
+    from,
+    leave,
+    angle,
+    (1 - STALK.inset) * radius + length,
+  );
   return {
-    ...along(control, angle, 0.26 * stalk),
+    ...base,
     angle,
     size: span,
     clusters,
-    stalk: { from: { x: p.x, y: p.y }, control },
+    stalk: { from, controls, root, tip },
+  };
+}
+
+/**
+ * A stalk `length` long from `from` that leaves heading `leave` and bends evenly, along an arc,
+ * to arrive heading `arrive`: where it ends, and the controls of the curve that follows it.
+ */
+function bend(
+  from: Vec,
+  leave: number,
+  arrive: number,
+  length: number,
+): { base: Vec; controls: readonly [Vec, Vec] } {
+  const turn = wrapAngle(arrive - leave);
+  const straight = Math.abs(turn) < 1e-6;
+  const chord = straight ? length : (length * Math.sin(turn / 2)) / (turn / 2);
+  const handle = straight
+    ? length / 3
+    : (4 * length * Math.tan(turn / 4)) / (3 * turn);
+  const base = along(from, leave + turn / 2, chord);
+  return {
+    base,
+    controls: [along(from, leave, handle), along(base, arrive, -handle)],
   };
 }
 

@@ -343,6 +343,23 @@ export interface FlowerLook {
   light: Rgb;
 }
 
+/**
+ * How much of its true width to draw the stalk of a flower `size` CSS pixels across at, so that
+ * where it meets a cluster drawn in detail it is no wider than the spur or twig the cluster's own
+ * drawing starts from, whose ink stops thickening once the cluster shows large.
+ */
+export function stalkFit(
+  kind: FlowerKind,
+  size: number,
+  clusters: number,
+): number {
+  if (kind === "lotus") {
+    return 1;
+  }
+  const part = (CLUSTER_PART * size) / clusters;
+  return Math.min(1, OUTLINE.max / (part * OUTLINE.width));
+}
+
 /** Draws a flower. Sets the transform itself, so the caller's is lost. */
 export function drawFlower(
   ctx: CanvasRenderingContext2D,

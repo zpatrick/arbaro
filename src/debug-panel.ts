@@ -12,8 +12,10 @@ import {
 } from "./wind";
 
 const STORAGE_KEY = "arbaro.debug.v7";
-/** Strength and flower size sliders run from a quarter to four times normal, evenly in ratio. */
+/** Strength sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
+/** The flower size slider runs from a fifth to five times the usual size, evenly in ratio. */
+const FLOWER_SIZE_RANGE = 5;
 /** Fastest flow the slider allows, as a multiple of the usual flow. */
 const MAX_FLOW_RATE = 3;
 
@@ -176,18 +178,21 @@ function defaults(): Settings {
     wind: { direction: 0, strength: 0, model: "steady" },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
-    flowers: { placement: "hand", kind: "lotus", size: 1 },
+    flowers: { placement: "tree", kind: "lotus", size: 1 },
     time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
   };
 }
 
-/** Maps a strength multiplier onto a slider position and back. */
-function strengthToSlider(multiplier: number): number {
-  return 0.5 + Math.log(multiplier) / (2 * Math.log(STRENGTH_RANGE));
+/**
+ * Maps a multiplier onto the position of a slider running from 1/`range` to `range` times, evenly
+ * in ratio, and back.
+ */
+function ratioToSlider(multiplier: number, range: number): number {
+  return 0.5 + Math.log(multiplier) / (2 * Math.log(range));
 }
 
-function sliderToStrength(value: number): number {
-  return Math.pow(STRENGTH_RANGE, 2 * value - 1);
+function sliderToRatio(value: number, range: number): number {
+  return Math.pow(range, 2 * value - 1);
 }
 
 /** A time of day as a 12-hour clock reading, such as "6:30 am". */
@@ -433,10 +438,10 @@ export class DebugPanel {
     const strength = element("section", "debug-section", tree);
     element("h2", "debug-title", strength, "Strength");
     this.wood = new Slider(strength, "Wood", (value) =>
-      this.setStrength({ wood: sliderToStrength(value) }),
+      this.setStrength({ wood: sliderToRatio(value, STRENGTH_RANGE) }),
     );
     this.roots = new Slider(strength, "Roots", (value) =>
-      this.setStrength({ roots: sliderToStrength(value) }),
+      this.setStrength({ roots: sliderToRatio(value, STRENGTH_RANGE) }),
     );
     this.strainToggle = this.toggleRow(strength, "Show strain", () => {
       this.showStrain = !this.showStrain;
@@ -468,10 +473,10 @@ export class DebugPanel {
       );
     }
     this.flowerSize = new Slider(flowers, "Size", (value) =>
-      this.setFlowers({ size: sliderToStrength(value) }),
+      this.setFlowers({ size: sliderToRatio(value, FLOWER_SIZE_RANGE) }),
     );
     this.flowerHold = new Slider(flowers, "Stem strength", (value) =>
-      this.setStrength({ flowers: sliderToStrength(value) }),
+      this.setStrength({ flowers: sliderToRatio(value, STRENGTH_RANGE) }),
     );
 
     const reset = element("div", "debug-reset", card, "Reset to defaults");
@@ -653,11 +658,11 @@ export class DebugPanel {
       `×${this.growth.flowRate.toFixed(2)}`,
     );
     this.wood.show(
-      strengthToSlider(this.strength.wood),
+      ratioToSlider(this.strength.wood, STRENGTH_RANGE),
       `×${this.strength.wood.toFixed(2)}`,
     );
     this.roots.show(
-      strengthToSlider(this.strength.roots),
+      ratioToSlider(this.strength.roots, STRENGTH_RANGE),
       `×${this.strength.roots.toFixed(2)}`,
     );
     this.strainToggle.classList.toggle("selected", this.showStrain);
@@ -672,9 +677,12 @@ export class DebugPanel {
     for (const [id, row] of this.kinds) {
       row.classList.toggle("selected", id === kind);
     }
-    this.flowerSize.show(strengthToSlider(size), `×${size.toFixed(2)}`);
+    this.flowerSize.show(
+      ratioToSlider(size, FLOWER_SIZE_RANGE),
+      `×${size.toFixed(2)}`,
+    );
     this.flowerHold.show(
-      strengthToSlider(this.strength.flowers),
+      ratioToSlider(this.strength.flowers, STRENGTH_RANGE),
       `×${this.strength.flowers.toFixed(2)}`,
     );
   }

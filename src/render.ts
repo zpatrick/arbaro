@@ -6,8 +6,14 @@ import {
   drawMarks,
   type FlowerLook,
   inDetail,
+  stalkFit,
 } from "./flower-art";
-import { type FlowerHover, type FlowerView, middleReach } from "./flowers";
+import {
+  type FlowerHover,
+  type FlowerView,
+  middleReach,
+  type Stalk,
+} from "./flowers";
 import type { Limb } from "./limb";
 import { BARN_LINE, barnLines, barnOutline } from "./barn";
 import { Mountains } from "./mountains";
@@ -66,10 +72,10 @@ const DOT_FILL = 0.42;
 /** Smallest energy dot drawn, in CSS pixels. */
 const DOT_MIN_PX = 0.9;
 /**
- * Width of a flower's stalk as a fraction of the flower's size, and its limits in CSS pixels.
- * Under a flower painted as marks it can be as narrow as `fine`, a twig among the marks.
+ * Under a cluster painted as marks, its stalk runs on past the cluster's base this fraction of the
+ * way to its middle, so the marks sit on it rather than beyond its end.
  */
-const STALK = { width: 0.06, min: 0.9, max: 2.4, fine: 0.5 } as const;
+const STALK_INTO = 0.6;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
 /** Radius of the sun and of the moon, as fractions of the view's height. */
@@ -299,11 +305,8 @@ export class Renderer {
       x: camera.width / 2,
       y: camera.height / 2,
     });
-    // Every stalk first, so the flowers cover the stalks of their neighbors. Under clusters
-    // painted as marks, the stalks are finer, so they show as twigs among the marks.
-    for (const [i, flower] of shown.entries()) {
-      this.drawStalk(camera, flower, !at(detailed, i));
-    }
+    // Every stalk first, so the flowers cover the stalks of their neighbors.
+    this.drawStalks(camera, shown, (i) => at(detailed, i));
     // Those clusters are painted together, under the flowers drawn in detail.
     drawMarks(
       this.ctx,
@@ -328,7 +331,7 @@ export class Renderer {
     }
     if (scene.flowerHover?.ghost !== undefined) {
       const { ghost } = scene.flowerHover;
-      this.drawStalk(camera, ghost, false);
+      this.drawStalks(camera, [ghost], () => true);
       drawFlower(
         this.ctx,
         camera.dpr,
@@ -505,33 +508,37 @@ export class Renderer {
     ctx.fill();
   }
 
-  /** Draws the stalk a flower grows on, if it has one: `fine` under a flower painted as marks. */
-  private drawStalk(camera: Camera, flower: FlowerView, fine: boolean): void {
-    if (flower.stalk === undefined) {
-      return;
+  /**
+   * Draws the stalks the flowers grow on, filling all those equally see-through at once. Under a
+   * flower painted as marks, one `detailed` does not pick out, the stalk runs on into it.
+   */
+  private drawStalks(
+    camera: Camera,
+    flowers: readonly FlowerView[],
+    detailed: (i: number) => boolean,
+  ): void {
+    const paths = new Map<number, Path2D>();
+    for (const [i, flower] of flowers.entries()) {
+      if (flower.stalk === undefined) {
+        continue;
+      }
+      let path = paths.get(flower.alpha);
+      if (path === undefined) {
+        path = new Path2D();
+        paths.set(flower.alpha, path);
+      }
+      const into = detailed(i)
+        ? 0
+        : STALK_INTO * middleReach(flower.clusters) * flower.size;
+      addStalk(path, camera, flower, flower.stalk, into * camera.scale);
     }
     const ctx = this.ctx;
-    // A mound of clusters grows on a twig as stout as one cluster's stalk.
-    const size = (flower.size / flower.clusters) * camera.scale;
-    const base = camera.toScreen(flower.x, flower.y);
-    const from = camera.toScreen(flower.stalk.from.x, flower.stalk.from.y);
-    const control = camera.toScreen(
-      flower.stalk.control.x,
-      flower.stalk.control.y,
-    );
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.globalAlpha = flower.alpha;
-    ctx.strokeStyle = this.inkColor;
-    ctx.lineWidth = clamp(
-      size * STALK.width,
-      fine ? STALK.fine : STALK.min,
-      STALK.max,
-    );
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.quadraticCurveTo(control.x, control.y, base.x, base.y);
-    ctx.stroke();
+    ctx.fillStyle = this.inkColor;
+    for (const [alpha, path] of paths) {
+      ctx.globalAlpha = alpha;
+      ctx.fill(path);
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -825,15 +832,104 @@ function inView(camera: Camera, flower: FlowerView): boolean {
   let top = base.y - reach;
   let bottom = base.y + reach;
   if (flower.stalk !== undefined) {
-    const from = camera.toScreen(flower.stalk.from.x, flower.stalk.from.y);
-    left = Math.min(left, from.x);
-    right = Math.max(right, from.x);
-    top = Math.min(top, from.y);
-    bottom = Math.max(bottom, from.y);
+    // The stalk's curve lies within the hull of its ends and controls.
+    for (const point of [flower.stalk.from, ...flower.stalk.controls]) {
+      const p = camera.toScreen(point.x, point.y);
+      left = Math.min(left, p.x);
+      right = Math.max(right, p.x);
+      top = Math.min(top, p.y);
+      bottom = Math.max(bottom, p.y);
+    }
   }
   return (
     right >= 0 && left <= camera.width && bottom >= 0 && top <= camera.height
   );
+}
+
+/**
+ * Adds the outline of a flower's stalk to `path`, in CSS pixels: along its curve from inside the
+ * wood to the flower's base, tapering from its root to its tip, then on `into` CSS pixels past
+ * the base the way the flower faces, ending round.
+ */
+function addStalk(
+  path: Path2D,
+  camera: Camera,
+  flower: FlowerView,
+  stalk: Stalk,
+  into: number,
+): void {
+  const fit = stalkFit(
+    flower.kind,
+    flower.size * camera.scale,
+    flower.clusters,
+  );
+  const root = 0.5 * stalk.root * camera.scale * fit;
+  const tip = 0.5 * stalk.tip * camera.scale * fit;
+  const [c1, c2] = stalk.controls;
+  const p0 = camera.toScreen(stalk.from.x, stalk.from.y);
+  const p1 = camera.toScreen(c1.x, c1.y);
+  const p2 = camera.toScreen(c2.x, c2.y);
+  const p3 = camera.toScreen(flower.x, flower.y);
+  const hull =
+    Math.hypot(p1.x - p0.x, p1.y - p0.y) +
+    Math.hypot(p2.x - p1.x, p2.y - p1.y) +
+    Math.hypot(p3.x - p2.x, p3.y - p2.y);
+  // The flower faces along `angle`, counterclockwise with y up, so down the screen is -sin.
+  const facing = { x: Math.cos(flower.angle), y: -Math.sin(flower.angle) };
+  // Enough steps that the curve stays smooth however large it shows.
+  const steps = clamp(Math.ceil(hull / 6), 2, 16);
+  const left: Vec[] = [];
+  const right: Vec[] = [];
+  const offset = (p: Vec, along: Vec, half: number): void => {
+    left.push({ x: p.x - along.y * half, y: p.y + along.x * half });
+    right.push({ x: p.x + along.y * half, y: p.y - along.x * half });
+  };
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const u = 1 - t;
+    const a = u * u * u;
+    const b = 3 * u * u * t;
+    const c = 3 * u * t * t;
+    const d = t * t * t;
+    const point = {
+      x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
+      y: a * p0.y + b * p1.y + c * p2.y + d * p3.y,
+    };
+    const dx =
+      u * u * (p1.x - p0.x) + 2 * u * t * (p2.x - p1.x) + t * t * (p3.x - p2.x);
+    const dy =
+      u * u * (p1.y - p0.y) + 2 * u * t * (p2.y - p1.y) + t * t * (p3.y - p2.y);
+    // A curve too small to show has no direction of its own; the flower's will do.
+    const tangent = Math.hypot(dx, dy) > 1e-9 ? unit(dx, dy) : facing;
+    // It thins quickly as it leaves the wood, then runs on fine to the flower.
+    offset(point, tangent, tip + (root - tip) * u * u);
+  }
+  const end = {
+    x: p3.x + facing.x * into,
+    y: p3.y + facing.y * into,
+  };
+  const endHalf = into > 0 ? 0.7 * tip : tip;
+  if (into > 0) {
+    offset(end, facing, endHalf);
+  }
+  const ahead = Math.atan2(facing.y, facing.x);
+  const first = at(left, 0);
+  path.moveTo(first.x, first.y);
+  for (const p of left.slice(1)) {
+    path.lineTo(p.x, p.y);
+  }
+  path.arc(
+    end.x,
+    end.y,
+    endHalf,
+    ahead + Math.PI / 2,
+    ahead - Math.PI / 2,
+    true,
+  );
+  // Filling closes it; closing each outline here is slow once the path holds many stalks.
+  for (const p of right.reverse()) {
+    path.lineTo(p.x, p.y);
+  }
 }
 
 /**

@@ -137,12 +137,18 @@ switched on in the debug panel beside the original steer-and-grow controls:
       as it grows from one cluster across to two, so flowers can grow from small to large.
 - [x] On a limb that lies near level, the clusters grow along its top, so they gather into pads
       with the shade beneath them.
+- [x] Every flower grows on a stalk that leaves the wood leaning toward the limb's tip, as a side
+      shoot does, and bends evenly up into the flower without ever hooking. It tapers from the
+      wood to the flower, where it is as fine as the cluster's own spur or twig, so the two run
+      together. A larger flower grows a stouter stalk, a mound's twig leaves the wood the
+      stouter the more clusters across the mound is, and no stalk is more than half as stout as
+      the wood it grows from.
 - [x] Seen from afar, every blossom and leaf is a flat mark with no outline, where it lies when
       drawn in detail: a blossom's five rounded petals, a leaf's star of lobes, or a plain oval
       when smaller still. Each takes a light, middle or shadow tone, the light the likelier the
       more open its mound is to the sky, the higher its cluster sits in its mound and the nearer
       the front of its cluster it is, so light lies over the top of the canopy and shade gathers
-      inside it. The stalks under far clusters are fine, twigs among the marks.
+      inside it. Under a far cluster, its stalk runs on into the marks, so they sit on it.
 - [x] Closer in, clusters come into detail a few at a time, their outlines fading in as they
       grow, each mark becoming its blossom or leaf. Detail spreads from the middle of the view,
       as much as a frame can afford, and too many marks for a frame are painted fewer and larger.
@@ -293,6 +299,6 @@ _Open._ A button flips into a view of the roots:
 - [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
       how much the wood and the roots can take; and an overlay showing how close each joint is to
       breaking.
-- [x] Flowers page: whether flowers are placed by hand or grown by the tree, their kind or a mix,
-      one size for all of them, which grows cherry and maple clusters into mounds, and how hard
-      their stems hold.
+- [x] Flowers page: whether flowers are grown by the tree, as they are to begin with, or placed by
+      hand; their kind or a mix; one size for all of them, from a fifth to five times the usual,
+      which grows cherry and maple clusters into mounds; and how hard their stems hold.
