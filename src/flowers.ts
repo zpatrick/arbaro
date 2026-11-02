@@ -66,10 +66,11 @@ export const FLOWERS = {
    */
   jitter: 0.4,
   /**
-   * Clusters grow along the top of a limb that lies this near level or nearer: the cosine of its
-   * slope, from 0 for upright to 1 for level.
+   * A flower that rides up its limb to nearer than this many times its spacing behind the next
+   * flower along the same side shrinks away, so flowers riding up never bunch. The tree grows its
+   * own about twice their spacing apart along each side.
    */
-  onTop: 0.5,
+  crowded: 1.5,
   /**
    * Length of a mound's twig beyond the wood, as a multiple of the mound's size, from the shortest
    * to the longest: the twig's end, the mound's middle, lies within about the mound's own reach of
@@ -300,6 +301,11 @@ interface Flower {
   regrowIn: number;
   /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
   exposure: number;
+  /**
+   * Whether it rode up its limb into the next flower along its side. It shrinks away, and is gone
+   * once it has.
+   */
+  crowded: boolean;
 }
 
 /** A flower that came off the tree, falling or lying on the ground. */
@@ -583,6 +589,7 @@ export class Flowers {
       dropped: undefined,
       regrowIn: 0,
       exposure: 1,
+      crowded: false,
     };
   }
 
@@ -621,12 +628,7 @@ export class Flowers {
         continue;
       }
       const habit = HABITS[kind];
-      // Mounds keep the spacing of the clusters they grow from, so larger ones run together
-      // into a canopy.
-      const spacing =
-        habit.spacing *
-        FLOWERS.size *
-        (habit.mounds ? Math.min(1, settings.size) : settings.size);
+      const spacing = spacingOf(kind, settings.size);
       invariant(spacing > 0, `Flowers ${settings.size} in size have no room.`);
       let side = this.firstSide(limb);
       for (let slot = 0; ; slot += 1) {
@@ -652,10 +654,7 @@ export class Flowers {
                     limb.length,
                     s + this.rng.next() * FLOWERS.jitter * spacing,
                   ),
-                  side:
-                    habit.mounds && facesDown(limb, s, spot.side)
-                      ? opposite(spot.side)
-                      : spot.side,
+                  side: spot.side,
                 };
           const flower = this.flower("tree", limb, placed, kind);
           this.flowers.push(flower);
@@ -729,6 +728,7 @@ export class Flowers {
       );
     };
     const kept: Flower[] = [];
+    const before = new Map<Flower, number>();
     for (const flower of this.flowers) {
       const s = position(flower, tree);
       // Its wood is gone, cut or broken off, or has grown too thick for it.
@@ -736,6 +736,14 @@ export class Flowers {
         this.drop(flower, tree, settings, { x: 0, y: 0 });
         continue;
       }
+      // It was crowded off its wood and has shrunk away, or came off the tree as it did.
+      if (
+        flower.crowded &&
+        (flower.grown <= 0 || flower.dropped !== undefined)
+      ) {
+        continue;
+      }
+      before.set(flower, flower.s);
       flower.s = s;
       const age = ageOf(flower.traits, conditions.season);
       if (flower.dropped === "season" && age < flower.traits.dropsAt) {
@@ -756,7 +764,7 @@ export class Flowers {
         continue;
       }
 
-      const shown = flower.placement === settings.placement;
+      const shown = flower.placement === settings.placement && !flower.crowded;
       flower.grown = clamp(
         flower.grown + (shown ? dt : -dt) / FLOWERS.growIn,
         0,
@@ -790,6 +798,66 @@ export class Flowers {
       kept.push(flower);
     }
     this.flowers = kept;
+    this.uncrowd(before, settings);
+  }
+
+  /**
+   * Marks as crowded every flower that rode up its limb since `before` to nearer than it may grow
+   * behind the next flower along the same side, so it shrinks away. Each flower keeps to wood as
+   * thin as it grew on, so when an offshoot thickens the wood below its fork, every flower there
+   * rides up into the thin wood just past the fork; without this they would bunch there. The tree
+   * grows its own back where there is room for them.
+   */
+  private uncrowd(
+    before: ReadonlyMap<Flower, number>,
+    settings: FlowerSettings,
+  ): void {
+    // The flowers along each side of each limb, those placed by hand apart from the tree's own.
+    // One crowning a tip has no side to crowd, and one already crowded is on its way out.
+    const rows = new Map<Limb, Map<string, Flower[]>>();
+    for (const flower of this.flowers) {
+      if (flower.side === 0 || flower.crowded) {
+        continue;
+      }
+      let sides = rows.get(flower.limb);
+      if (sides === undefined) {
+        sides = new Map();
+        rows.set(flower.limb, sides);
+      }
+      const key = `${flower.side} ${flower.placement}`;
+      const row = sides.get(key);
+      if (row === undefined) {
+        sides.set(key, [flower]);
+      } else {
+        row.push(flower);
+      }
+    }
+    const was = (flower: Flower): number => {
+      const s = before.get(flower);
+      invariant(s !== undefined, "Every flower kept had a place before.");
+      return s;
+    };
+    for (const sides of rows.values()) {
+      for (const row of sides.values()) {
+        // From the tip back, so a flower riding up goes rather than the one it rode into.
+        row.sort((a, b) => b.s - a.s);
+        let ahead: Flower | undefined;
+        for (const flower of row) {
+          if (ahead !== undefined) {
+            const gap = ahead.s - flower.s;
+            const closing = gap < was(ahead) - was(flower) - 1e-6;
+            if (
+              closing &&
+              gap < FLOWERS.crowded * spacingOf(flower.kind, settings.size)
+            ) {
+              flower.crowded = true;
+              continue;
+            }
+          }
+          ahead = flower;
+        }
+      }
+    }
   }
 
   /**
@@ -1035,15 +1103,15 @@ function moundness(clusters: number): number {
 }
 
 /**
- * Whether `side` of `limb` at `s` faces the ground: on a limb that lies near level, the tree grows
- * its clusters along the top, so they gather into pads with the shade beneath them.
+ * How far apart the tree grows flowers of `kind` along a limb, taking turns on either side, at
+ * the size multiplier `size`, in world units. Mounds keep the spacing of the clusters they grow
+ * from, so larger ones run together into a canopy.
  */
-function facesDown(limb: Limb, s: number, side: 1 | -1): boolean {
-  return side * Math.cos(limb.pointAt(s).heading) < -FLOWERS.onTop;
-}
-
-function opposite(side: 1 | -1): 1 | -1 {
-  return side === 1 ? -1 : 1;
+function spacingOf(kind: FlowerKind, size: number): number {
+  const habit = HABITS[kind];
+  return (
+    habit.spacing * FLOWERS.size * (habit.mounds ? Math.min(1, size) : size)
+  );
 }
 
 /** Brings back a flower that dropped, as a bud that grows in. */

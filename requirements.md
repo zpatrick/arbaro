@@ -135,8 +135,6 @@ switched on in the debug panel beside the original steer-and-grow controls:
       of its twig, which runs into it like a branch into its leaves, so most mounds wrap their
       limb and only the furthest stand out from it, on a short twig. A cluster settles into this
       as it grows from one cluster across to two, so flowers can grow from small to large.
-- [x] On a limb that lies near level, the clusters grow along its top, so they gather into pads
-      with the shade beneath them.
 - [x] Every flower grows on a stalk that leaves the wood leaning toward the limb's tip, as a side
       shoot does, and bends evenly up into the flower without ever hooking. It tapers from the
       wood to the flower, where it is as fine as the cluster's own spur or twig, so the two run
@@ -153,7 +151,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       grow, each mark becoming its blossom or leaf. Detail spreads from the middle of the view,
       as much as a frame can afford, and too many marks for a frame are painted fewer and larger.
 - [x] Flowers only grow on thin wood, and keep to it as their limb grows, so they ride up with
-      the tip.
+      the tip. One that rides up into the next flower along its side of the limb, as every
+      flower below a fork does when the offshoot there thickens the wood, shrinks away, so they
+      never bunch; the tree grows its own back where there is room for them.
 - [x] Either the player places them, by shift-clicking thin wood, or the tree grows its own: one
       crowning each limb long enough to flower and more along the thin wood behind it. The tree
       grows back a flower the wind takes after a while.
