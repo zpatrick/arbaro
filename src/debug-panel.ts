@@ -4,6 +4,7 @@ import type { TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
 import { draggable, element, shape, Slider } from "./ui";
 import { invariant } from "./util";
+import type { WeatherSettings } from "./weather";
 import {
   MAX_WIND_SPEED,
   WIND_MODELS,
@@ -120,6 +121,22 @@ const GROWTH_MODES: readonly {
   },
 ];
 
+/** Names for how hard it rains, and for how hard it snows, from where each begins. */
+const RAINS: readonly (readonly [number, string])[] = [
+  [0, "Dry"],
+  [0.01, "Drizzle"],
+  [0.3, "Rain"],
+  [0.7, "Downpour"],
+];
+const SNOWS: readonly (readonly [number, string])[] = [
+  [0, "None"],
+  [0.01, "Flurries"],
+  [0.3, "Snow"],
+  [0.7, "Blizzard"],
+];
+/** The melt slider runs from a quarter to four times the usual rate, evenly in ratio. */
+const MELT_RANGE = 4;
+
 /** Beaufort scale: the wind speed in m/s where each named wind begins. */
 const BEAUFORT: readonly (readonly [number, string])[] = [
   [0, "Calm"],
@@ -153,15 +170,18 @@ const HEADINGS = [
 interface Settings {
   growth: Growth;
   wind: WindSettings;
+  weather: WeatherSettings;
   strength: Strength;
   showStrain: boolean;
   flowers: FlowerSettings;
   time: TimeSettings;
 }
 
-interface Saved extends Settings {
+interface Saved extends Omit<Settings, "weather"> {
   open: boolean;
   tab: Tab;
+  /** Settings saved by an older build have no weather; it starts as it does by default. */
+  weather?: WeatherSettings;
 }
 
 /** Every setting as it starts, and as the reset button puts it back. */
@@ -169,6 +189,7 @@ function defaults(): Settings {
   return {
     growth: { mode: "steer", flowRate: 1 },
     wind: { direction: 0, strength: 0, model: "steady" },
+    weather: { rain: 0, snow: 0, melt: 1 },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
     flowers: { placement: "tree", size: 1 },
@@ -186,6 +207,16 @@ function ratioToSlider(multiplier: number, range: number): number {
 
 function sliderToRatio(value: number, range: number): number {
   return Math.pow(range, 2 * value - 1);
+}
+
+/** The name in `names` for `value`: the last whose start it has reached. */
+function nameFor(
+  names: readonly (readonly [number, string])[],
+  value: number,
+): string {
+  const found = [...names].reverse().find(([from]) => value >= from);
+  invariant(found !== undefined, `No name for ${value}.`);
+  return found[1];
 }
 
 /** A time of day as a 12-hour clock reading, such as "6:30 am". */
@@ -209,8 +240,13 @@ function isSaved(saved: unknown): saved is Saved {
   if (!isRecord(saved)) {
     return false;
   }
-  const { growth, wind, strength, flowers, time } = saved;
+  const { growth, wind, weather, strength, flowers, time } = saved;
   return (
+    (weather === undefined ||
+      (isRecord(weather) &&
+        isNumber(weather.rain) &&
+        isNumber(weather.snow) &&
+        isNumber(weather.melt))) &&
     typeof saved.open === "boolean" &&
     TABS.some((t) => t.id === saved.tab) &&
     typeof saved.showStrain === "boolean" &&
@@ -257,6 +293,8 @@ export class DebugPanel {
   readonly growth: Growth;
   /** Live wind settings. The wind reads these directly, so changes apply on the next frame. */
   readonly wind: WindSettings;
+  /** Live rain and snow, read every frame. */
+  readonly weather: WeatherSettings;
   /** Live multipliers on how much the tree can take before it breaks. */
   readonly strength: Strength;
   /** Whether to mark how close each joint is to breaking. */
@@ -284,6 +322,9 @@ export class DebugPanel {
   private readonly arrow: SVGPathElement;
   private readonly heading: HTMLElement;
   private readonly windSpeed: Slider;
+  private readonly rain: Slider;
+  private readonly snow: Slider;
+  private readonly melt: Slider;
   private readonly models = new Map<WindModel, HTMLElement>();
   private readonly description: HTMLElement;
   private readonly modes = new Map<GrowthMode, HTMLElement>();
@@ -303,6 +344,7 @@ export class DebugPanel {
     const settings = saved ?? defaults();
     this.growth = { ...settings.growth };
     this.wind = { ...settings.wind };
+    this.weather = { ...(settings.weather ?? defaults().weather) };
     this.strength = { ...settings.strength };
     this.showStrain = settings.showStrain;
     // Saved settings may carry fields the flowers no longer have; only these carry over.
@@ -412,6 +454,17 @@ export class DebugPanel {
       );
     }
     this.description = element("p", "model-description", wind);
+    const fall = element("section", "debug-section", weather);
+    element("h2", "debug-title", fall, "Rain and snow");
+    this.rain = new Slider(fall, "Rain", (value) =>
+      this.setWeather({ rain: value }),
+    );
+    this.snow = new Slider(fall, "Snow", (value) =>
+      this.setWeather({ snow: value }),
+    );
+    this.melt = new Slider(fall, "Melting", (value) =>
+      this.setWeather({ melt: sliderToRatio(value, MELT_RANGE) }),
+    );
 
     const tree = this.page("tree", card);
     const growth = element("section", "debug-section", tree);
@@ -515,6 +568,12 @@ export class DebugPanel {
     this.save();
   }
 
+  setWeather(settings: Partial<WeatherSettings>): void {
+    Object.assign(this.weather, settings);
+    this.render();
+    this.save();
+  }
+
   setSimulationSpeed(speed: number): void {
     invariant(
       SPEEDS.some((s) => s.speed === speed),
@@ -548,6 +607,7 @@ export class DebugPanel {
     const fresh = defaults();
     Object.assign(this.growth, fresh.growth);
     Object.assign(this.wind, fresh.wind);
+    Object.assign(this.weather, fresh.weather);
     Object.assign(this.strength, fresh.strength);
     Object.assign(this.flowers, fresh.flowers);
     Object.assign(this.time, fresh.time);
@@ -630,6 +690,10 @@ export class DebugPanel {
     const chosen = WIND_MODELS.find((m) => m.id === model);
     invariant(chosen !== undefined, `Unknown wind model ${model}.`);
     this.description.textContent = chosen.description;
+    const { rain, snow, melt } = this.weather;
+    this.rain.show(rain, nameFor(RAINS, rain));
+    this.snow.show(snow, nameFor(SNOWS, snow));
+    this.melt.show(ratioToSlider(melt, MELT_RANGE), `×${melt.toFixed(2)}`);
 
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);
@@ -675,6 +739,7 @@ export class DebugPanel {
       tab: this.tab,
       growth: this.growth,
       wind: this.wind,
+      weather: this.weather,
       strength: this.strength,
       showStrain: this.showStrain,
       flowers: this.flowers,

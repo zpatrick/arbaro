@@ -1,6 +1,7 @@
 import { type Limb, UPRIGHT } from "./limb";
-import { PHYSICS } from "./physics";
+import { type Load, PHYSICS, type Snowfall } from "./physics";
 import type { Pick, Tree } from "./tree";
+import { SNOW } from "./weather";
 import {
   approach,
   at,
@@ -28,6 +29,8 @@ export interface Conditions {
   /** Time of year, from midsummer at 0 to winter at 1. Flowers turn, wilt and drop as it passes. */
   season: number;
   wind: Wind;
+  /** Snow falling, which settles on the flowers open to the sky. */
+  snow: Snowfall;
   /** Multiplier on how hard flower stems hold. */
   hold: number;
   /** Whether the tree grows in flow mode, where better-fed limbs grow stronger stems. */
@@ -250,6 +253,8 @@ interface Flower {
    * once it has.
    */
   crowded: boolean;
+  /** Snow lying on it, in kilograms. Its limb carries it. */
+  snow: number;
 }
 
 /** A flower that came off the tree, falling or lying on the ground. */
@@ -314,6 +319,8 @@ export interface FlowerView {
   variant: number;
   /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
   exposure: number;
+  /** How much snow lies on it, from 0 to 1, the most it holds. */
+  snow: number;
   /** The stalk it grows on while it is on the tree. */
   stalk: Stalk | undefined;
 }
@@ -345,6 +352,17 @@ export class Flowers {
   }
 
   /** How many flowers are showing on the tree, and how many have come off and not yet faded. */
+  /** The snow lying on the flowers on the tree, which their limbs carry. */
+  loads(): Load[] {
+    return this.flowers
+      .filter((f) => f.dropped === undefined && f.snow > 0)
+      .map((f) => ({
+        limb: f.limb,
+        s: Math.min(f.s, f.limb.length),
+        mass: f.snow,
+      }));
+  }
+
   count(): { onTree: number; falling: number } {
     return {
       onTree: this.flowers.filter((f) => f.dropped === undefined && f.grown > 0)
@@ -451,6 +469,7 @@ export class Flowers {
         alpha: 0.45,
         variant: TYPICAL.variant,
         exposure: 1,
+        snow: 0,
       },
       target: undefined,
     };
@@ -476,6 +495,7 @@ export class Flowers {
         alpha: flower.alpha,
         variant: flower.traits.variant,
         exposure: 1,
+        snow: 0,
         stalk: undefined,
       });
     }
@@ -509,6 +529,7 @@ export class Flowers {
       regrowIn: 0,
       exposure: 1,
       crowded: false,
+      snow: 0,
     };
   }
 
@@ -685,6 +706,19 @@ export class Flowers {
         1,
       );
       flower.opened = clamp(flower.opened + dt / flower.traits.opening, 0, 1);
+      // Snow settles on it as far as it lies open to the sky, and melts.
+      const size = spanOf(flower.traits, flower.grown, settings.size);
+      const snow = Math.min(
+        snowHeld(size),
+        flower.snow * Math.exp(-conditions.snow.melt * dt) +
+          conditions.snow.fall *
+            flower.exposure *
+            FLOWERS.area *
+            size *
+            size *
+            dt,
+      );
+      flower.snow = snow < flower.snow && snow < SNOW.trace ? 0 : snow;
       const torn =
         flower.grown > 0
           ? this.weather(
@@ -834,6 +868,8 @@ export class Flowers {
     settings: FlowerSettings,
     push: Vec,
   ): void {
+    // Its snow comes off with it.
+    flower.snow = 0;
     if (flower.dropped !== undefined || flower.grown <= 0.05) {
       flower.grown = 0;
       return;
@@ -878,13 +914,16 @@ export class Flowers {
     settings: FlowerSettings,
     season: number,
   ): FlowerView {
+    const pose = this.poseOf(flower, settings);
     return {
-      ...this.poseOf(flower, settings),
+      ...pose,
       openness: flower.opened,
       age: ageOf(flower.traits, season),
       alpha: 1,
       variant: flower.traits.variant,
       exposure: flower.exposure,
+      snow:
+        flower.snow > 0 ? Math.min(1, flower.snow / snowHeld(pose.size)) : 0,
     };
   }
 
@@ -990,9 +1029,23 @@ function spacingOf(size: number): number {
   return HABIT.spacing * FLOWERS.size * Math.min(1, size);
 }
 
+/** Most snow a flower `size` across holds, in kilograms. */
+function snowHeld(size: number): number {
+  return SNOW.flowerHold * size * size;
+}
+
+/**
+ * How large a flower is drawn, in world units: `size` is the size multiplier from the debug
+ * panel, and `grown` how far it has grown in.
+ */
+function spanOf(traits: Traits, grown: number, size: number): number {
+  return FLOWERS.size * size * traits.size * smoothstep(0, 1, grown);
+}
+
 /** Brings back a flower that dropped, as a bud that grows in. */
 function regrow(flower: Flower): void {
   flower.dropped = undefined;
+  flower.snow = 0;
   flower.grown = 0;
   flower.opened = 0;
   flower.sway = 0;
@@ -1014,7 +1067,7 @@ function flowerPose(
 ): Pose {
   const p = limb.pointAt(s);
   const radius = limb.radiusAt(s);
-  const span = FLOWERS.size * size * traits.size * smoothstep(0, 1, grown);
+  const span = spanOf(traits, grown, size);
   const clusters = Math.max(1, size);
   const cluster = span / clusters;
   // A stalk from the side of a limb is never more than half as stout as the wood, and one

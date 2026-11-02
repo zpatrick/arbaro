@@ -19,9 +19,18 @@ import { BARN_LINE, barnLines, barnOutline } from "./barn";
 import { Mountains } from "./mountains";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
-import { css, type Rgb, type SkyBody, type SkyLight } from "./sky";
+import { css, lit, type Rgb, type SkyBody, type SkyLight } from "./sky";
 import { FLARE, type Pick, type Tree } from "./tree";
-import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
+import {
+  at,
+  clamp,
+  invariant,
+  lerp,
+  Rng,
+  smoothstep,
+  valueNoise,
+} from "./util";
+import { SNOW, SNOW_COLOR, type Weather } from "./weather";
 
 /** No limb renders thinner than this many CSS pixels across, so tips survive zooming out. */
 const MIN_WIDTH_PX = 1.1;
@@ -94,6 +103,27 @@ const BARN_LINE_ALPHA = 0.5;
 const BARN_LINE_MIN_PX = 0.7;
 const STARLIGHT: Rgb = [240, 236, 222];
 const MOONLIGHT: Rgb = [238, 233, 214];
+/** How strongly raindrops show, and their width, in CSS pixels. */
+const RAIN = { alpha: 0.32, width: 0.9 } as const;
+/**
+ * Radius of the smallest and largest snowflakes, in CSS pixels, and how strongly the faint rim
+ * around each shows.
+ */
+const FLAKE = { from: 1.2, to: 2.8, rim: 0.45 } as const;
+/** Spacing of the points the snow on a limb is drawn through, in world units. */
+const SNOW_STEP = 0.08;
+/**
+ * The snow on the ground drifts up and down by this fraction of its depth, over this many meters
+ * along the ground, drawn through points this many CSS pixels apart.
+ */
+const SNOW_DRIFT = 0.18;
+const SNOW_DRIFT_LENGTH = 2.5;
+const SNOW_DRIFT_STEP_PX = 16;
+/**
+ * Snow on wood is spread no thinner than over this fraction of the wood's length, however steep
+ * the wood, since what little lies on steep wood sits in a narrow strip.
+ */
+const SNOW_LEVEL = 0.15;
 
 /** Everything drawn in one frame. */
 export interface Scene {
@@ -122,6 +152,8 @@ export interface Scene {
         openSpout: Limb | undefined;
       }
     | undefined;
+  /** Rain and snow falling, and snow lying on the ground. */
+  weather: Weather;
 }
 
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
@@ -286,6 +318,11 @@ export class Renderer {
       this.fillInk(path, piece.alpha);
     }
 
+    const snowColor = css(lit(SNOW_COLOR, scene.light.flowerLight));
+    if (scene.tree !== undefined) {
+      this.drawSnowOnWood(camera, scene.tree, snowColor);
+    }
+    this.drawGroundSnow(camera, scene.weather.groundSnow, snowColor);
     if (scene.tree !== undefined) {
       if (scene.strain) {
         this.drawStrain(camera, scene.tree, ink);
@@ -315,6 +352,7 @@ export class Renderer {
         drawFlower(this.ctx, camera.dpr, look);
       }
     }
+    this.drawFalling(camera, scene.weather, scene.light, snowColor);
     if (scene.tree !== undefined) {
       if (scene.flow !== undefined) {
         this.drawSpouts(
@@ -502,6 +540,124 @@ export class Renderer {
       ctx.fill(path);
     }
     ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Draws the snow lying along the tops of the limbs, as deep as there is snow on each stretch of
+   * wood, deepening and thinning smoothly between them.
+   */
+  private drawSnowOnWood(camera: Camera, tree: Tree, color: string): void {
+    const path = new Path2D();
+    const thinnest = minimumRadius(camera);
+    for (const limb of tree.limbs) {
+      const snow = tree.physics.snowOn(limb);
+      if (snow === undefined || snow.every((mass) => mass <= 0)) {
+        continue;
+      }
+      const depths = snow.map((mass, k) => snowDepth(limb, k, mass));
+      // Depth at `s`, between those at the middles of the stretches the joints hold up.
+      const depthAt = (s: number): number => {
+        const position = s / PHYSICS.jointSpacing - 0.5;
+        const i = clamp(Math.floor(position), 0, depths.length - 1);
+        const j = Math.min(i + 1, depths.length - 1);
+        return lerp(at(depths, i), at(depths, j), clamp(position - i, 0, 1));
+      };
+      const steps = Math.max(2, Math.ceil(limb.length / SNOW_STEP));
+      const edge: Vec[] = [];
+      const top: Vec[] = [];
+      for (let i = 0; i <= steps; i += 1) {
+        const s = (i / steps) * limb.length;
+        const depth = depthAt(s);
+        if (depth * camera.scale < 0.25) {
+          addSnowCap(path, edge, top);
+          continue;
+        }
+        const p = limb.pointAt(s);
+        // The side of the wood that faces up.
+        const up = Math.cos(p.heading) >= 0 ? 1 : -1;
+        const nx = -Math.sin(p.heading) * up;
+        const ny = Math.cos(p.heading) * up;
+        const radius = Math.max(limb.radiusAt(s), thinnest);
+        // It sits a little into the wood, so no sliver of sky shows beneath it.
+        edge.push(
+          camera.toScreen(p.x + nx * 0.7 * radius, p.y + ny * 0.7 * radius),
+        );
+        top.push(
+          camera.toScreen(
+            p.x + nx * (radius + depth),
+            p.y + ny * (radius + depth),
+          ),
+        );
+      }
+      addSnowCap(path, edge, top);
+    }
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.fillStyle = color;
+    ctx.fill(path);
+  }
+
+  /** Draws snow `depth` meters deep lying on the ground, its top drifted gently up and down. */
+  private drawGroundSnow(camera: Camera, depth: number, color: string): void {
+    if (depth * camera.scale < 0.25) {
+      return;
+    }
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    // Down a little into the ground, so no seam shows along its edge.
+    const below = camera.groundRow + 1;
+    ctx.moveTo(-SNOW_DRIFT_STEP_PX, below);
+    for (
+      let x = -SNOW_DRIFT_STEP_PX;
+      x <= camera.width + SNOW_DRIFT_STEP_PX;
+      x += SNOW_DRIFT_STEP_PX
+    ) {
+      const along = camera.toWorld(x, 0).x;
+      const drift = 1 + SNOW_DRIFT * valueNoise(along / SNOW_DRIFT_LENGTH, 9);
+      ctx.lineTo(x, camera.toScreen(along, depth * drift).y);
+    }
+    ctx.lineTo(camera.width + SNOW_DRIFT_STEP_PX, below);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** Draws the rain and snow falling across the view. */
+  private drawFalling(
+    camera: Camera,
+    weather: Weather,
+    light: SkyLight,
+    snowColor: string,
+  ): void {
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    if (weather.drops.length > 0) {
+      ctx.strokeStyle = css(light.guide, RAIN.alpha);
+      ctx.lineWidth = RAIN.width;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      for (const drop of weather.drops) {
+        const streak = weather.streak(drop);
+        ctx.moveTo(drop.x, drop.y);
+        ctx.lineTo(drop.x + streak.x, drop.y + streak.y);
+      }
+      ctx.stroke();
+    }
+    if (weather.flakes.length > 0) {
+      const flakes = new Path2D();
+      for (const flake of weather.flakes) {
+        const radius = lerp(FLAKE.from, FLAKE.to, flake.size);
+        flakes.moveTo(flake.x + radius, flake.y);
+        flakes.arc(flake.x, flake.y, radius, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = snowColor;
+      ctx.fill(flakes);
+      // A faint rim, so the flakes show against a pale sky as well as the dark ground.
+      ctx.strokeStyle = css(light.ink, FLAKE.rim);
+      ctx.lineWidth = 0.6;
+      ctx.stroke(flakes);
+    }
   }
 
   /** Draws each energy dot as pale light inside the wood it rides in. */
@@ -779,8 +935,47 @@ function lookOf(camera: Camera, flower: FlowerView, light: Rgb): FlowerLook {
     alpha: flower.alpha,
     variant: flower.variant,
     exposure: flower.exposure,
+    snow: flower.snow,
     light,
   };
+}
+
+/**
+ * Depth of the snow lying on the stretch of `limb` that joint `k` holds up, `mass` kilograms of
+ * it, in world units: spread over the stretch's level width, and no deeper than the wood holds
+ * lying as it does.
+ */
+function snowDepth(limb: Limb, k: number, mass: number): number {
+  const s0 = k * PHYSICS.jointSpacing;
+  const s1 = Math.min(limb.length, s0 + PHYSICS.jointSpacing);
+  const middle = limb.pointAt((s0 + s1) / 2);
+  const width = 2 * limb.radiusAt((s0 + s1) / 2);
+  const level = Math.abs(Math.cos(middle.heading));
+  const length = Math.max(s1 - s0, 1e-6);
+  return Math.min(
+    mass / (SNOW.density * width * length * Math.max(SNOW_LEVEL, level)),
+    Math.min(SNOW.deepest, SNOW.heap * width) * level,
+  );
+}
+
+/**
+ * Adds the snow cap along `edge`, where it meets the wood, and `top`, its upper surface, to
+ * `path`, in CSS pixels, then empties both, ready for the next stretch of snow.
+ */
+function addSnowCap(path: Path2D, edge: Vec[], top: Vec[]): void {
+  if (edge.length >= 2) {
+    const first = at(edge, 0);
+    path.moveTo(first.x, first.y);
+    for (const p of edge.slice(1)) {
+      path.lineTo(p.x, p.y);
+    }
+    for (const p of [...top].reverse()) {
+      path.lineTo(p.x, p.y);
+    }
+    path.closePath();
+  }
+  edge.length = 0;
+  top.length = 0;
 }
 
 /** Whether any of a flower or its stalk could show in the view. */

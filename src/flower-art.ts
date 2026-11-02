@@ -1,6 +1,10 @@
 import { middleReach } from "./flowers";
-import type { Rgb } from "./sky";
+import { lit, mix, type Rgb } from "./sky";
 import { at, clamp, lerp, smoothstep } from "./util";
+import { SNOW_COLOR } from "./weather";
+
+/** Snow lying on a flower as deep as it holds hides this much of its color. */
+const SNOW_COVER = 0.8;
 
 /**
  * Outline around every petal, as a fraction of the flower's size, and its limits in CSS pixels.
@@ -231,6 +235,8 @@ export interface FlowerLook {
   clusters: number;
   /** How open to the sky it is, from 0 deep in the canopy to 1 on top of it. */
   exposure: number;
+  /** How much snow lies on it, from 0 to 1, the most it holds. */
+  snow: number;
   /** Multipliers on every color, for the light at this time of day. */
   light: Rgb;
 }
@@ -270,7 +276,7 @@ export function drawFlower(
     width: VEIN_PX / size,
     alpha: smoothstep(DETAIL_PX.from, DETAIL_PX.to, part),
   };
-  const colors = petalColors(look.age);
+  const colors = petalColors(look.age, look.snow);
   const ink = lit(INK, look.light);
   const outline =
     OUTLINE_ALPHA *
@@ -295,8 +301,11 @@ export function drawFlower(
   ctx.globalAlpha = 1;
 }
 
-/** Petal colors at a time of year: the living colors, turned by however much of autumn has passed. */
-function petalColors(age: number): { base: Rgb; tip: Rgb } {
+/**
+ * Petal colors at a time of year: the living colors, turned by however much of autumn has passed,
+ * and whitened by `snow` lying on them, from 0 to 1, the most they hold.
+ */
+function petalColors(age: number, snow: number): { base: Rgb; tip: Rgb } {
   let { base, tip } = LIVING;
   for (const stage of AUTUMN) {
     const t = smoothstep(stage.from, stage.to, age);
@@ -306,7 +315,11 @@ function petalColors(age: number): { base: Rgb; tip: Rgb } {
     base = mix(base, stage.base, t);
     tip = mix(tip, stage.tip, t);
   }
-  return { base, tip };
+  const cover = SNOW_COVER * snow;
+  return {
+    base: mix(base, SNOW_COLOR, cover),
+    tip: mix(tip, SNOW_COLOR, cover),
+  };
 }
 
 /** How many clusters a mound `clusters` times the size of one is packed with. */
@@ -457,12 +470,13 @@ export function drawMarks(
   dpr: number,
   looks: readonly FlowerLook[],
 ): void {
-  // Flowers within a step of each other in age and fading share their colors, and are painted
-  // as one.
+  // Flowers within a step of each other in age, snow and fading share their colors, and are
+  // painted as one.
   const groups = new Map<
     string,
     {
       age: number;
+      snow: number;
       alpha: number;
       light: Rgb;
       tones: Path2D[];
@@ -485,12 +499,14 @@ export function drawMarks(
 
   for (const { look, radius, every } of sized) {
     const age = Math.round(look.age * 50) / 50;
+    const snow = Math.round(look.snow * 10) / 10;
     const alpha = Math.round(look.alpha * 10) / 10;
-    const key = `${age} ${alpha} ${look.light.join(" ")}`;
+    const key = `${age} ${snow} ${alpha} ${look.light.join(" ")}`;
     let group = groups.get(key);
     if (group === undefined) {
       group = {
         age,
+        snow,
         alpha,
         light: look.light,
         tones: TONES.map(() => new Path2D()),
@@ -520,7 +536,7 @@ export function drawMarks(
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   for (const group of groups.values()) {
-    const { base, tip } = petalColors(group.age);
+    const { base, tip } = petalColors(group.age, group.snow);
     ctx.globalAlpha = group.alpha;
     for (const [i, tone] of TONES.entries()) {
       ctx.fillStyle = css(
@@ -1012,15 +1028,6 @@ function trace(
 
 function easeInOut(t: number): number {
   return t * t * (3 - 2 * t);
-}
-
-/** A color under a light, as multipliers on each channel. */
-function lit(color: Rgb, light: Rgb): Rgb {
-  return [color[0] * light[0], color[1] * light[1], color[2] * light[2]];
-}
-
-function mix(a: Rgb, b: Rgb, t: number): Rgb {
-  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 }
 
 function css(color: Rgb, shade = 1): string {

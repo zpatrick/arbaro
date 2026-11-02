@@ -19,6 +19,7 @@ import {
   Tree,
 } from "./tree";
 import { at, clamp, invariant } from "./util";
+import { Weather, type WeatherSettings } from "./weather";
 import { Wind, type WindSettings } from "./wind";
 
 /** Longest frame step the simulation will take, so a stalled tab does not lurch forward. */
@@ -67,6 +68,7 @@ const renderer = new Renderer(canvas);
 const keyboard = new Keyboard(window);
 const panel = new DebugPanel(element("#app", HTMLDivElement));
 const wind = new Wind(panel.wind);
+const weather = new Weather(panel.weather);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
 const flowers = new Flowers();
@@ -304,6 +306,7 @@ function giveWay(standing: Tree, failure: Failure): void {
 /** Advances everything by `dt` seconds. */
 function step(dt: number, controls: Controls): void {
   const growth: Growth = panel.growth;
+  const snow = { fall: weather.snowfall, melt: weather.melt };
   if (tree !== undefined) {
     const standing = tree;
     for (const failure of standing.update(
@@ -312,6 +315,8 @@ function step(dt: number, controls: Controls): void {
       wind,
       panel.strength,
       growth,
+      snow,
+      flowers.loads(),
     )) {
       if (tree !== standing) {
         break;
@@ -328,9 +333,11 @@ function step(dt: number, controls: Controls): void {
   flowers.update(dt, tree, panel.flowers, {
     season: panel.time.season,
     wind,
+    snow,
     hold: panel.strength.flowers,
     flowing: growth.mode === "flow",
   });
+  weather.update(dt, wind, camera.width, camera.height);
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -563,6 +570,7 @@ function frame(now: number): void {
     flow: flowing
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }
       : undefined,
+    weather,
   });
   if (controls.grow || controls.steer !== 0) {
     hint.classList.add("quiet");
@@ -597,6 +605,8 @@ interface DebugHandle {
   flowers(settings: Partial<FlowerSettings>): void;
   /** Changes the time of day and of year, as the debug panel would. */
   time(settings: Partial<TimeSettings>): void;
+  /** Changes the rain and snow, as the debug panel would. */
+  weather(settings: Partial<WeatherSettings>): void;
   /**
    * Grows a flower by hand at `fraction` of limb `index`'s length, on its `side` (1 left, -1
    * right), like a shift-click.
@@ -672,6 +682,9 @@ if (import.meta.env.DEV) {
     },
     time(settings) {
       panel.setTime(settings);
+    },
+    weather(settings) {
+      panel.setWeather(settings);
     },
     placeFlower(index, fraction, side) {
       const limb = at(standing().limbs, index);

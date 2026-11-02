@@ -136,6 +136,11 @@ function wrapDay(t: number): number {
   return t - Math.floor(t);
 }
 
+/** A color under a light, as multipliers on each channel. */
+export function lit(color: Rgb, light: Rgb): Rgb {
+  return [color[0] * light[0], color[1] * light[1], color[2] * light[2]];
+}
+
 export function mix(a: Rgb, b: Rgb, t: number): Rgb {
   return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 }

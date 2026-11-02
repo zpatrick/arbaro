@@ -1,5 +1,6 @@
 import type { Limb } from "./limb";
 import { at, invariant, wrapAngle } from "./util";
+import { SNOW } from "./weather";
 import type { Wind } from "./wind";
 
 export const PHYSICS = {
@@ -62,6 +63,21 @@ export interface Strength {
   flowers: number;
 }
 
+/** Snow falling on the tree. */
+export interface Snowfall {
+  /** Snow landing on level wood, in kilograms per square meter each second. */
+  fall: number;
+  /** Fraction of the snow lying on the wood that melts each second. */
+  melt: number;
+}
+
+/** Weight hung on the tree at `s` along `limb` that it did not grow with, in kilograms. */
+export interface Load {
+  limb: Limb;
+  s: number;
+  mass: number;
+}
+
 /** A joint that gave way. */
 export interface Failure {
   limb: Limb;
@@ -85,6 +101,8 @@ interface Sway {
   recoil: number[];
   /** Torque each joint was preloaded with at the last rebuild, to tell how much weight it lost. */
   preload: number[];
+  /** Snow lying on the wood each joint holds up, as far as the next joint, in kilograms. */
+  snow: number[];
 }
 
 /** Number of joints along a limb of this length. */
@@ -134,6 +152,8 @@ class Body {
   damping = 0;
   /** Torque the base joint carries when the tree stands as grown, holding up everything above it. */
   preload = 0;
+  /** Weight on the body the tree did not grow with, in kilograms: snow, on it and its flowers. */
+  load = 0;
 
   angle: number;
   rate: number;
@@ -264,6 +284,14 @@ export class TreePhysics {
     return this.still ? undefined : this.sways.get(limb)?.angle;
   }
 
+  /**
+   * Snow lying on the limb, in kilograms on the wood from each joint to the next, or undefined for
+   * a limb not simulated yet.
+   */
+  snowOn(limb: Limb): readonly number[] | undefined {
+    return this.sways.get(limb)?.snow;
+  }
+
   /** How close each joint along the limb is to giving way, as a fraction of its limit. */
   strains(limb: Limb): readonly number[] | undefined {
     const range = this.ranges.get(limb);
@@ -335,24 +363,31 @@ export class TreePhysics {
       sway.damage,
       sway.recoil,
       sway.preload,
+      sway.snow,
     ]) {
       values.length = Math.min(values.length, count);
     }
     this.lost = true;
   }
 
-  /** Advances the tree by `dt` seconds and returns the joints that gave way. */
+  /**
+   * Advances the tree by `dt` seconds, with `snow` falling on it and `loads` hung on it, and
+   * returns the joints that gave way.
+   */
   step(
     dt: number,
     limbs: readonly Limb[],
     wind: Wind,
     strength: Strength,
+    snow: Snowfall,
+    loads: readonly Load[],
   ): Failure[] {
     if (this.stale) {
       this.sync(limbs);
       this.stale = false;
     }
-    if (!this.still || !wind.calm) {
+    const loaded = this.bear(dt, snow, loads);
+    if (!this.still || !wind.calm || loaded) {
       this.still = false;
       const steps = Math.max(1, Math.ceil(dt / PHYSICS.step - 1e-9));
       for (let i = 0; i < steps; i += 1) {
@@ -367,6 +402,7 @@ export class TreePhysics {
       }
       const settled =
         wind.calm &&
+        !loaded &&
         this.bodies.every(
           (b) =>
             Math.abs(b.angle) < STILL_ANGLE &&
@@ -391,6 +427,43 @@ export class TreePhysics {
       body.sway.recoil[body.joint] = body.recoil;
     }
     return failures;
+  }
+
+  /**
+   * Lets `snow` pile up on the wood and melt, and hangs that and `loads` on the bodies that carry
+   * them. Snow lands on wood as far as it lies level, and piles up as deep as the wood is wide,
+   * less the steeper it lies, so it slides off wood that tips steeper. Returns whether the tree
+   * carries anything.
+   */
+  private bear(dt: number, snow: Snowfall, loads: readonly Load[]): boolean {
+    const melting = Math.exp(-snow.melt * dt);
+    let loaded = false;
+    for (const b of this.bodies) {
+      const width = 2 * b.radius;
+      const level = Math.abs(Math.cos(b.theta));
+      const footprint = width * level * b.arc;
+      const deep = Math.min(SNOW.deepest, SNOW.heap * width) * level;
+      const before = at(b.sway.snow, b.joint);
+      const lying = Math.min(
+        SNOW.density * footprint * deep,
+        before * melting + snow.fall * footprint * dt,
+      );
+      const left = lying < before && lying < SNOW.trace ? 0 : lying;
+      b.sway.snow[b.joint] = left;
+      b.load = left;
+    }
+    for (const load of loads) {
+      const range = this.ranges.get(load.limb);
+      invariant(range !== undefined, "A load hangs on a limb not simulated.");
+      const index =
+        range.first +
+        Math.min(Math.floor(load.s / PHYSICS.jointSpacing), range.count - 1);
+      at(this.bodies, index).load += load.mass;
+    }
+    for (const b of this.bodies) {
+      loaded = loaded || b.load > 0;
+    }
+    return loaded;
   }
 
   /** Works out how close every joint is to its limit, and which have taken enough damage to go. */
@@ -508,6 +581,8 @@ export class TreePhysics {
           }),
         );
         poses.push({ x: p0.x, y: p0.y, heading });
+        // Its heading as grown, until it moves.
+        at(bodies, bodies.length - 1).theta = heading;
       }
     }
     this.weigh(bodies, poses);
@@ -529,7 +604,14 @@ export class TreePhysics {
   private swayFor(limb: Limb, count: number): Sway {
     let sway = this.sways.get(limb);
     if (sway === undefined) {
-      sway = { angle: [], rate: [], damage: [], recoil: [], preload: [] };
+      sway = {
+        angle: [],
+        rate: [],
+        damage: [],
+        recoil: [],
+        preload: [],
+        snow: [],
+      };
       this.sways.set(limb, sway);
     }
     while (sway.angle.length < count) {
@@ -537,6 +619,7 @@ export class TreePhysics {
       sway.rate.push(0);
       sway.damage.push(0);
       sway.recoil.push(0);
+      sway.snow.push(0);
     }
     return sway;
   }
@@ -637,8 +720,12 @@ export class TreePhysics {
       const sin = Math.sin(theta);
       const cx = jx + b.com * cos;
       const cy = jy + b.com * sin;
-      const m = b.mass;
-      const i11 = b.inertia + m * (cx * cx + cy * cy);
+      // What the body carries lies along it with its own weight.
+      const m = b.mass + b.load;
+      const i11 =
+        b.inertia +
+        (b.load * b.length * b.length) / 12 +
+        m * (cx * cx + cy * cy);
       const i12 = -m * cy;
       const i13 = m * cx;
       b.i11 = i11;

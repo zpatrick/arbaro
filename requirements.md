@@ -238,6 +238,13 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A small barn stands on the ground beside the tree, true to size (7 m wide, its ridge at
       5.8 m), so the tree's height can be judged by it. It is ink like the tree, behind it, with
       its doors carved through to the sky's color.
+- [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
+      sideways by the wind.
+- [x] Snow settles where it lands level: along the tops of limbs, as deep as the wood is wide but
+      shallower the steeper it lies, so it slides off steep wood; on flowers open to the sky,
+      whitening them; and on the ground. It weighs the limbs down, with the snow on their
+      flowers, so a heavy fall bends them and can snap them. Lying snow melts at a rate the
+      player sets, faster in rain.
 - [ ] Clouds dim the sun.
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
@@ -287,8 +294,9 @@ _Open._ A button flips into a view of the roots:
 - [x] A plain black strip down the left of the scene, kept for tools.
 - [x] Time controls: pause the simulation, or run it at normal, double or quadruple speed.
 - [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed;
-      the season; and the wind: a compass whose arrow you drag to point where it blows toward, a
-      strength slider, and a choice of wind model with a description of each.
+      the season; the wind: a compass whose arrow you drag to point where it blows toward, a
+      strength slider, and a choice of wind model with a description of each; and how hard it
+      rains and snows, and how fast lying snow melts.
 - [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
       how much the wood and the roots can take; and an overlay showing how close each joint is to
       breaking.
