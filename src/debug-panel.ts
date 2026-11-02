@@ -127,6 +127,20 @@ const SNOWS: readonly (readonly [number, string])[] = [
 ];
 /** The melt slider runs from a quarter to four times the usual rate, evenly in ratio. */
 const MELT_RANGE = 4;
+/** Names for how much of the sky the clouds cover, and for how high they hang. */
+const COVERS: readonly (readonly [number, string])[] = [
+  [0, "Clear"],
+  [0.02, "Few"],
+  [0.3, "Scattered"],
+  [0.6, "Broken"],
+  [0.88, "Overcast"],
+];
+const HEIGHTS: readonly (readonly [number, string])[] = [
+  [0, "Fog"],
+  [0.2, "Low"],
+  [0.45, "Middle"],
+  [0.72, "High"],
+];
 
 /** Beaufort scale: the wind speed in m/s where each named wind begins. */
 const BEAUFORT: readonly (readonly [number, string])[] = [
@@ -171,8 +185,11 @@ interface Settings {
 interface Saved extends Omit<Settings, "weather"> {
   open: boolean;
   tab: Tab;
-  /** Settings saved by an older build have no weather; it starts as it does by default. */
-  weather?: WeatherSettings;
+  /**
+   * Settings saved by an older build have no weather, or only some of it; whatever is missing
+   * starts as it does by default.
+   */
+  weather?: Partial<WeatherSettings>;
 }
 
 /** Every setting as it starts, and as the reset button puts it back. */
@@ -180,7 +197,14 @@ function defaults(): Settings {
   return {
     growth: { mode: "steer", flowRate: 1 },
     wind: { direction: 0, strength: 0, model: "steady" },
-    weather: { rain: 0, snow: 0, melt: 1 },
+    weather: {
+      rain: 0,
+      snow: 0,
+      melt: 1,
+      clouds: 0,
+      cloudHeight: 0.6,
+      cloudOutline: false,
+    },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
     flowers: { placement: "tree", size: 1 },
@@ -226,9 +250,11 @@ function isSaved(saved: unknown): saved is Saved {
   return (
     (weather === undefined ||
       (isRecord(weather) &&
-        isNumber(weather.rain) &&
-        isNumber(weather.snow) &&
-        isNumber(weather.melt))) &&
+        ["rain", "snow", "melt", "clouds", "cloudHeight"].every(
+          (key) => weather[key] === undefined || isNumber(weather[key]),
+        ) &&
+        (weather.cloudOutline === undefined ||
+          typeof weather.cloudOutline === "boolean"))) &&
     typeof saved.open === "boolean" &&
     TABS.some((t) => t.id === saved.tab) &&
     typeof saved.showStrain === "boolean" &&
@@ -307,6 +333,9 @@ export class DebugPanel {
   private readonly rain: Slider;
   private readonly snow: Slider;
   private readonly melt: Slider;
+  private readonly cloudCover: Slider;
+  private readonly cloudHeight: Slider;
+  private readonly cloudOutline: HTMLElement;
   private readonly models = new Map<WindModel, HTMLElement>();
   private readonly description: HTMLElement;
   private readonly modes = new Map<GrowthMode, HTMLElement>();
@@ -326,7 +355,7 @@ export class DebugPanel {
     const settings = saved ?? defaults();
     this.growth = { ...settings.growth };
     this.wind = { ...settings.wind };
-    this.weather = { ...(settings.weather ?? defaults().weather) };
+    this.weather = { ...defaults().weather, ...settings.weather };
     this.strength = { ...settings.strength };
     this.showStrain = settings.showStrain;
     // Saved settings may carry fields the flowers no longer have; only these carry over.
@@ -446,6 +475,17 @@ export class DebugPanel {
     );
     this.melt = new Slider(fall, "Melting", (value) =>
       this.setWeather({ melt: sliderToRatio(value, MELT_RANGE) }),
+    );
+    const sky = element("section", "debug-section", weather);
+    element("h2", "debug-title", sky, "Clouds");
+    this.cloudCover = new Slider(sky, "Cover", (value) =>
+      this.setWeather({ clouds: value }),
+    );
+    this.cloudHeight = new Slider(sky, "Height", (value) =>
+      this.setWeather({ cloudHeight: value }),
+    );
+    this.cloudOutline = this.toggleRow(sky, "Outlined", () =>
+      this.setWeather({ cloudOutline: !this.weather.cloudOutline }),
     );
 
     const tree = this.page("tree", card);
@@ -670,10 +710,14 @@ export class DebugPanel {
     const chosen = WIND_MODELS.find((m) => m.id === model);
     invariant(chosen !== undefined, `Unknown wind model ${model}.`);
     this.description.textContent = chosen.description;
-    const { rain, snow, melt } = this.weather;
+    const { rain, snow, melt, clouds, cloudHeight, cloudOutline } =
+      this.weather;
     this.rain.show(rain, nameFor(RAINS, rain));
     this.snow.show(snow, nameFor(SNOWS, snow));
     this.melt.show(ratioToSlider(melt, MELT_RANGE), `×${melt.toFixed(2)}`);
+    this.cloudCover.show(clouds, nameFor(COVERS, clouds));
+    this.cloudHeight.show(cloudHeight, nameFor(HEIGHTS, cloudHeight));
+    this.cloudOutline.classList.toggle("selected", cloudOutline);
 
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);

@@ -1,5 +1,6 @@
 import "./style.css";
 import { Camera } from "./camera";
+import { Clouds } from "./clouds";
 import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
@@ -80,6 +81,7 @@ const keyboard = new Keyboard(window);
 const panel = new DebugPanel(element("#app", HTMLDivElement));
 const wind = new Wind(panel.wind);
 const weather = new Weather(panel.weather);
+const clouds = new Clouds(panel.weather);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
 const flowers = new Flowers();
@@ -362,6 +364,7 @@ function step(dt: number, controls: Controls): void {
     flowing: growth.mode === "flow",
   });
   weather.update(dt, wind, camera.width, camera.height);
+  clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay));
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -528,7 +531,7 @@ function frame(now: number): void {
   if (view !== undefined) {
     camera.follow(view, dt);
   }
-  const light = skyAt(panel.time.timeOfDay);
+  const light = clouds.shine(skyAt(panel.time.timeOfDay));
   if (panel.time.dayRunning) {
     panel.showTimeOfDay();
   }
@@ -596,6 +599,7 @@ function frame(now: number): void {
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }
       : undefined,
     weather,
+    clouds,
   });
   if (controls.grow || controls.steer !== 0) {
     hint.classList.add("quiet");

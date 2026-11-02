@@ -1,5 +1,6 @@
 import type { Camera } from "./camera";
-import { css, mix, type SkyBody, type SkyLight } from "./sky";
+import type { CloudShadow } from "./clouds";
+import { css, mix, type Rgb, type SkyBody, type SkyLight } from "./sky";
 import {
   at,
   clamp,
@@ -88,6 +89,8 @@ const SHADE = {
   tone: 0.08,
   glow: 0.24,
   moon: 0.6,
+  /** With no direct light, under thick cloud, every face is this shaded. */
+  overcast: 0.36,
 } as const;
 /**
  * How far a face leans toward the viewer and up, which sets how much light it takes from a sun
@@ -249,6 +252,7 @@ export class Mountains {
         light.moon.height,
         light.daylight,
         light.twilight,
+        light.direct,
       ].map((value) => Math.round(value / LIGHT_STEP)),
     ].join();
     if (key !== this.carvedFor) {
@@ -260,6 +264,50 @@ export class Mountains {
       0,
       Math.round(camera.groundRow * camera.dpr) - above,
     );
+  }
+
+  /**
+   * Darkens the mountains, and only them, with `shadows` in `ink`: each a soft oval in CSS pixels,
+   * darkest at its middle and fading out to its edge.
+   */
+  shade(
+    ctx: CanvasRenderingContext2D,
+    camera: Camera,
+    shadows: readonly CloudShadow[],
+    ink: Rgb,
+  ): void {
+    if (shadows.length === 0) {
+      return;
+    }
+    const place = new DOMMatrix([
+      1,
+      0,
+      0,
+      1,
+      camera.width / 2,
+      camera.groundRow,
+    ]);
+    const bodies = new Path2D();
+    for (const mountain of this.built) {
+      bodies.addPath(mountain.body, place);
+    }
+    ctx.save();
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.clip(bodies);
+    for (const shadow of shadows) {
+      ctx.save();
+      ctx.translate(shadow.x, shadow.y);
+      ctx.scale(shadow.rx, shadow.ry);
+      const soft = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      soft.addColorStop(0, css(ink, shadow.alpha));
+      soft.addColorStop(1, css(ink, 0));
+      ctx.fillStyle = soft;
+      ctx.beginPath();
+      ctx.arc(0, 0, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   /**
@@ -313,7 +361,12 @@ export class Mountains {
           1 - litBy(face.facing, light.moon, WRAP),
           moonUp,
         );
-        const shade = lerp(lerp(0.5, byMoon, SHADE.moon), bySun, sunUp);
+        // Clouds take the direct light away, and with it the shading.
+        const shade = lerp(
+          SHADE.overcast,
+          lerp(lerp(0.5, byMoon, SHADE.moon), bySun, sunUp),
+          light.direct,
+        );
         if (shade > 0) {
           ctx.fillStyle = css(light.ink, SHADE.tone * shade * fade);
           ctx.fill(face.outline);
@@ -322,6 +375,7 @@ export class Mountains {
           SHADE.glow *
           light.twilight *
           sunUp *
+          light.direct *
           litBy(face.facing, light.sun, 0);
         if (glow > 0.005) {
           ctx.fillStyle = css(light.sunColor, glow * fade);

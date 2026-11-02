@@ -1,4 +1,5 @@
 import type { Camera } from "./camera";
+import type { Clouds } from "./clouds";
 import type { Debris } from "./debris";
 import type { Dot } from "./flow";
 import {
@@ -19,7 +20,15 @@ import { BARN_LINE, barnLines, barnOutline } from "./barn";
 import { Mountains } from "./mountains";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
-import { css, lit, type Rgb, type SkyBody, type SkyLight } from "./sky";
+import {
+  BODY_SIZE,
+  css,
+  lit,
+  type Rgb,
+  SKY_SPAN,
+  skyBodyAt,
+  type SkyLight,
+} from "./sky";
 import { FLARE, type Pick, type Tree } from "./tree";
 import {
   at,
@@ -87,22 +96,16 @@ const DOT_MIN_PX = 0.9;
 const STALK_INTO = 0.6;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
-/** Radius of the sun and of the moon, as a fraction of the view's height. */
-const BODY_SIZE = 0.04;
-/** Highest the sun and moon climb, as a fraction of the view's height below its top. */
-const SKY_TOP = 0.075;
-/** How far apart the sun rises and sets, as a fraction of the view's width. */
-const SKY_SPAN = 0.88;
-/**
- * How far right of center the sun and moon are at their highest, as a fraction of the view's
- * width, so they pass beside the top of the tree rather than behind it.
- */
-const SKY_LEAN = 0.13;
 /** How strongly the lines carved into the barn show, and their thinnest, in CSS pixels. */
 const BARN_LINE_ALPHA = 0.5;
 const BARN_LINE_MIN_PX = 0.7;
 const STARLIGHT: Rgb = [240, 236, 222];
 const MOONLIGHT: Rgb = [238, 233, 214];
+/**
+ * How thick fog shows over what lies far off, the mountains and the barn, and again over
+ * everything, the tree as well, as fractions of how thick it is.
+ */
+const FOG = { far: 0.75, near: 0.3 } as const;
 /** How strongly raindrops show, and their width, in CSS pixels. */
 const RAIN = { alpha: 0.32, width: 0.9 } as const;
 /**
@@ -154,6 +157,8 @@ export interface Scene {
     | undefined;
   /** Rain and snow falling, and snow lying on the ground. */
   weather: Weather;
+  /** The clouds across the sky, and any fog. */
+  clouds: Clouds;
 }
 
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
@@ -282,9 +287,10 @@ export class Renderer {
     this.inkColor = css(scene.light.ink);
     this.guideColor = css(scene.light.guide);
 
-    this.drawSky(camera, scene.light, scene.clock, ground);
+    this.drawSky(camera, scene.light, scene.clock, ground, scene.clouds);
     const world = camera.worldTransform();
     this.drawBarn(camera, world, scene.light);
+    scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.far);
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
     // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
@@ -352,6 +358,7 @@ export class Renderer {
         drawFlower(this.ctx, camera.dpr, look);
       }
     }
+    scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
     if (scene.tree !== undefined) {
       if (scene.flow !== undefined) {
@@ -396,6 +403,7 @@ export class Renderer {
     light: SkyLight,
     clock: number,
     ground: number,
+    clouds: Clouds,
   ): void {
     const ctx = this.ctx;
     const width = this.canvas.width;
@@ -418,25 +426,36 @@ export class Renderer {
 
 
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    if (light.daylight < 1) {
-      this.drawStars(camera, 1 - light.daylight, clock);
+    // A sky thick with cloud hides the stars, the moon and the sun.
+    const clear = 1 - light.veiled;
+    if (light.daylight < 1 && clear > 0) {
+      this.drawStars(camera, (1 - light.daylight) * clear, clock);
     }
-    if (light.moon.height > -0.2) {
+    if (light.moon.height > -0.2 && clear > 0) {
       // A plain disc like the sun, fading as the day comes.
-      const moon = this.bodyAt(camera, light.moon);
-      ctx.fillStyle = css(MOONLIGHT, 1 - 0.7 * light.daylight);
+      const moon = skyBodyAt(camera, light.moon);
+      ctx.fillStyle = css(MOONLIGHT, (1 - 0.7 * light.daylight) * clear);
       ctx.beginPath();
       ctx.arc(moon.x, moon.y, BODY_SIZE * camera.height, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (light.sun.height > -0.2) {
-      const sun = this.bodyAt(camera, light.sun);
-      ctx.fillStyle = css(light.sunColor);
+    if (light.sun.height > -0.2 && clear > 0) {
+      const sun = skyBodyAt(camera, light.sun);
+      ctx.fillStyle = css(light.sunColor, clear);
       ctx.beginPath();
       ctx.arc(sun.x, sun.y, BODY_SIZE * camera.height, 0, Math.PI * 2);
       ctx.fill();
     }
     this.mountains.draw(ctx, camera, sky, light);
+    // The clouds hang in front of the mountains, casting shadows on them while the sun shines.
+    const banks = clouds.placed(camera);
+    this.mountains.shade(
+      ctx,
+      camera,
+      clouds.shadows(camera, light, banks),
+      light.ink,
+    );
+    clouds.draw(ctx, camera, light, banks);
 
     // The glow of sunrise and sunset lies over everything in the sky, the mountains too.
     if (light.twilight > 0) {
@@ -463,17 +482,6 @@ export class Renderer {
   }
 
   /** Where the sun or moon is on screen, in CSS pixels, on its arc from horizon to horizon. */
-  private bodyAt(camera: Camera, body: SkyBody): Vec {
-    const angle = Math.PI * (1 - body.along);
-    const rise = camera.groundY - SKY_TOP * camera.height;
-    return {
-      x:
-        camera.width *
-        (0.5 + 0.5 * SKY_SPAN * Math.cos(angle) + SKY_LEAN * Math.sin(angle)),
-      y: camera.groundRow - rise * Math.sin(angle),
-    };
-  }
-
   /** Stars fading in as the light goes, dimmer toward the horizon, each twinkling at its own pace. */
   private drawStars(camera: Camera, darkness: number, clock: number): void {
     const ctx = this.ctx;

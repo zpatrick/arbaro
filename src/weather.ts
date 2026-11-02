@@ -13,6 +13,12 @@ export interface WeatherSettings {
   snow: number;
   /** How quickly lying snow melts, as a multiple of the usual. */
   melt: number;
+  /** How much of the sky the clouds cover, from 0 clear to 1 overcast. */
+  clouds: number;
+  /** How high the clouds hang, from 0 down on the ground as fog to 1 high in the sky. */
+  cloudHeight: number;
+  /** Whether the clouds are outlined in ink, as the mountains are. */
+  cloudOutline: boolean;
 }
 
 /**

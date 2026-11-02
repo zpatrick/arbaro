@@ -1,4 +1,32 @@
+import type { Camera } from "./camera";
 import { at, clamp, lerp, smoothstep } from "./util";
+
+/** Radius of the sun and of the moon, as a fraction of the view's height. */
+export const BODY_SIZE = 0.04;
+/** Highest the sun and moon climb, as a fraction of the view's height below its top. */
+const SKY_TOP = 0.075;
+/** How far apart the sun rises and sets, as a fraction of the view's width. */
+export const SKY_SPAN = 0.88;
+/**
+ * How far right of center the sun and moon are at their highest, as a fraction of the view's
+ * width, so they pass beside the top of the tree rather than behind it.
+ */
+const SKY_LEAN = 0.13;
+
+/** Where `body` shows in the view, in CSS pixels. */
+export function skyBodyAt(
+  camera: Camera,
+  body: SkyBody,
+): { x: number; y: number } {
+  const angle = Math.PI * (1 - body.along);
+  const rise = camera.groundY - SKY_TOP * camera.height;
+  return {
+    x:
+      camera.width *
+      (0.5 + 0.5 * SKY_SPAN * Math.cos(angle) + SKY_LEAN * Math.sin(angle)),
+    y: camera.groundRow - rise * Math.sin(angle),
+  };
+}
 
 export type Rgb = readonly [number, number, number];
 
@@ -79,6 +107,13 @@ export interface SkyLight {
   guide: Rgb;
   /** Multipliers on the flowers' colors. */
   flowerLight: Rgb;
+  /**
+   * How much of the sun's or the moon's light falls straight on the scene, from 0 under thick
+   * cloud, where nothing casts a shadow, to 1 under a clear sky.
+   */
+  direct: number;
+  /** How much of the sun, the moon and the stars the clouds hide, from 0 to 1. */
+  veiled: number;
 }
 
 /** The light at a time of day, from midnight at 0 through noon at 0.5. */
@@ -128,6 +163,8 @@ export function skyAt(timeOfDay: number): SkyLight {
       flowerNight[1] * flowerTwilight[1],
       flowerNight[2] * flowerTwilight[2],
     ],
+    direct: 1,
+    veiled: 0,
   };
 }
 

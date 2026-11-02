@@ -245,12 +245,20 @@ switched on in the debug panel beside the original steer-and-grow controls:
       whitening them; and on the ground. It weighs the limbs down, with the snow on their
       flowers, so a heavy fall bends them and can snap them. Lying snow melts at a rate the
       player sets, faster in rain.
-- [ ] Clouds dim the sun.
+- [x] Clouds drift across the sky with the wind: banks of long layers tapering to a point at
+      either end, after the banded mist of old prints rather than puffs, filled flat and
+      darker beneath, with or without fine outlines like the mountains'. How much of the sky
+      they cover and how high they hang are set on the weather page.
+- [x] Clouds dim the light. Their cover greys the sky and dulls sunrise and sunset, and a bank
+      passing over the sun or moon takes away the direct light, so the mountains' shading fades
+      and comes back. On a broken day the banks cast soft shadows across the mountains. A thick
+      cover hides the sun, the moon and the stars.
+- [x] Low cloud lies over the scene as fog, thickest over the distant mountains and the barn.
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
 - [ ] Rain showers come and go.
 - [ ] Limits on growth: level edges, solid obstacles, and a sky ceiling that caps height.
-- [ ] Clouds and birds drift across the sky as decoration.
+- [ ] Birds drift across the sky as decoration.
 
 ## Game structure
 
@@ -298,8 +306,9 @@ _Open._ A button flips into a view of the roots:
 - [x] Time controls: pause the simulation, or run it at normal, double or quadruple speed.
 - [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed;
       the season; the wind: a compass whose arrow you drag to point where it blows toward, a
-      strength slider, and a choice of wind model with a description of each; and how hard it
-      rains and snows, and how fast lying snow melts.
+      strength slider, and a choice of wind model with a description of each; how hard it rains
+      and snows, and how fast lying snow melts; and how much of the sky the clouds cover, how
+      high they hang, and whether they are outlined.
 - [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
       how much the wood and the roots can take; and an overlay showing how close each joint is to
       breaking.
