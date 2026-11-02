@@ -1,4 +1,4 @@
-import type { FlowerChoice, FlowerPlacement, FlowerSettings } from "./flowers";
+import type { FlowerPlacement, FlowerSettings } from "./flowers";
 import type { Strength } from "./physics";
 import type { TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
@@ -45,13 +45,6 @@ const FLOWER_PLACEMENTS: readonly {
     description:
       "The tree grows its own flowers: one crowning every limb long enough to flower, and more along the thin wood behind it. A flower the wind takes grows back after a while.",
   },
-];
-
-const FLOWER_CHOICES: readonly { id: FlowerChoice; name: string }[] = [
-  { id: "lotus", name: "Lotus" },
-  { id: "cherry", name: "Cherry blossom" },
-  { id: "maple", name: "Maple leaves" },
-  { id: "mixed", name: "Mixed" },
 ];
 
 /**
@@ -178,7 +171,7 @@ function defaults(): Settings {
     wind: { direction: 0, strength: 0, model: "steady" },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
-    flowers: { placement: "tree", kind: "lotus", size: 1 },
+    flowers: { placement: "tree", size: 1 },
     time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
   };
 }
@@ -234,7 +227,6 @@ function isSaved(saved: unknown): saved is Saved {
     isNumber(strength.flowers) &&
     isRecord(flowers) &&
     FLOWER_PLACEMENTS.some((p) => p.id === flowers.placement) &&
-    FLOWER_CHOICES.some((c) => c.id === flowers.kind) &&
     isNumber(flowers.size) &&
     isRecord(time) &&
     isNumber(time.timeOfDay) &&
@@ -303,7 +295,6 @@ export class DebugPanel {
   private readonly strainToggle: HTMLElement;
   private readonly placements = new Map<FlowerPlacement, HTMLElement>();
   private readonly placementDescription: HTMLElement;
-  private readonly kinds = new Map<FlowerChoice, HTMLElement>();
   private readonly flowerSize: Slider;
   private readonly flowerHold: Slider;
 
@@ -314,7 +305,11 @@ export class DebugPanel {
     this.wind = { ...settings.wind };
     this.strength = { ...settings.strength };
     this.showStrain = settings.showStrain;
-    this.flowers = { ...settings.flowers };
+    // Saved settings may carry fields the flowers no longer have; only these carry over.
+    this.flowers = {
+      placement: settings.flowers.placement,
+      size: settings.flowers.size,
+    };
     this.time = { ...settings.time };
     this.open = saved?.open ?? false;
     this.tab = saved?.tab ?? "weather";
@@ -462,16 +457,6 @@ export class DebugPanel {
       );
     }
     this.placementDescription = element("p", "model-description", flowers);
-    element("div", "debug-label", flowers, "Kind");
-    const kinds = element("div", "models", flowers);
-    for (const kind of FLOWER_CHOICES) {
-      this.kinds.set(
-        kind.id,
-        this.radioRow(kinds, kind.name, () =>
-          this.setFlowers({ kind: kind.id }),
-        ),
-      );
-    }
     this.flowerSize = new Slider(flowers, "Size", (value) =>
       this.setFlowers({ size: sliderToRatio(value, FLOWER_SIZE_RANGE) }),
     );
@@ -667,16 +652,13 @@ export class DebugPanel {
     );
     this.strainToggle.classList.toggle("selected", this.showStrain);
 
-    const { placement, kind, size } = this.flowers;
+    const { placement, size } = this.flowers;
     for (const [id, row] of this.placements) {
       row.classList.toggle("selected", id === placement);
     }
     const placed = FLOWER_PLACEMENTS.find((p) => p.id === placement);
     invariant(placed !== undefined, `Unknown flower placement ${placement}.`);
     this.placementDescription.textContent = placed.description;
-    for (const [id, row] of this.kinds) {
-      row.classList.toggle("selected", id === kind);
-    }
     this.flowerSize.show(
       ratioToSlider(size, FLOWER_SIZE_RANGE),
       `×${size.toFixed(2)}`,

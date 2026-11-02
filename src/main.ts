@@ -4,7 +4,7 @@ import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
-import { advanceDay, type SkyLight, skyAt, type TimeSettings } from "./sky";
+import { advanceDay, skyAt, type TimeSettings } from "./sky";
 import { Keyboard } from "./input";
 import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
@@ -194,18 +194,13 @@ function tendFlowers(standing: Tree, x: number, y: number): void {
     return;
   }
   const pick = pickAt(standing, x, y);
-  if (pick !== undefined && !flowers.place(pick, panel.flowers)) {
+  if (pick !== undefined && !flowers.place(pick)) {
     announce("Flowers only grow on thin wood");
   }
 }
 
 /** What a shift-click at (x, y) in CSS pixels would do to the flowers. */
-function flowerHoverAt(
-  standing: Tree,
-  x: number,
-  y: number,
-  light: SkyLight,
-): FlowerHover {
+function flowerHoverAt(standing: Tree, x: number, y: number): FlowerHover {
   const world = camera.toWorld(x, y);
   return flowers.hover(
     standing,
@@ -215,13 +210,7 @@ function flowerHoverAt(
     pickAt(standing, x, y),
     panel.flowers,
     panel.time.season,
-    isDay(light),
   );
-}
-
-/** Whether there is light enough that flowers open. */
-function isDay(light: SkyLight): boolean {
-  return light.daylight > 0.5;
 }
 
 /** Severs `limb` at `s` and lets everything beyond fall, keeping the motion it had. */
@@ -329,7 +318,6 @@ function step(dt: number, controls: Controls): void {
   clock += dt;
   flowers.update(dt, tree, panel.flowers, {
     season: panel.time.season,
-    day: isDay(skyAt(panel.time.timeOfDay)),
     wind,
     hold: panel.strength.flowers,
     flowing: growth.mode === "flow",
@@ -506,7 +494,7 @@ function frame(now: number): void {
     tree !== undefined &&
     pointer !== undefined &&
     placingFlowers({ shiftKey: shiftHeld })
-      ? flowerHoverAt(tree, pointer.x, pointer.y, light)
+      ? flowerHoverAt(tree, pointer.x, pointer.y)
       : undefined;
   const hoveredSpout =
     flowing &&
@@ -676,7 +664,7 @@ if (import.meta.env.DEV) {
     placeFlower(index, fraction, side) {
       const limb = at(standing().limbs, index);
       invariant(
-        flowers.place({ limb, s: limb.length * fraction, side }, panel.flowers),
+        flowers.place({ limb, s: limb.length * fraction, side }),
         `No wood on limb ${index} is thin enough for a flower.`,
       );
     },

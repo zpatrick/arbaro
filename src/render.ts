@@ -807,7 +807,6 @@ export class Renderer {
 function lookOf(camera: Camera, flower: FlowerView, light: Rgb): FlowerLook {
   const base = camera.toScreen(flower.x, flower.y);
   return {
-    kind: flower.kind,
     x: base.x,
     y: base.y,
     angle: flower.angle,
@@ -858,11 +857,7 @@ function addStalk(
   stalk: Stalk,
   into: number,
 ): void {
-  const fit = stalkFit(
-    flower.kind,
-    flower.size * camera.scale,
-    flower.clusters,
-  );
+  const fit = stalkFit(flower.size * camera.scale, flower.clusters);
   const root = 0.5 * stalk.root * camera.scale * fit;
   const tip = 0.5 * stalk.tip * camera.scale * fit;
   const [c1, c2] = stalk.controls;
