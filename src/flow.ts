@@ -3,7 +3,7 @@ import type { Tree } from "./tree";
 import { invariant } from "./util";
 
 /** Dots of energy the roots release per second at a flow rate of one. */
-const DOTS_PER_SECOND = 1.25;
+const DOTS_PER_SECOND = 0.25;
 /** Dots carrying less than this share of what left the roots are too small to follow. */
 const SMALLEST = 1 / 64;
 

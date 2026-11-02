@@ -30,7 +30,7 @@ const FORK_SPROUT = { radii: 1.6, stem: 0.15 } as const;
  * Length the whole flow grows per second at a flow rate of one, in world units, shared out among
  * the tips. Unlike a held key it does not speed up as the tree grows, so a big tree grows slowly.
  */
-const FLOW_GROWTH = 0.4;
+const FLOW_GROWTH = 0.08;
 /** Shortest stump the trunk can be cut or broken down to, in world units. */
 const STUMP = 0.3;
 /** Shortest piece worth cutting off, in world units. */
