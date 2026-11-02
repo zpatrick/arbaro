@@ -78,9 +78,8 @@ const DOT_MIN_PX = 0.9;
 const STALK_INTO = 0.6;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
-/** Radius of the sun and of the moon, as fractions of the view's height. */
-const SUN_SIZE = 0.04;
-const MOON_SIZE = 0.019;
+/** Radius of the sun and of the moon, as a fraction of the view's height. */
+const BODY_SIZE = 0.04;
 /** Highest the sun and moon climb, as a fraction of the view's height below its top. */
 const SKY_TOP = 0.075;
 /** How far apart the sun rises and sets, as a fraction of the view's width. */
@@ -95,8 +94,6 @@ const BARN_LINE_ALPHA = 0.5;
 const BARN_LINE_MIN_PX = 0.7;
 const STARLIGHT: Rgb = [240, 236, 222];
 const MOONLIGHT: Rgb = [238, 233, 214];
-/** The haze around the moon, a touch bluer than the moon itself. */
-const MOON_HAZE: Rgb = [214, 222, 242];
 
 /** Everything drawn in one frame. */
 export interface Scene {
@@ -387,17 +384,18 @@ export class Renderer {
       this.drawStars(camera, 1 - light.daylight, clock);
     }
     if (light.moon.height > -0.2) {
-      this.drawMoon(
-        this.bodyAt(camera, light.moon),
-        MOON_SIZE * camera.height,
-        light,
-      );
+      // A plain disc like the sun, fading as the day comes.
+      const moon = this.bodyAt(camera, light.moon);
+      ctx.fillStyle = css(MOONLIGHT, 1 - 0.7 * light.daylight);
+      ctx.beginPath();
+      ctx.arc(moon.x, moon.y, BODY_SIZE * camera.height, 0, Math.PI * 2);
+      ctx.fill();
     }
     if (light.sun.height > -0.2) {
       const sun = this.bodyAt(camera, light.sun);
       ctx.fillStyle = css(light.sunColor);
       ctx.beginPath();
-      ctx.arc(sun.x, sun.y, SUN_SIZE * camera.height, 0, Math.PI * 2);
+      ctx.arc(sun.x, sun.y, BODY_SIZE * camera.height, 0, Math.PI * 2);
       ctx.fill();
     }
     this.mountains.draw(ctx, camera, sky, light);
@@ -470,42 +468,6 @@ export class Renderer {
         ctx.stroke();
       }
     }
-  }
-
-  /** A crescent moon in a soft haze, fading as the day comes. */
-  private drawMoon(center: Vec, radius: number, light: SkyLight): void {
-    const ctx = this.ctx;
-    const fade = 1 - 0.7 * light.daylight;
-    const haze = ctx.createRadialGradient(
-      center.x,
-      center.y,
-      radius * 0.6,
-      center.x,
-      center.y,
-      radius * 4,
-    );
-    haze.addColorStop(0, css(MOON_HAZE, 0.22 * fade));
-    haze.addColorStop(1, css(MOON_HAZE, 0));
-    ctx.fillStyle = haze;
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius * 4, 0, Math.PI * 2);
-    ctx.fill();
-    // The dark of the moon still shows faintly.
-    ctx.fillStyle = css(MOONLIGHT, 0.1 * fade);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-    ctx.fill();
-    // The lit crescent lies between the moon's edge and the edge of the shadow over it.
-    const offset = radius * 0.62;
-    const half = Math.sqrt(radius * radius - (offset / 2) * (offset / 2));
-    const outer = Math.atan2(half, offset / 2);
-    const inner = Math.atan2(half, -offset / 2);
-    ctx.fillStyle = css(MOONLIGHT, fade);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius, -outer, outer, true);
-    ctx.arc(center.x + offset, center.y, radius, inner, -inner, false);
-    ctx.closePath();
-    ctx.fill();
   }
 
   /**
