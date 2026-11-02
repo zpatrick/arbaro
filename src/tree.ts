@@ -5,7 +5,6 @@ import {
   type Failure,
   type Load,
   PHYSICS,
-  type Snowfall,
   type Strength,
   TreePhysics,
 } from "./physics";
@@ -131,8 +130,8 @@ export class Tree {
   }
 
   /**
-   * Grows the tree, then lets the wind and gravity move it, with `snow` falling on it and `loads`
-   * hung on it. Returns the joints that gave way, outermost last.
+   * Grows the tree, then lets the wind and gravity move it, with `loads` hung on it. Returns the
+   * joints that gave way, outermost last.
    *
    * Steering a limb always steers the active one. In steer mode only the active limb grows, while
    * the up key is held. In flow mode nutrients rise from the roots, split at every spout, and grow
@@ -144,7 +143,6 @@ export class Tree {
     wind: Wind,
     strength: Strength,
     growth: Growth,
-    snow: Snowfall,
     loads: readonly Load[],
   ): Failure[] {
     let changed = false;
@@ -190,14 +188,7 @@ export class Tree {
       this.rebuild();
     }
     wind.advance(dt, this.physics.motion);
-    const failures = this.physics.step(
-      dt,
-      this.limbs,
-      wind,
-      strength,
-      snow,
-      loads,
-    );
+    const failures = this.physics.step(dt, this.limbs, wind, strength, loads);
     this.pose();
     return failures;
   }

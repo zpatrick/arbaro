@@ -71,6 +71,19 @@ export function barnAhead(x: number, y: number, heading: number): number {
   return crossings % 2 === 1 ? 0 : nearest;
 }
 
+/** Height of the top of the barn above `x`, in meters: its roof, or 0 beside it. */
+export function barnTopAt(x: number): number {
+  let top = 0;
+  for (let i = 0; i < OUTLINE.length; i += 1) {
+    const [ax, ay] = at(OUTLINE, i);
+    const [bx, by] = at(OUTLINE, (i + 1) % OUTLINE.length);
+    if (ax !== bx && (x - ax) * (x - bx) <= 0) {
+      top = Math.max(top, ay + ((x - ax) * (by - ay)) / (bx - ax));
+    }
+  }
+  return top;
+}
+
 /** Corners of the barn's outline, in meters with y up, its foot sunk a little into the ground. */
 const OUTLINE: readonly (readonly [number, number])[] = outlinePoints();
 

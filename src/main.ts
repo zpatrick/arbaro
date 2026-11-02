@@ -332,7 +332,6 @@ function giveWay(standing: Tree, failure: Failure): void {
 /** Advances everything by `dt` seconds. */
 function step(dt: number, controls: Controls): void {
   const growth: Growth = panel.growth;
-  const snow = { fall: weather.snowfall, melt: weather.melt };
   if (tree !== undefined) {
     const standing = tree;
     for (const failure of standing.update(
@@ -341,7 +340,6 @@ function step(dt: number, controls: Controls): void {
       wind,
       panel.strength,
       growth,
-      snow,
       flowers.loads(),
     )) {
       if (tree !== standing) {
@@ -359,11 +357,11 @@ function step(dt: number, controls: Controls): void {
   flowers.update(dt, tree, panel.flowers, {
     season: panel.time.season,
     wind,
-    snow,
+    melt: weather.melt,
     hold: panel.strength.flowers,
     flowing: growth.mode === "flow",
   });
-  weather.update(dt, wind, camera.width, camera.height);
+  weather.update(dt, wind, camera, flowers.catchers(panel.flowers));
   clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay));
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
@@ -636,6 +634,8 @@ interface DebugHandle {
   time(settings: Partial<TimeSettings>): void;
   /** Changes the rain and snow, as the debug panel would. */
   weather(settings: Partial<WeatherSettings>): void;
+  /** The rain and snow falling, and the snow lying on the ground and the barn. */
+  weatherState(): Weather;
   /**
    * Grows a flower by hand at `fraction` of limb `index`'s length, on its `side` (1 left, -1
    * right), like a shift-click.
@@ -714,6 +714,9 @@ if (import.meta.env.DEV) {
     },
     weather(settings) {
       panel.setWeather(settings);
+    },
+    weatherState() {
+      return weather;
     },
     placeFlower(index, fraction, side) {
       const limb = at(standing().limbs, index);

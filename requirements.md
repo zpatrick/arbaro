@@ -239,12 +239,14 @@ switched on in the debug panel beside the original steer-and-grow controls:
       5.8 m), so the tree's height can be judged by it. It is ink like the tree, behind it, with
       its doors carved through to the sky's color.
 - [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
-      sideways by the wind.
-- [x] Snow settles where it lands level: along the tops of limbs, as deep as the wood is wide but
-      shallower the steeper it lies, so it slides off steep wood; on flowers open to the sky,
-      whitening them; and on the ground. It weighs the limbs down, with the snow on their
-      flowers, so a heavy fall bends them and can snap them. Lying snow melts at a rate the
-      player sets, faster in rain.
+      by the wind, and stop at the ground.
+- [x] Every chunk of falling snow is a body of its own, carried by the wind, and settles on the
+      first thing it meets: a flower, which catches its share and whitens; the barn; or the
+      ground. Wood lets it by. Lying snow slides until it stands no steeper than snow can, so it
+      slides off the barn's steep lower roof and drops from the eaves in chunks, and drifts
+      pile against the walls the wind drives it into. The snow on the flowers weighs their
+      limbs down, so a heavy fall bends them. Lying snow melts at a rate the player sets, faster
+      in rain.
 - [x] Clouds drift across the sky with the wind: banks of long layers tapering to a point at
       either end, after the banded mist of old prints rather than puffs, filled flat and
       darker beneath, with or without fine outlines like the mountains'. How much of the sky

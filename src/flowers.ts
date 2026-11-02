@@ -1,7 +1,7 @@
 import { type Limb, UPRIGHT } from "./limb";
-import { type Load, PHYSICS, type Snowfall } from "./physics";
+import { type Load, PHYSICS } from "./physics";
 import type { Pick, Tree } from "./tree";
-import { SNOW } from "./weather";
+import { type Catcher, SNOW } from "./weather";
 import {
   approach,
   at,
@@ -29,8 +29,8 @@ export interface Conditions {
   /** Time of year, from midsummer at 0 to winter at 1. Flowers turn, wilt and drop as it passes. */
   season: number;
   wind: Wind;
-  /** Snow falling, which settles on the flowers open to the sky. */
-  snow: Snowfall;
+  /** Fraction of the snow lying on the flowers that melts each second. */
+  melt: number;
   /** Multiplier on how hard flower stems hold. */
   hold: number;
   /** Whether the tree grows in flow mode, where better-fed limbs grow stronger stems. */
@@ -253,8 +253,13 @@ interface Flower {
    * once it has.
    */
   crowded: boolean;
-  /** Snow lying on it, in kilograms. Its limb carries it. */
+  /** Snow lying on it, in kilograms. */
   snow: number;
+  /**
+   * The weight of that snow its limb carries, in kilograms: it follows the snow as it settles,
+   * since each chunk caught stands for many flakes landing over a moment.
+   */
+  weight: number;
 }
 
 /** A flower that came off the tree, falling or lying on the ground. */
@@ -352,14 +357,37 @@ export class Flowers {
   }
 
   /** How many flowers are showing on the tree, and how many have come off and not yet faded. */
+  /** The flowers on the tree, as catchers of falling snow, each as wide as it is drawn. */
+  catchers(settings: FlowerSettings): Catcher[] {
+    return this.flowers
+      .filter((f) => f.dropped === undefined && f.grown > 0)
+      .map((flower) => {
+        const pose = this.poseOf(flower, settings);
+        const reach = middleReach(pose.clusters) * pose.size;
+        return {
+          key: flower,
+          x: pose.x + Math.cos(pose.angle) * reach,
+          y: pose.y + Math.sin(pose.angle) * reach,
+          radius: pose.size / 2,
+          exposure: flower.exposure,
+          area: FLOWERS.area * pose.size * pose.size,
+          take: (mass: number): number => {
+            const taken = clamp(snowHeld(pose.size) - flower.snow, 0, mass);
+            flower.snow += taken;
+            return taken;
+          },
+        };
+      });
+  }
+
   /** The snow lying on the flowers on the tree, which their limbs carry. */
   loads(): Load[] {
     return this.flowers
-      .filter((f) => f.dropped === undefined && f.snow > 0)
+      .filter((f) => f.dropped === undefined && f.weight > 0)
       .map((f) => ({
         limb: f.limb,
         s: Math.min(f.s, f.limb.length),
-        mass: f.snow,
+        mass: f.weight,
       }));
   }
 
@@ -530,6 +558,7 @@ export class Flowers {
       exposure: 1,
       crowded: false,
       snow: 0,
+      weight: 0,
     };
   }
 
@@ -706,19 +735,15 @@ export class Flowers {
         1,
       );
       flower.opened = clamp(flower.opened + dt / flower.traits.opening, 0, 1);
-      // Snow settles on it as far as it lies open to the sky, and melts.
+      // The snow it caught melts, and any more than it holds as it shrinks falls away.
       const size = spanOf(flower.traits, flower.grown, settings.size);
       const snow = Math.min(
         snowHeld(size),
-        flower.snow * Math.exp(-conditions.snow.melt * dt) +
-          conditions.snow.fall *
-            flower.exposure *
-            FLOWERS.area *
-            size *
-            size *
-            dt,
+        flower.snow * Math.exp(-conditions.melt * dt),
       );
       flower.snow = snow < flower.snow && snow < SNOW.trace ? 0 : snow;
+      const weight = approach(flower.weight, flower.snow, SNOW.settling, dt);
+      flower.weight = flower.snow === 0 && weight < SNOW.trace ? 0 : weight;
       const torn =
         flower.grown > 0
           ? this.weather(
@@ -870,6 +895,7 @@ export class Flowers {
   ): void {
     // Its snow comes off with it.
     flower.snow = 0;
+    flower.weight = 0;
     if (flower.dropped !== undefined || flower.grown <= 0.05) {
       flower.grown = 0;
       return;
@@ -1046,6 +1072,7 @@ function spanOf(traits: Traits, grown: number, size: number): number {
 function regrow(flower: Flower): void {
   flower.dropped = undefined;
   flower.snow = 0;
+  flower.weight = 0;
   flower.grown = 0;
   flower.opened = 0;
   flower.sway = 0;

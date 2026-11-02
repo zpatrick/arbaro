@@ -1,5 +1,7 @@
+import { barnTopAt } from "./barn";
+import type { Camera } from "./camera";
 import type { Rgb } from "./sky";
-import { Rng } from "./util";
+import { at, clamp, Rng } from "./util";
 import type { Wind } from "./wind";
 
 /** Lying snow by day, before the light falls on it. */
@@ -22,27 +24,41 @@ export interface WeatherSettings {
 }
 
 /**
- * How snow falls, lies and melts. It lands on level wood, the flowers and the ground, and piles
- * up on wood as deep as `heap` times the wood is wide, but no deeper than `deepest`, so a twig
- * holds a little and a thick limb a lot.
+ * How snow falls, lies and melts. Every chunk of snow falling through the air is carried by it,
+ * and settles on whatever it meets first: a flower, the barn or the ground. Wood lets it by.
  */
 export const SNOW = {
   /** Density of lying snow, in kilograms per cubic meter. */
   density: 150,
-  /** Snow landing on level ground in a blizzard, in kilograms per square meter each second. */
-  fall: 1.5,
-  /** How deep snow can pile on wood, as a multiple of the wood's width, and at most, in meters. */
-  heap: 3,
-  deepest: 0.25,
+  /** Snow falling on level ground in a blizzard, in kilograms per square meter each second. */
+  fall: 0.8,
+  /** Speed snow falls through still air, in meters per second, and chunks falling off a roof. */
+  speed: 1,
+  chunkSpeed: 3.2,
+  /** Seconds a falling flake takes to follow a change in the air around it; chunks take longer. */
+  response: 0.35,
+  chunkResponse: 1.2,
+  /** How fast a flake flutters from side to side, at most, in meters per second. */
+  flutter: 0.35,
   /** Most snow a flower holds, in kilograms per square meter of its size squared. */
   flowerHold: 6,
-  /** Deepest snow lies on the ground, in meters. */
-  groundDeepest: 0.8,
+  /** Seconds the weight of the snow a flower catches takes to settle onto its limb. */
+  settling: 1,
+  /** Deepest snow lies anywhere, in meters. */
+  deepest: 1.2,
+  /** Steepest lying snow stands, as its rise over its run: it slides down anything steeper. */
+  repose: 0.7,
+  /**
+   * A drop of this many meters is a ledge: snow sliding over it falls off, gathering into chunks
+   * of this many kilograms before each one drops.
+   */
+  ledge: 0.3,
+  chunk: 0.15,
   /** Fraction of lying snow that melts each second at the usual rate. */
   melt: 0.03,
   /**
-   * Melting snow on a stretch of wood or a flower lighter than this, in kilograms, or on the
-   * ground shallower than `traceDepth`, in meters, has melted away.
+   * Melting snow on a flower lighter than this, in kilograms, or lying shallower than
+   * `traceDepth`, in meters, has melted away.
    */
   trace: 0.002,
   traceDepth: 0.001,
@@ -50,50 +66,109 @@ export const SNOW = {
   rainMelt: 4,
 } as const;
 
-/** How the rain and snow fall across the view, in CSS pixels. */
-const FALL = {
-  /** Most raindrops and snowflakes in view, per million square pixels, in a downpour or blizzard. */
+/**
+ * Snow falls through the air around the view, reaching this far past each edge, as a fraction of
+ * the view's size, and with as many flakes in it as `count` in a blizzard. Beyond that air, snow
+ * lands evenly without falling as flakes.
+ */
+const AIR = { count: 2500, margin: 0.1, aboveRoofs: 1 } as const;
+/**
+ * The scene is a slice of the world this many meters deep: each flake is snow falling across all
+ * of it, and lying snow is as deep as the snow landing on that much ground would lie. Something
+ * narrower in the slice, such as a flower, catches only its share of a flake.
+ */
+const SLICE = 1;
+
+/** Lying snow is kept for strips of ground this wide, in meters, from `from` to `to`. */
+const COVER = { from: -150, to: 150, step: 0.1 } as const;
+
+/** How the rain falls across the view, in CSS pixels. */
+const RAIN = {
+  /** Most raindrops in view, per million square pixels, in a downpour. */
   drops: 260,
-  flakes: 420,
-  /** Speed raindrops and snowflakes fall, in pixels per second. */
-  rainSpeed: 1100,
-  snowSpeed: 70,
+  /** Speed raindrops fall, in pixels per second. */
+  speed: 1100,
   /** Pixels per second each meter per second of wind carries them sideways. */
   drift: 22,
   /** Length of a raindrop's streak, in seconds of its fall. */
   streak: 0.022,
-  /** Furthest a snowflake sways to either side as it falls, in pixels per second. */
-  sway: 14,
 } as const;
 
-/** A raindrop or snowflake falling across the view, in CSS pixels. */
-export interface Particle {
+/** A raindrop falling across the view, in CSS pixels. */
+export interface Drop {
   x: number;
   y: number;
   /** Speed it falls at, as a fraction of the usual, so nearer ones fall faster. */
   speed: number;
-  /** Size, from 0 to 1. */
-  size: number;
-  /** Progress through a snowflake's side-to-side sway, in radians. */
-  phase: number;
 }
 
-/** Snow and rain falling across the view, and snow lying on the ground. */
+/** A chunk of snow falling through the air, in meters and meters per second. */
+export interface Flake {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  /** Kilograms of snow in it. */
+  mass: number;
+  /** Speed it falls through still air. */
+  speed: number;
+  /** From 0 to 1, for drawing. */
+  size: number;
+  /** A clump of snow that slid off a ledge, rather than a flake from the sky. */
+  chunk: boolean;
+  /** Progress through its flutter, in radians. */
+  phase: number;
+  /** The air it moves in, sampled every few steps. */
+  air: { x: number; y: number };
+  /** The last thing it fell through that caught some of it, so it is caught once in passing. */
+  caughtBy: object | undefined;
+}
+
+/** Something on the tree that catches falling snow: a flower. */
+export interface Catcher {
+  /** What it is, the same from step to step. */
+  key: object;
+  /** Its middle, in meters, and how far around that it catches snow, across the scene and into it. */
+  x: number;
+  y: number;
+  radius: number;
+  /** How open it is to the sky, from 0 to 1, and the area it holds up to it, in square meters. */
+  exposure: number;
+  area: number;
+  /** Takes up to `mass` kilograms of snow, as much as it has room for, and returns how much. */
+  take(mass: number): number;
+}
+
+/** The stretch of air where snow falls as flakes, in meters. Empty when `bottom` is not below `top`. */
+interface Zone {
+  left: number;
+  right: number;
+  bottom: number;
+  top: number;
+}
+
+/** Rain falling across the view, snow falling through the air, and snow lying where it landed. */
 export class Weather {
   readonly settings: WeatherSettings;
-  /** Depth of snow lying on the ground, in meters. */
-  groundSnow = 0;
-  drops: Particle[] = [];
-  flakes: Particle[] = [];
-  /** Sideways speed of the rain and snow, in pixels per second. */
+  /** Snow lying on the ground and on the barn. */
+  readonly cover = new SnowCover();
+  /** Snow falling through the air around the view. */
+  flakes: Flake[] = [];
+  /** Rain falling across the view. */
+  drops: Drop[] = [];
+  /** Sideways speed of the rain, in pixels per second. */
   drift = 0;
   private readonly rng = new Rng(52711);
+  /** Flakes owed into the air through its top, and through its sides, carried between steps. */
+  private owedTop = 0;
+  private owedSide = 0;
+  private steps = 0;
 
   constructor(settings: WeatherSettings) {
     this.settings = settings;
   }
 
-  /** Snow landing on level ground, in kilograms per square meter each second. */
+  /** Snow falling on level ground, in kilograms per square meter each second. */
   get snowfall(): number {
     return this.settings.snow * SNOW.fall;
   }
@@ -106,81 +181,423 @@ export class Weather {
   }
 
   /**
-   * Lets the snow on the ground pile up and melt, and moves the rain and snow falling across a
-   * view `width` by `height` CSS pixels.
+   * Moves the rain and snow on by `dt` seconds, letting the snow settle on the flowers in
+   * `catchers`, on the barn and on the ground, and the snow lying there settle and melt.
    */
-  update(dt: number, wind: Wind, width: number, height: number): void {
-    const depth = Math.min(
-      SNOW.groundDeepest,
-      this.groundSnow * Math.exp(-this.melt * dt) +
-        (this.snowfall / SNOW.density) * dt,
+  update(
+    dt: number,
+    wind: Wind,
+    camera: Camera,
+    catchers: readonly Catcher[],
+  ): void {
+    this.steps += 1;
+    const zone = this.zoneFor(camera);
+    this.fall(dt, wind, zone, catchers);
+    this.cover.update(dt, this.snowfall, this.melt, zone, (chunk) =>
+      this.flakes.push(chunk),
     );
-    this.groundSnow =
-      depth < this.groundSnow && depth < SNOW.traceDepth ? 0 : depth;
-    // The rain and snow are carried by the wind across the view, but only sideways: they fall
-    // whichever way it blows.
-    const air = wind.at(0, 10, 0);
-    this.drift = air.x * FALL.drift;
-    const area = (width * height) / 1e6;
-    this.drops = this.fall(
-      this.drops,
-      Math.round(FALL.drops * area * this.settings.rain),
-      dt,
-      { speed: FALL.rainSpeed, sway: 0 },
-      width,
-      height,
-    );
-    this.flakes = this.fall(
-      this.flakes,
-      Math.round(FALL.flakes * area * this.settings.snow),
-      dt,
-      { speed: FALL.snowSpeed, sway: FALL.sway },
-      width,
-      height,
-    );
+    this.rain(dt, wind, camera);
   }
 
   /** Length of a raindrop's streak at its speed, in pixels across and down. */
-  streak(drop: Particle): { x: number; y: number } {
+  streak(drop: Drop): { x: number; y: number } {
     return {
-      x: this.drift * drop.speed * FALL.streak,
-      y: FALL.rainSpeed * drop.speed * FALL.streak,
+      x: this.drift * drop.speed * RAIN.streak,
+      y: RAIN.speed * drop.speed * RAIN.streak,
     };
   }
 
   /**
-   * Moves `particles` down the view at `speed`, swaying by up to `sway`, both in pixels per
-   * second, wrapping those that leave it back in at the top, and adds or removes some so there
-   * are `count`.
+   * The air snow falls through as flakes: the view and a little around it, down to the ground
+   * and up to well above any roof below.
+   */
+  private zoneFor(camera: Camera): Zone {
+    const corner = camera.toWorld(0, camera.height);
+    const opposite = camera.toWorld(camera.width, 0);
+    const marginX = (opposite.x - corner.x) * AIR.margin;
+    const marginY = (opposite.y - corner.y) * AIR.margin;
+    const left = corner.x - marginX;
+    const right = opposite.x + marginX;
+    return {
+      left,
+      right,
+      bottom: Math.max(0, corner.y - marginY),
+      top: Math.max(
+        opposite.y + marginY,
+        this.cover.highest(left, right) + AIR.aboveRoofs,
+      ),
+    };
+  }
+
+  /**
+   * Lets new flakes into the air through its edges, as many as the snowfall carries in, then
+   * moves each flake with the air, settling it on the first flower or surface it meets.
    */
   private fall(
-    particles: Particle[],
-    count: number,
     dt: number,
-    { speed, sway }: { speed: number; sway: number },
-    width: number,
-    height: number,
-  ): Particle[] {
-    const kept = particles.slice(0, count);
-    while (kept.length < count) {
-      kept.push({
+    wind: Wind,
+    zone: Zone,
+    catchers: readonly Catcher[],
+  ): void {
+    const width = zone.right - zone.left;
+    const height = zone.top - zone.bottom;
+    const fall = this.snowfall;
+    // Flakes per square meter of air, and the snow each carries so that together they bring the
+    // snowfall down.
+    const density =
+      width > 0 && height > 0
+        ? (AIR.count * this.settings.snow) / (width * height)
+        : 0;
+    const mass = density > 0 ? fall / (density * SNOW.speed) : 0;
+
+    // Flowers beyond the air catch the snowfall evenly, as far as they lie open to the sky.
+    const grid = new Map<number, Catcher[]>();
+    for (const catcher of catchers) {
+      if (!inZone(zone, catcher.x, catcher.y)) {
+        catcher.take(fall * catcher.exposure * catcher.area * dt);
+        continue;
+      }
+      const x0 = Math.floor((catcher.x - catcher.radius) / CATCH_CELL);
+      const x1 = Math.floor((catcher.x + catcher.radius) / CATCH_CELL);
+      const y0 = Math.floor((catcher.y - catcher.radius) / CATCH_CELL);
+      const y1 = Math.floor((catcher.y + catcher.radius) / CATCH_CELL);
+      for (let cx = x0; cx <= x1; cx += 1) {
+        for (let cy = y0; cy <= y1; cy += 1) {
+          const key = cellKey(cx, cy);
+          const list = grid.get(key);
+          if (list === undefined) {
+            grid.set(key, [catcher]);
+          } else {
+            list.push(catcher);
+          }
+        }
+      }
+    }
+
+    if (density > 0) {
+      const air = wind.at(
+        (zone.left + zone.right) / 2,
+        (zone.bottom + zone.top) / 2,
+        0,
+      );
+      this.owedTop += density * Math.max(0, SNOW.speed - air.y) * width * dt;
+      this.owedSide += density * Math.abs(air.x) * height * dt;
+      while (this.owedTop >= 1) {
+        this.owedTop -= 1;
+        this.spawn(zone.left + this.rng.next() * width, zone.top, mass, wind);
+      }
+      while (this.owedSide >= 1) {
+        this.owedSide -= 1;
+        this.spawn(
+          air.x > 0 ? zone.left : zone.right,
+          zone.bottom + this.rng.next() * height,
+          mass,
+          wind,
+        );
+      }
+    } else {
+      this.owedTop = 0;
+      this.owedSide = 0;
+    }
+
+    const kept: Flake[] = [];
+    for (const [i, flake] of this.flakes.entries()) {
+      if ((i + this.steps) % AIR_SAMPLING === 0) {
+        flake.air = wind.at(flake.x, Math.max(flake.y, 0), 0);
+      }
+      flake.phase += dt * (1 + flake.size);
+      const flutter = flake.chunk
+        ? 0
+        : SNOW.flutter * flake.size * Math.sin(flake.phase);
+      const follow =
+        1 - Math.exp(-dt / (flake.chunk ? SNOW.chunkResponse : SNOW.response));
+      flake.vx += (flake.air.x + flutter - flake.vx) * follow;
+      flake.vy += (flake.air.y - flake.speed - flake.vy) * follow;
+      const fromX = flake.x;
+      flake.x += flake.vx * dt;
+      flake.y += flake.vy * dt;
+
+      const caught = grid.get(
+        cellKey(
+          Math.floor(flake.x / CATCH_CELL),
+          Math.floor(flake.y / CATCH_CELL),
+        ),
+      );
+      if (caught !== undefined) {
+        for (const catcher of caught) {
+          const dx = flake.x - catcher.x;
+          const dy = flake.y - catcher.y;
+          if (
+            catcher.key !== flake.caughtBy &&
+            dx * dx + dy * dy < catcher.radius * catcher.radius
+          ) {
+            const share = Math.min(1, (2 * catcher.radius) / SLICE);
+            flake.mass -= catcher.take(flake.mass * share);
+            flake.caughtBy = catcher.key;
+            break;
+          }
+        }
+        if (flake.mass <= 0) {
+          continue;
+        }
+      }
+
+      if (flake.y <= this.cover.surfaceAt(flake.x)) {
+        // A flake blown into a wall settles against it, on the side it came from.
+        const footing = this.cover.baseAt(flake.x);
+        const wall = flake.y < footing && this.cover.baseAt(fromX) < footing;
+        this.cover.deposit(wall ? fromX : flake.x, flake.mass);
+        continue;
+      }
+      if (
+        flake.x < zone.left ||
+        flake.x > zone.right ||
+        flake.y < zone.bottom ||
+        flake.y > zone.top + AIR.aboveRoofs
+      ) {
+        continue;
+      }
+      kept.push(flake);
+    }
+    this.flakes = kept;
+  }
+
+  /** Lets a flake carrying `mass` kilograms into the air at (x, y), already moving with it. */
+  private spawn(x: number, y: number, mass: number, wind: Wind): void {
+    const air = wind.at(x, Math.max(y, 0), 0);
+    const speed = SNOW.speed * (0.8 + 0.4 * this.rng.next());
+    this.flakes.push({
+      x,
+      y,
+      vx: air.x,
+      vy: air.y - speed,
+      mass,
+      speed,
+      size: this.rng.next(),
+      chunk: false,
+      phase: this.rng.next() * Math.PI * 2,
+      air,
+      caughtBy: undefined,
+    });
+  }
+
+  /**
+   * Moves the raindrops down the view and sideways with the wind, wrapping those that reach the
+   * ground back in at the top, and adds or removes some so there are as many as the rain brings.
+   */
+  private rain(dt: number, wind: Wind, camera: Camera): void {
+    this.drift = wind.at(0, 10, 0).x * RAIN.drift;
+    const width = camera.width;
+    const ground = clamp(camera.groundRow, 0, camera.height);
+    const count = Math.round(
+      ((RAIN.drops * width * ground) / 1e6) * this.settings.rain,
+    );
+    this.drops = this.drops.slice(0, count);
+    while (this.drops.length < count) {
+      this.drops.push({
         x: this.rng.next() * width,
-        y: this.rng.next() * height,
+        y: this.rng.next() * ground,
         speed: 0.7 + 0.6 * this.rng.next(),
-        size: this.rng.next(),
-        phase: this.rng.next() * Math.PI * 2,
       });
     }
-    for (const p of kept) {
-      p.phase += dt * (1.2 + p.size);
-      p.y += dt * speed * p.speed;
-      p.x += dt * (this.drift * p.speed + sway * p.size * Math.sin(p.phase));
-      if (p.y > height) {
-        p.y -= height + 20;
-        p.x = this.rng.next() * width;
+    for (const drop of this.drops) {
+      drop.y += dt * RAIN.speed * drop.speed;
+      drop.x += dt * this.drift * drop.speed;
+      if (drop.y + this.streak(drop).y > ground) {
+        drop.y -= ground + 20;
+        drop.x = this.rng.next() * width;
       }
-      p.x = ((p.x % width) + width) % width;
+      drop.x = ((drop.x % width) + width) % width;
     }
-    return kept;
+  }
+}
+
+/** Flakes take a fresh reading of the air every this many steps. */
+const AIR_SAMPLING = 3;
+/** Size of the cells flowers are sorted into for catching snow, in meters. */
+const CATCH_CELL = 0.5;
+
+function cellKey(x: number, y: number): number {
+  return (x + 32768) * 65536 + (y + 32768);
+}
+
+function inZone(zone: Zone, x: number, y: number): boolean {
+  return x >= zone.left && x <= zone.right && y >= zone.bottom && y <= zone.top;
+}
+
+/**
+ * Snow lying on the ground and on the barn, as its depth over each narrow strip. It settles no
+ * steeper than it can stand, sliding down roofs and falling off their edges in chunks.
+ */
+export class SnowCover {
+  readonly from = COVER.from;
+  readonly step = COVER.step;
+  readonly count = Math.round((COVER.to - COVER.from) / COVER.step);
+  /** Height of what the snow lies on over each strip: the ground, or the top of the barn. */
+  readonly base: readonly number[];
+  /** Depth of the snow lying on each strip, in meters. */
+  readonly depth: number[];
+  /** Snow gathering at the edge of each ledge before it drops off in a chunk, in meters deep. */
+  private readonly overhang: number[];
+
+  constructor() {
+    this.base = Array.from({ length: this.count }, (_, i) =>
+      barnTopAt(this.middle(i)),
+    );
+    this.depth = new Array<number>(this.count).fill(0);
+    this.overhang = new Array<number>(this.count).fill(0);
+  }
+
+  /** Middle of strip `i`, in meters along the ground. */
+  middle(i: number): number {
+    return this.from + (i + 0.5) * this.step;
+  }
+
+  /** The strip over `x`, or -1 beyond the strips kept. */
+  index(x: number): number {
+    const i = Math.floor((x - this.from) / this.step);
+    return i >= 0 && i < this.count ? i : -1;
+  }
+
+  /** Height of what the snow lies on at `x`, in meters. */
+  baseAt(x: number): number {
+    const i = this.index(x);
+    return i < 0 ? 0 : at(this.base, i);
+  }
+
+  /** Height of the top of the lying snow at `x`, or of the ground or roof under none. */
+  surfaceAt(x: number): number {
+    const i = this.index(x);
+    return i < 0 ? 0 : at(this.base, i) + at(this.depth, i);
+  }
+
+  /** Height of the highest roof or snow between `left` and `right`. */
+  highest(left: number, right: number): number {
+    const from = Math.max(0, this.index(left));
+    const to = this.index(right) < 0 ? this.count - 1 : this.index(right);
+    let highest = 0;
+    for (let i = from; i <= to; i += 1) {
+      highest = Math.max(highest, at(this.base, i) + at(this.depth, i));
+    }
+    return highest;
+  }
+
+  /**
+   * Lays `mass` kilograms of snow at `x`, spread a little either side on the same footing. Snow
+   * landing beyond the strips kept is not kept.
+   */
+  deposit(x: number, mass: number): void {
+    const i = this.index(x);
+    if (i < 0) {
+      return;
+    }
+    const depth = mass / (SNOW.density * this.step * SLICE);
+    const footing = at(this.base, i);
+    const spread = [
+      [i - 1, 0.25],
+      [i, 0.5],
+      [i + 1, 0.25],
+    ] as const;
+    let kept = 0;
+    for (const [j, share] of spread) {
+      if (
+        j >= 0 &&
+        j < this.count &&
+        Math.abs(at(this.base, j) - footing) < SNOW.ledge
+      ) {
+        this.depth[j] = at(this.depth, j) + depth * share;
+        kept += share;
+      }
+    }
+    this.depth[i] = at(this.depth, i) + depth * (1 - kept);
+  }
+
+  /**
+   * Moves the lying snow on by `dt` seconds: `fall` kilograms per square meter each second land
+   * evenly on whatever lies beyond the air `zone`, where no flakes are falling; the snow slides
+   * until it stands no steeper than it can, dropping chunks off ledges into `spill`; and `melt` of
+   * it melts each second.
+   */
+  update(
+    dt: number,
+    fall: number,
+    melt: number,
+    zone: Zone,
+    spill: (chunk: Flake) => void,
+  ): void {
+    const even = (fall / SNOW.density) * dt;
+    const melting = Math.exp(-melt * dt);
+    const open = zone.bottom < zone.top;
+    for (let i = 0; i < this.count; i += 1) {
+      const x = this.middle(i);
+      const surface = at(this.base, i) + at(this.depth, i);
+      const outside =
+        !open || x < zone.left || x > zone.right || surface < zone.bottom;
+      const before = at(this.depth, i);
+      const after = Math.min(
+        SNOW.deepest,
+        before * melting + (outside ? even : 0),
+      );
+      this.depth[i] = after < before && after < SNOW.traceDepth ? 0 : after;
+    }
+    for (let i = 0; i < this.count - 1; i += 1) {
+      this.slide(i, i + 1, spill);
+    }
+    for (let i = this.count - 2; i >= 0; i -= 1) {
+      this.slide(i, i + 1, spill);
+    }
+  }
+
+  /** Lets snow slide between neighboring strips `i` and `j` until it stands no steeper than it can. */
+  private slide(i: number, j: number, spill: (chunk: Flake) => void): void {
+    const hi = at(this.base, i) + at(this.depth, i);
+    const hj = at(this.base, j) + at(this.depth, j);
+    const limit = SNOW.repose * this.step;
+    if (hi - hj > limit) {
+      this.move(i, j, (hi - hj - limit) / 2, spill);
+    } else if (hj - hi > limit) {
+      this.move(j, i, (hj - hi - limit) / 2, spill);
+    }
+  }
+
+  /**
+   * Moves up to `excess` meters of snow from strip `from` toward strip `to`. Snow sliding over a
+   * ledge gathers at its edge, and drops off as a chunk once there is enough of it.
+   */
+  private move(
+    from: number,
+    to: number,
+    excess: number,
+    spill: (chunk: Flake) => void,
+  ): void {
+    const amount = Math.min(at(this.depth, from), excess);
+    if (amount <= 0) {
+      return;
+    }
+    this.depth[from] = at(this.depth, from) - amount;
+    if (at(this.base, from) - at(this.base, to) < SNOW.ledge) {
+      this.depth[to] = at(this.depth, to) + amount;
+      return;
+    }
+    this.overhang[from] = at(this.overhang, from) + amount;
+    const mass = at(this.overhang, from) * SNOW.density * this.step * SLICE;
+    if (mass < SNOW.chunk) {
+      return;
+    }
+    this.overhang[from] = 0;
+    const edge = this.middle(from) + (Math.sign(to - from) * this.step) / 2;
+    spill({
+      x: edge,
+      y: at(this.base, from) + 0.05,
+      vx: Math.sign(to - from) * 0.4,
+      vy: 0,
+      mass,
+      speed: SNOW.chunkSpeed,
+      size: 1,
+      chunk: true,
+      phase: 0,
+      air: { x: 0, y: 0 },
+      caughtBy: undefined,
+    });
   }
 }
