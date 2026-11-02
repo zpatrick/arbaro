@@ -93,6 +93,19 @@ body {
   letter-spacing: 0;
 }
 
+/* The time and the season, small in the top left corner. */
+.clock {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  opacity: 0.62;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* A short line of news at the top, such as a limb snapping. */
 .message {
   position: absolute;

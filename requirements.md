@@ -265,6 +265,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       on its trunk, or around the pointer once the player has dragged the view. The camera then
       stays where the player left it until F, or planting a new tree, sends it back to following
       the tree.
+- [x] The time and the season, in small text in the scene's top left corner, such as "4:00 PM ·
+      Late fall". The clock moves on a quarter hour at a time, and each season is early, at its
+      height, or late.
 - [ ] An in-game display of resources, goal progress, wind and time of day, plus facts about the
       selected limb: length, thickness, what it carries or anchors, its flowers, how close it is to
       snapping, and what it has stored.

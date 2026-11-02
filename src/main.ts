@@ -4,7 +4,15 @@ import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
-import { advanceDay, skyAt, type TimeSettings } from "./sky";
+import {
+  advanceDay,
+  clockTime,
+  css,
+  seasonName,
+  type SkyLight,
+  skyAt,
+  type TimeSettings,
+} from "./sky";
 import { Keyboard } from "./input";
 import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
@@ -32,6 +40,8 @@ const FALLEN_TREE_LINGER = 12;
 const TOPPLE_SPIN = 0.08;
 /** Seconds a message stays up. */
 const MESSAGE_SECONDS = 2.6;
+/** The clock in the corner moves on this many minutes at a time, so it ticks calmly. */
+const CLOCK_STEP_MINUTES = 15;
 /** How close to a spout, in CSS pixels, the pointer must be to pick it. */
 const SPOUT_PICK_PX = 10;
 /** How fast energy dots ride up the wood, in CSS pixels per second. */
@@ -63,6 +73,7 @@ const stage = element("#stage", HTMLDivElement);
 const canvas = element("#scene", HTMLCanvasElement);
 const hint = element("#hint", HTMLDivElement);
 const message = element("#message", HTMLDivElement);
+const hud = element("#clock", HTMLDivElement);
 const camera = new Camera();
 const renderer = new Renderer(canvas);
 const keyboard = new Keyboard(window);
@@ -164,6 +175,19 @@ function spoutAt(standing: Tree, x: number, y: number): Limb | undefined {
     }
   }
   return nearest?.limb;
+}
+
+/** Shows the time and the season in the corner, in ink that shows against the sky in `light`. */
+function showClock(light: SkyLight): void {
+  const { timeOfDay, season } = panel.time;
+  const text = `${clockTime(timeOfDay, CLOCK_STEP_MINUTES)} · ${seasonName(season)}`;
+  if (hud.textContent !== text) {
+    hud.textContent = text;
+  }
+  const color = css(light.guide);
+  if (hud.style.color !== color) {
+    hud.style.color = color;
+  }
 }
 
 function announce(text: string): void {
@@ -508,6 +532,7 @@ function frame(now: number): void {
   if (panel.time.dayRunning) {
     panel.showTimeOfDay();
   }
+  showClock(light);
   const flowing = tree !== undefined && panel.growth.mode === "flow";
   const flowerHover =
     tree !== undefined &&

@@ -1,6 +1,6 @@
 import type { FlowerPlacement, FlowerSettings } from "./flowers";
 import type { Strength } from "./physics";
-import type { TimeSettings } from "./sky";
+import { clockTime, seasonName, type TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
 import { draggable, element, shape, Slider } from "./ui";
 import { invariant } from "./util";
@@ -91,15 +91,6 @@ const TIMES_OF_DAY: readonly (readonly [number, string])[] = [
   [0.54, "Afternoon"],
   [0.71, "Dusk"],
   [0.8, "Night"],
-];
-
-/** Names for the time of year, from where each begins on the season slider. */
-const SEASONS: readonly (readonly [number, string])[] = [
-  [0, "Summer"],
-  [0.26, "Early fall"],
-  [0.44, "Fall"],
-  [0.62, "Late fall"],
-  [0.88, "Winter"],
 ];
 
 const GROWTH_MODES: readonly {
@@ -217,15 +208,6 @@ function nameFor(
   const found = [...names].reverse().find(([from]) => value >= from);
   invariant(found !== undefined, `No name for ${value}.`);
   return found[1];
-}
-
-/** A time of day as a 12-hour clock reading, such as "6:30 am". */
-function clockTime(timeOfDay: number): string {
-  const minutes = Math.floor(timeOfDay * 24 * 60) % (24 * 60);
-  const hours = Math.floor(minutes / 60);
-  const hour = hours % 12 === 0 ? 12 : hours % 12;
-  const minute = String(minutes % 60).padStart(2, "0");
-  return `${hour}:${minute} ${hours < 12 ? "am" : "pm"}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -667,9 +649,7 @@ export class DebugPanel {
     this.showTimeOfDay();
     this.dayToggle.classList.toggle("selected", this.time.dayRunning);
     const { season } = this.time;
-    const year = [...SEASONS].reverse().find(([from]) => season >= from);
-    invariant(year !== undefined, `No name for the season at ${season}.`);
-    this.season.show(season, year[1]);
+    this.season.show(season, seasonName(season));
 
     const { direction, strength, model } = this.wind;
     this.arrow.setAttribute(

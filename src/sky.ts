@@ -1,4 +1,4 @@
-import { clamp, lerp, smoothstep } from "./util";
+import { at, clamp, lerp, smoothstep } from "./util";
 
 export type Rgb = readonly [number, number, number];
 
@@ -129,6 +129,44 @@ export function skyAt(timeOfDay: number): SkyLight {
       flowerNight[2] * flowerTwilight[2],
     ],
   };
+}
+
+/** The year's seasons, each early, at its height, then late, from the start of spring. */
+const SEASON_NAMES = [
+  "Early spring",
+  "Spring",
+  "Late spring",
+  "Early summer",
+  "Summer",
+  "Late summer",
+  "Early fall",
+  "Fall",
+  "Late fall",
+  "Early winter",
+  "Winter",
+  "Late winter",
+] as const;
+
+/**
+ * The name of the season at `season`, which runs from midsummer at 0 to midwinter at 1: half the
+ * year, from the height of summer to the height of winter.
+ */
+export function seasonName(season: number): string {
+  const twelfths = 4.5 + 6 * clamp(season, 0, 1);
+  return at(SEASON_NAMES, Math.floor(twelfths) % SEASON_NAMES.length);
+}
+
+/**
+ * A time of day as a 12-hour clock reading, such as "6:30 am", rounded down to a whole number of
+ * `step` minutes.
+ */
+export function clockTime(timeOfDay: number, step = 1): string {
+  const minutes =
+    (Math.floor((timeOfDay * 24 * 60) / step) * step) % (24 * 60);
+  const hours = Math.floor(minutes / 60);
+  const hour = hours % 12 === 0 ? 12 : hours % 12;
+  const minute = String(minutes % 60).padStart(2, "0");
+  return `${hour}:${minute} ${hours < 12 ? "am" : "pm"}`;
 }
 
 /** Wraps a fraction of a day into [0, 1). */
