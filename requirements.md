@@ -278,9 +278,11 @@ _Open._ A button flips into a view of the roots:
 
 ## Debug tools
 
-- [x] A collapsible debug panel on the right edge, with a tab down its left edge for each page:
-      weather, the tree, and flowers. Time controls stay at the top of every page, and a button
-      at the bottom puts every setting back to its default.
+- [x] A collapsible debug panel down the right, beside the scene rather than over it, with a tab
+      down its left edge for each page: weather, the tree, and flowers. The scene narrows as the
+      panel opens. Time controls stay at the top of every page, and a button at the bottom puts
+      every setting back to its default.
+- [x] A plain black strip down the left of the scene, kept for tools.
 - [x] Time controls: pause the simulation, or run it at normal, double or quadruple speed.
 - [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed;
       the season; and the wind: a compass whose arrow you drag to point where it blows toward, a

@@ -57,6 +57,7 @@ function element<T extends HTMLElement>(
   return found;
 }
 
+const stage = element("#stage", HTMLDivElement);
 const canvas = element("#scene", HTMLCanvasElement);
 const hint = element("#hint", HTMLDivElement);
 const message = element("#message", HTMLDivElement);
@@ -65,7 +66,7 @@ const renderer = new Renderer(canvas);
 const keyboard = new Keyboard(window);
 const panel = new DebugPanel(element("#app", HTMLDivElement));
 const wind = new Wind(panel.wind);
-const spoutControl = new SpoutControl(element("#app", HTMLDivElement));
+const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
 const flowers = new Flowers();
 
@@ -99,8 +100,14 @@ let frozen =
   new URLSearchParams(window.location.search).has("frozen");
 
 function resize(): void {
-  camera.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio);
+  camera.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio);
   renderer.resize(camera);
+}
+
+/** Where a pointer event happened, in the scene's CSS pixels. */
+function onScene(event: MouseEvent): { x: number; y: number } {
+  const box = canvas.getBoundingClientRect();
+  return { x: event.clientX - box.left, y: event.clientY - box.top };
 }
 
 /** Keeps the hint in the ground, a little below its edge, wherever panning has put the ground. */
@@ -122,12 +129,7 @@ function replant(): void {
 
 /** Starts a press on the canvas that pans the view once it drags. */
 function startPanning(event: PointerEvent): void {
-  panning = {
-    pointerId: event.pointerId,
-    x: event.clientX,
-    y: event.clientY,
-    dragging: false,
-  };
+  panning = { pointerId: event.pointerId, ...onScene(event), dragging: false };
   canvas.setPointerCapture(event.pointerId);
 }
 
@@ -341,6 +343,8 @@ resize();
 camera.snap(tree.bounds());
 showGrowthMode(panel.growth.mode);
 panel.onGrowthMode = showGrowthMode;
+// The scene resizes with the window, and as the debug panel beside it opens and closes.
+new ResizeObserver(resize).observe(stage);
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Shift") {
@@ -372,17 +376,17 @@ window.addEventListener("blur", () => {
   pruneHeld = false;
 });
 canvas.addEventListener("pointermove", (event) => {
-  pointer = { x: event.clientX, y: event.clientY };
+  pointer = onScene(event);
   shiftHeld = event.shiftKey;
   if (panning === undefined || event.pointerId !== panning.pointerId) {
     return;
   }
-  const dx = event.clientX - panning.x;
-  const dy = event.clientY - panning.y;
+  const dx = pointer.x - panning.x;
+  const dy = pointer.y - panning.y;
   if (!panning.dragging && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) {
     return;
   }
-  panning = { ...panning, x: event.clientX, y: event.clientY, dragging: true };
+  panning = { ...panning, ...pointer, dragging: true };
   camera.pan(dx, dy);
 });
 canvas.addEventListener("pointerleave", () => {
@@ -410,7 +414,7 @@ canvas.addEventListener(
     // A trackpad pinch arrives as a scroll with the control key held.
     const rate = event.ctrlKey ? ZOOM_PER_PX.pinch : ZOOM_PER_PX.wheel;
     const around = camera.panned
-      ? { x: event.clientX, y: event.clientY }
+      ? onScene(event)
       : camera.toScreen(PLANTING_X, 0);
     camera.zoom(Math.exp(-pixels * rate), around.x, around.y);
   },
@@ -435,8 +439,9 @@ canvas.addEventListener("pointerdown", (event) => {
     startPanning(event);
     return;
   }
+  const { x, y } = onScene(event);
   if (pruneHeld) {
-    const pick = pickAt(tree, event.clientX, event.clientY);
+    const pick = pickAt(tree, x, y);
     if (pick === undefined) {
       startPanning(event);
       return;
@@ -448,17 +453,17 @@ canvas.addEventListener("pointerdown", (event) => {
     return;
   }
   if (placingFlowers(event)) {
-    tendFlowers(tree, event.clientX, event.clientY);
+    tendFlowers(tree, x, y);
     return;
   }
   if (panel.growth.mode === "flow") {
-    const spout = spoutAt(tree, event.clientX, event.clientY);
+    const spout = spoutAt(tree, x, y);
     if (spout !== undefined) {
       spoutControl.open(spout);
       return;
     }
   }
-  const pick = pickAt(tree, event.clientX, event.clientY);
+  const pick = pickAt(tree, x, y);
   if (spoutControl.limb !== undefined) {
     spoutControl.close();
   } else if (pick !== undefined && pick.limb === tree.active) {

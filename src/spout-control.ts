@@ -15,11 +15,14 @@ const GAP = 16;
 export class SpoutControl {
   /** The offshoot whose spout is open, if any. */
   limb: Limb | undefined;
+  /** What the popover sits over, which it keeps inside. */
+  private readonly host: HTMLElement;
   private readonly root: HTMLElement;
   private readonly slider: Slider;
   private readonly presets: [HTMLElement, number][] = [];
 
   constructor(host: HTMLElement) {
+    this.host = host;
     this.root = element("div", "spout", host);
     element("div", "spout-title", this.root, "Spout");
     this.slider = new Slider(this.root, "Into this branch", (share) =>
@@ -45,10 +48,10 @@ export class SpoutControl {
     this.root.hidden = true;
   }
 
-  /** Keeps the popover beside its spout, which is at (x, y) in CSS pixels. */
+  /** Keeps the popover beside its spout, which is at (x, y) in the host's CSS pixels. */
   place(x: number, y: number): void {
     const width = this.root.offsetWidth;
-    const fitsRight = x + GAP + width < window.innerWidth - GAP;
+    const fitsRight = x + GAP + width < this.host.clientWidth - GAP;
     this.root.style.left = `${fitsRight ? x + GAP : x - GAP - width}px`;
     this.root.style.top = `${y - this.root.offsetHeight / 2}px`;
   }
