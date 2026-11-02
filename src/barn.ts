@@ -1,3 +1,5 @@
+import { at } from "./util";
+
 /**
  * A small barn standing on the ground beside the tree, true to size, so there is something to
  * judge the tree's height by. All sizes are in meters, and x is from the tree's roots.
@@ -26,6 +28,53 @@ export const BARN_LINE = 0.045;
 
 /** The barn's outline, in meters with y up, its foot sunk a little into the ground. */
 export function barnOutline(): Path2D {
+  const path = new Path2D();
+  OUTLINE.forEach(([px, py], i) => {
+    if (i === 0) {
+      path.moveTo(px, py);
+    } else {
+      path.lineTo(px, py);
+    }
+  });
+  path.closePath();
+  return path;
+}
+
+/**
+ * How far a line from (x, y), heading `heading` radians counterclockwise from +x, runs before it
+ * meets the barn, in meters: 0 from inside it, and Infinity if it misses.
+ */
+export function barnAhead(x: number, y: number, heading: number): number {
+  const dx = Math.cos(heading);
+  const dy = Math.sin(heading);
+  let nearest = Infinity;
+  let crossings = 0;
+  for (let i = 0; i < OUTLINE.length; i += 1) {
+    const [ax, ay] = at(OUTLINE, i);
+    const [bx, by] = at(OUTLINE, (i + 1) % OUTLINE.length);
+    // Whether a line from (x, y) out to the right crosses this edge, to tell if it starts inside.
+    if (ay > y !== by > y && x < ax + ((y - ay) * (bx - ax)) / (by - ay)) {
+      crossings += 1;
+    }
+    const ex = bx - ax;
+    const ey = by - ay;
+    const across = dx * ey - dy * ex;
+    if (across === 0) {
+      continue;
+    }
+    const t = ((ax - x) * ey - (ay - y) * ex) / across;
+    const u = ((ax - x) * dy - (ay - y) * dx) / across;
+    if (t >= 0 && u >= 0 && u <= 1) {
+      nearest = Math.min(nearest, t);
+    }
+  }
+  return crossings % 2 === 1 ? 0 : nearest;
+}
+
+/** Corners of the barn's outline, in meters with y up, its foot sunk a little into the ground. */
+const OUTLINE: readonly (readonly [number, number])[] = outlinePoints();
+
+function outlinePoints(): [number, number][] {
   const { x, width, eaves, ridge, breakIn, overhang, dip, cupola } = BARN;
   const half = width / 2;
   // Height of the upper roof a distance `dx` either side of the ridge.
@@ -42,21 +91,11 @@ export function barnOutline(): Path2D {
     [x + (sign * cupola.width) / 2, top],
     [x + sign * (cupola.width / 2 + cupola.capOverhang), top],
   ];
-  const points = [
+  return [
     ...side(-1),
     [x, top + cupola.cap] as [number, number],
     ...side(1).reverse(),
   ];
-  const path = new Path2D();
-  points.forEach(([px, py], i) => {
-    if (i === 0) {
-      path.moveTo(px, py);
-    } else {
-      path.lineTo(px, py);
-    }
-  });
-  path.closePath();
-  return path;
 }
 
 /**

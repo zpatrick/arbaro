@@ -1,3 +1,4 @@
+import { barnAhead } from "./barn";
 import type { Contact, Piece } from "./debris";
 import { type Controls, LIMB, Limb, UPRIGHT } from "./limb";
 import { type Failure, PHYSICS, type Strength, TreePhysics } from "./physics";
@@ -42,8 +43,14 @@ const MAX_CONTACTS = 90;
 /** A piece rests on its stump if the wood at the cut points within 60 degrees of straight up. */
 const HINGE_UPRIGHTNESS = Math.sin(Math.PI / 6);
 
+/** A growing tip stops this far short of the ground or the barn, in world units. */
+const CLEARANCE = 0.03;
+
 /** Steer mode grows the selected limb while a key is held; flow mode grows every tip from the roots. */
 export type GrowthMode = "steer" | "flow";
+
+/** What a growing tip can run into. */
+export type Obstacle = "ground" | "barn";
 
 export interface Growth {
   mode: GrowthMode;
@@ -55,6 +62,21 @@ export interface Bounds {
   minX: number;
   maxX: number;
   maxY: number;
+}
+
+/**
+ * How far the tip of `limb` may grow on the way it heads before it comes within `CLEARANCE` of the
+ * ground or the barn, and which of them it would meet first.
+ */
+function roomAhead(limb: Limb): { room: number; obstacle: Obstacle } {
+  const tip = limb.restTip;
+  const down = -Math.sin(tip.heading);
+  const ground = down > 0 ? tip.y / down : Infinity;
+  const barn = barnAhead(tip.x, tip.y, tip.heading);
+  return {
+    room: Math.max(0, Math.min(ground, barn) - CLEARANCE),
+    obstacle: ground <= barn ? "ground" : "barn",
+  };
 }
 
 /** Distance along its parent where an offshoot forks off. */
@@ -85,6 +107,8 @@ export class Tree {
   readonly limbs: Limb[];
   readonly physics = new TreePhysics();
   active: Limb;
+  /** What the selected limb ran into as the player grew it, at the last update, if anything. */
+  blocked: Obstacle | undefined;
   private readonly seed: number;
 
   constructor(baseX: number, seed: number) {
@@ -124,14 +148,17 @@ export class Tree {
       const reach = this.reach(this.active);
       const size = Math.max(1, reach / LIMB.steadyLength);
       const speed = controls.grow ? LIMB.growSpeed * size : 0;
+      const ahead = roomAhead(this.active);
+      this.blocked = ahead.room < speed * dt ? ahead.obstacle : undefined;
       changed = this.active.update(
         dt,
         controls.steer,
         speed,
         size,
-        LIMB.maxReach - reach,
+        Math.min(LIMB.maxReach - reach, ahead.room),
       );
     } else {
+      this.blocked = undefined;
       const shares = this.flowShares();
       for (const limb of this.limbs) {
         const share = shares.get(limb);
@@ -145,7 +172,7 @@ export class Tree {
           steer,
           speed,
           size,
-          LIMB.maxReach - reach,
+          Math.min(LIMB.maxReach - reach, roomAhead(limb).room),
         );
         changed = changed || moved;
       }

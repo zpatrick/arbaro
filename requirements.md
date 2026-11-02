@@ -43,7 +43,9 @@ art and tree-of-life drawings.
       size: bigger trees grow faster and turn more broadly while the camera pulls back.
 - [x] Left alone, a limb drifts back toward upright with a gentle meander.
 - [ ] Plant the seed by clicking the ground. Roots grow down while the trunk grows up.
-- [ ] Growth is blocked by the ground, rocks, solid obstacles and other limbs.
+- [x] Growth stops at the ground and at the barn: a tip grows up to just short of either and
+      halts there, with a short message, and grows on once it is steered clear.
+- [ ] Growth is blocked by rocks, other solid obstacles and other limbs.
 
 ### Offshoots
 

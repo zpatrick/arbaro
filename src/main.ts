@@ -14,6 +14,7 @@ import {
   type Bounds,
   type Growth,
   type GrowthMode,
+  type Obstacle,
   type Pick,
   Tree,
 } from "./tree";
@@ -84,6 +85,8 @@ let shiftHeld = false;
 let pruneHeld = false;
 /** Seconds of simulated time so far, which set the stars twinkling. */
 let clock = 0;
+/** What the selected limb last ran into as it was grown, so the news is given only once. */
+let blockedBefore: Obstacle | undefined;
 /**
  * A press that pans the view as it drags: where the pointer was last, and whether it has moved
  * far enough to count as a drag yet.
@@ -315,6 +318,10 @@ function step(dt: number, controls: Controls): void {
       }
       giveWay(standing, failure);
     }
+    if (standing.blocked !== undefined && standing.blocked !== blockedBefore) {
+      announce(`The ${standing.blocked} is in the way`);
+    }
+    blockedBefore = standing.blocked;
   }
   advanceDay(panel.time, dt);
   clock += dt;
