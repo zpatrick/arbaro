@@ -1,13 +1,14 @@
 import type { Camera } from "./camera";
 import { BODY_SIZE, css, mix, type Rgb, skyBodyAt, type SkyLight } from "./sky";
-import { approach, lerp, Rng, smoothstep } from "./util";
+import { approach, at, lerp, Rng, smoothstep } from "./util";
 import type { WeatherSettings } from "./weather";
 import type { Wind } from "./wind";
 
 /**
- * How the clouds are laid out and drift. Each is a bank of long layers tapering to a point at
- * either end, after the banded mist of old Japanese prints rather than puffs, and the banks drift
- * around a strip of sky wider than the view.
+ * How the clouds are laid out and drift. Each is a bank of layers like brushstrokes, after the
+ * banded clouds of old Japanese prints rather than puffs: each has a round head and a long tail
+ * tapering to a point, and the layers stack with their heads together. The banks drift around a
+ * strip of sky wider than the view.
  */
 const CLOUDS = {
   /** Banks in the strip of sky they drift around. */
@@ -17,7 +18,7 @@ const CLOUDS = {
   /** Width of a bank, as a fraction of the view's width, from the smallest to the largest. */
   width: { from: 0.16, to: 0.4 },
   /** Thickness of a bank's main layer, as a fraction of its width. */
-  thickness: { from: 0.09, to: 0.15 },
+  thickness: { from: 0.08, to: 0.12 },
   /** Lowest and highest a bank's middle hangs, as fractions of the sky's height above the horizon. */
   low: 0.14,
   high: 0.84,
@@ -65,13 +66,27 @@ const OVERCAST = {
 /** Clouds hanging below `from` of the way up the sky are all fog, and above `to` none. */
 const FOG = { from: 0.06, to: 0.32 } as const;
 
-/** Banks this pale lighten toward, at their tops, by day and by night. */
+/** Banks are the sky lightened this far toward this pale, by day and by night. */
 const CLOUD_LIGHT: Rgb = [255, 252, 245];
-const LIGHTEN = { day: 0.8, night: 0.2 } as const;
-/** A layer's underside is this much darker than its top. */
-const UNDERSIDE = 0.84;
+const LIGHTEN = { day: 0.7, night: 0.2 } as const;
 /** Far banks are tinted this far toward the sky behind them. */
 const FAR_TINT = 0.35;
+/**
+ * Shading, far lighter than the mountains': each layer is hatched along its underside, in lines
+ * this far apart and this wide, in CSS pixels at the base horizon height, leaning this far from
+ * upright, in radians, up to `reach` of the way into the layer; and a fine line is carved along
+ * its top, so the layers stacked in a bank read apart. Both are ink, this strong by day and by
+ * night.
+ */
+const SHADING = {
+  gap: 4.2,
+  width: 0.7,
+  tilt: 0.55,
+  reach: 0.5,
+  hatch: { day: 0.14, night: 0.12 },
+  carve: { day: 0.22, night: 0.16 },
+  carveWidth: 0.9,
+} as const;
 
 /**
  * Shadows the banks cast on the mountains while the sun shines: this dark at most, falling this
@@ -81,15 +96,17 @@ const FAR_TINT = 0.35;
 const SHADOW = { alpha: 0.16, low: 0.06, height: 0.035, cast: 0.35 } as const;
 
 /**
- * A layer of a bank: a lens tapering to a point at each end, its top arching `height` above its
- * tips and its underside sagging a third as far below. In units of the bank's width, from the
- * bank's left end and its middle.
+ * A layer of a bank, like a brushstroke: from the point of its long tail, its top rises to a crest
+ * `height` above it two thirds of the way along, rounds over its head, and its underside runs back
+ * to the point, sagging a third as far below. In units of the bank's width, from the bank's left
+ * end and its middle; `tail` is the side its tail is on.
  */
 interface Layer {
   x: number;
   y: number;
   width: number;
   height: number;
+  tail: -1 | 1;
 }
 
 interface Bank {
@@ -229,13 +246,17 @@ export class Clouds {
           y: y + layer.y * width,
           width: layer.width * width,
           height: layer.height * width,
+          tail: layer.tail,
         })),
       });
     }
     return placed;
   }
 
-  /** Draws `banks` in `light`, far ones first, each layer back to front. */
+  /**
+   * Draws `banks` in `light`, far ones first, each layer back to front: filled flat, hatched lightly
+   * along its underside, and carved along its top, or outlined in ink when chosen.
+   */
   draw(
     ctx: CanvasRenderingContext2D,
     camera: Camera,
@@ -243,35 +264,64 @@ export class Clouds {
     banks: readonly PlacedBank[],
   ): void {
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    const top = cloudColor(light);
-    const underside = mix([0, 0, 0], top, UNDERSIDE);
-    const outlined = this.settings.cloudOutline;
-    ctx.lineJoin = "round";
-    ctx.lineWidth = (CLOUDS.line * camera.groundY) / BASE_HORIZON;
-    ctx.strokeStyle = css(
+    const scale = camera.groundY / BASE_HORIZON;
+    const color = cloudColor(light);
+    const hatch = css(
+      light.ink,
+      lerp(SHADING.hatch.night, SHADING.hatch.day, light.daylight),
+    );
+    const carve = css(
+      light.ink,
+      lerp(SHADING.carve.night, SHADING.carve.day, light.daylight),
+    );
+    const outline = css(
       light.guide,
       lerp(CLOUDS.lineAlpha.night, CLOUDS.lineAlpha.day, light.daylight),
     );
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     for (const bank of banks) {
-      const tint = FAR_TINT * (1 - bank.depth);
-      const upper = mix(top, light.sky.middle, tint);
-      const lower = mix(underside, light.sky.middle, tint);
       ctx.globalAlpha = bank.alpha;
+      const fill = css(
+        mix(color, light.sky.middle, FAR_TINT * (1 - bank.depth)),
+      );
       for (const layer of bank.layers) {
-        const lens = new Path2D();
-        addLens(lens, layer);
-        const shade = ctx.createLinearGradient(
-          0,
-          layer.y - layer.height,
-          0,
-          layer.y + layer.height / 3,
+        const shape = new Path2D();
+        addLayer(shape, layer);
+        ctx.fillStyle = fill;
+        ctx.fill(shape);
+
+        // The hatching lies in a crescent along the underside: inside the layer, and outside
+        // the same layer lifted part of the way up.
+        ctx.save();
+        ctx.clip(shape);
+        const below = new Path2D();
+        below.rect(
+          layer.x - layer.height,
+          layer.y - 2 * layer.height,
+          layer.width + 2 * layer.height,
+          4 * layer.height,
         );
-        shade.addColorStop(0, css(upper));
-        shade.addColorStop(1, css(lower));
-        ctx.fillStyle = shade;
-        ctx.fill(lens);
-        if (outlined) {
-          ctx.stroke(lens);
+        addLayer(below, {
+          ...layer,
+          y: layer.y - SHADING.reach * layer.height,
+        });
+        ctx.clip(below, "evenodd");
+        ctx.strokeStyle = hatch;
+        ctx.lineWidth = SHADING.width * scale;
+        ctx.stroke(hatching(layer, SHADING.gap * scale));
+        ctx.restore();
+
+        if (this.settings.cloudOutline) {
+          ctx.strokeStyle = outline;
+          ctx.lineWidth = CLOUDS.line * scale;
+          ctx.stroke(shape);
+        } else {
+          const top = new Path2D();
+          addTop(top, layer);
+          ctx.strokeStyle = carve;
+          ctx.lineWidth = SHADING.carveWidth * scale;
+          ctx.stroke(top);
         }
       }
     }
@@ -355,7 +405,7 @@ export class Clouds {
       let most = 0;
       for (const bank of banks) {
         for (const layer of bank.layers) {
-          if (inLens(layer, x + dx * radius, y + dy * radius)) {
+          if (inLayer(layer, x + dx * radius, y + dy * radius)) {
             most = Math.max(most, bank.alpha);
           }
         }
@@ -370,9 +420,9 @@ export class Clouds {
 }
 
 /**
- * A bank of two to four layers: a long main layer in front, and shorter ones rising behind it to
- * one side or both, sometimes crowned by a small one on top. The `index`th of the banks shows
- * once the cover reaches about its share.
+ * A bank of two to four layers with their heads together: a long main layer in front, a shorter
+ * one rising behind it, sometimes a short crown on top, and sometimes a thin wisp trailing low
+ * behind its tail. The `index`th of the banks shows once the cover reaches about its share.
  */
 function makeBank(rng: Rng, index: number): Bank {
   const thickness = lerp(
@@ -380,37 +430,33 @@ function makeBank(rng: Rng, index: number): Bank {
     CLOUDS.thickness.to,
     rng.next(),
   );
-  const side = rng.next() < 0.5 ? -1 : 1;
-  const layers: Layer[] = [];
-  // A small crown, furthest back.
-  if (rng.next() < 0.5) {
-    const crown = lerp(0.24, 0.34, rng.next());
+  const tail = rng.next() < 0.5 ? -1 : 1;
+  // Laid out with the tails to the left, then turned around if they point right.
+  const layers: Omit<Layer, "tail">[] = [];
+  if (rng.next() < 0.55) {
+    const crown = lerp(0.28, 0.38, rng.next());
     layers.push({
-      x: 0.5 + side * lerp(0.0, 0.15, rng.next()) - crown / 2,
-      y: -thickness * lerp(1.1, 1.35, rng.next()),
+      x: 1 - crown - lerp(0.12, 0.24, rng.next()),
+      y: -thickness * lerp(1.05, 1.3, rng.next()),
       width: crown,
-      height: thickness * lerp(0.8, 1, rng.next()),
+      height: thickness * lerp(0.75, 0.9, rng.next()),
     });
   }
-  // Behind, rising to one side.
-  const upper = lerp(0.45, 0.65, rng.next());
+  const upper = lerp(0.5, 0.66, rng.next());
   layers.push({
-    x: 0.5 + side * lerp(0.08, 0.22, rng.next()) - upper / 2,
-    y: -thickness * lerp(0.55, 0.8, rng.next()),
+    x: 1 - upper - lerp(0.04, 0.14, rng.next()),
+    y: -thickness * lerp(0.55, 0.75, rng.next()),
     width: upper,
-    height: thickness * lerp(0.85, 1.05, rng.next()),
+    height: thickness * lerp(0.85, 1, rng.next()),
   });
-  // Sometimes another, lower and to the other side.
-  if (rng.next() < 0.7) {
-    const lower = lerp(0.34, 0.5, rng.next());
+  if (rng.next() < 0.4) {
     layers.push({
-      x: 0.5 - side * lerp(0.16, 0.3, rng.next()) - lower / 2,
-      y: -thickness * lerp(0.2, 0.4, rng.next()),
-      width: lower,
-      height: thickness * lerp(0.7, 0.9, rng.next()),
+      x: -lerp(0.08, 0.16, rng.next()),
+      y: thickness * lerp(0.1, 0.25, rng.next()),
+      width: lerp(0.4, 0.55, rng.next()),
+      height: thickness * lerp(0.35, 0.5, rng.next()),
     });
   }
-  // The main layer, in front.
   layers.push({ x: 0, y: 0, width: 1, height: thickness });
   return {
     along: rng.next() * CLOUDS.loop,
@@ -418,49 +464,108 @@ function makeBank(rng: Rng, index: number): Bank {
     width: lerp(CLOUDS.width.from, CLOUDS.width.to, rng.next()),
     depth: rng.next(),
     shows: (index + 0.6 * rng.next()) / CLOUDS.count,
-    layers,
+    layers: layers.map((layer) => ({
+      ...layer,
+      x: tail < 0 ? layer.x : 1 - layer.x - layer.width,
+      tail,
+    })),
   };
 }
 
 /**
- * Adds a lens to `path`: from its left tip, a top arching `height` above the line through its
- * tips to its right tip, and back along an underside sagging a third as far.
+ * The points a layer is drawn through, as fractions of its length from the point of its tail and
+ * of its height below the line through that point: the top over the crest to the front of the
+ * head, then round under the head and back along the underside, each a cubic curve's two control
+ * points and its end.
  */
-function addLens(path: Path2D, { x, y, width, height }: Layer): void {
-  path.moveTo(x, y);
-  path.bezierCurveTo(
-    x + 0.25 * width,
-    y - (4 / 3) * height,
-    x + 0.75 * width,
-    y - (4 / 3) * height,
-    x + width,
-    y,
-  );
-  path.bezierCurveTo(
-    x + 0.75 * width,
-    y + (4 / 9) * height,
-    x + 0.25 * width,
-    y + (4 / 9) * height,
-    x,
-    y,
-  );
+const TOP: readonly (readonly [number, number])[] = [
+  [0.3, -0.12],
+  [0.48, -1],
+  [0.7, -1],
+  [0.86, -1],
+  [1, -0.68],
+  [1, -0.32],
+];
+const UNDER: readonly (readonly [number, number])[] = [
+  [1, 0.02],
+  [0.93, 0.27],
+  [0.8, 0.3],
+  [0.6, 0.33],
+  [0.26, 0.13],
+  [0, 0],
+];
+
+/** Where the point `u` along `layer` from its tail and `v` of its height down lies, in pixels. */
+function layerPoint(
+  layer: Layer,
+  [u, v]: readonly [number, number],
+): { x: number; y: number } {
+  return {
+    x: layer.x + (layer.tail < 0 ? u : 1 - u) * layer.width,
+    y: layer.y + v * layer.height,
+  };
+}
+
+/** Adds the curves through `points`, three to a curve, to `path`. */
+function addCurves(
+  path: Path2D,
+  layer: Layer,
+  points: readonly (readonly [number, number])[],
+): void {
+  for (let i = 0; i + 2 < points.length; i += 3) {
+    const a = layerPoint(layer, at(points, i));
+    const b = layerPoint(layer, at(points, i + 1));
+    const c = layerPoint(layer, at(points, i + 2));
+    path.bezierCurveTo(a.x, a.y, b.x, b.y, c.x, c.y);
+  }
+}
+
+/** Adds the outline of `layer` to `path`. */
+function addLayer(path: Path2D, layer: Layer): void {
+  const start = layerPoint(layer, [0, 0]);
+  path.moveTo(start.x, start.y);
+  addCurves(path, layer, TOP);
+  addCurves(path, layer, UNDER);
   path.closePath();
 }
 
-/** Whether (px, py) lies inside the lens `layer`, near enough. */
-function inLens(layer: Layer, px: number, py: number): boolean {
-  const u = (px - layer.x) / layer.width;
+/** Adds the top of `layer`, from the point of its tail over its crest to its head, to `path`. */
+function addTop(path: Path2D, layer: Layer): void {
+  const start = layerPoint(layer, [0, 0]);
+  path.moveTo(start.x, start.y);
+  addCurves(path, layer, TOP);
+}
+
+/** Hatching lines `gap` pixels apart, leaning from upright, across the whole of `layer`. */
+function hatching(layer: Layer, gap: number): Path2D {
+  const path = new Path2D();
+  const dx = Math.sin(SHADING.tilt);
+  const dy = Math.cos(SHADING.tilt);
+  const top = layer.y - layer.height * 1.1;
+  const bottom = layer.y + layer.height * 0.4;
+  const rise = (bottom - top) * (dx / dy);
+  for (let x = layer.x - rise; x <= layer.x + layer.width; x += gap) {
+    path.moveTo(x, top);
+    path.lineTo(x + rise, bottom);
+  }
+  return path;
+}
+
+/** Whether (px, py) lies inside `layer`, near enough. */
+function inLayer(layer: Layer, px: number, py: number): boolean {
+  const along = (px - layer.x) / layer.width;
+  const u = layer.tail < 0 ? along : 1 - along;
   if (u <= 0 || u >= 1) {
     return false;
   }
-  const arch = 4 * u * (1 - u);
+  const arch = Math.sin(Math.PI * Math.pow(u, 1.94));
   return (
     py >= layer.y - layer.height * arch &&
-    py <= layer.y + (layer.height / 3) * arch
+    py <= layer.y + 0.3 * layer.height * arch
   );
 }
 
-/** Color of the clouds' tops in `light`: the sky, lightened, more by day than by night. */
+/** Color of the clouds in `light`: the sky, lightened, more by day than by night. */
 function cloudColor(light: SkyLight): Rgb {
   return mix(
     light.sky.middle,

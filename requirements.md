@@ -247,10 +247,12 @@ switched on in the debug panel beside the original steer-and-grow controls:
       pile against the walls the wind drives it into. The snow on the flowers weighs their
       limbs down, so a heavy fall bends them. Lying snow melts at a rate the player sets, faster
       in rain.
-- [x] Clouds drift across the sky with the wind: banks of long layers tapering to a point at
-      either end, after the banded mist of old prints rather than puffs, filled flat and
-      darker beneath, with or without fine outlines like the mountains'. How much of the sky
-      they cover and how high they hang are set on the weather page.
+- [x] Clouds drift across the sky with the wind: banks of layers like brushstrokes, after the
+      banded clouds of old prints rather than puffs, each with a round head and a long tail
+      tapering to a point, stacked with their heads together. Each layer is filled flat, hatched
+      faintly along its underside and carved finely along its top, or outlined in ink like the
+      mountains when chosen. How much of the sky they cover and how high they hang are set on
+      the weather page.
 - [x] Clouds dim the light. Their cover greys the sky and dulls sunrise and sunset, and a bank
       passing over the sun or moon takes away the direct light, so the mountains' shading fades
       and comes back. On a broken day the banks cast soft shadows across the mountains. A thick
