@@ -161,8 +161,7 @@ export function seasonName(season: number): string {
  * `step` minutes.
  */
 export function clockTime(timeOfDay: number, step = 1): string {
-  const minutes =
-    (Math.floor((timeOfDay * 24 * 60) / step) * step) % (24 * 60);
+  const minutes = (Math.floor((timeOfDay * 24 * 60) / step) * step) % (24 * 60);
   const hours = Math.floor(minutes / 60);
   const hour = hours % 12 === 0 ? 12 : hours % 12;
   const minute = String(minutes % 60).padStart(2, "0");
