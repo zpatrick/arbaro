@@ -16,7 +16,7 @@ const SEGMENT_LENGTH = 0.08;
 
 export const LIMB = {
   /** Height of the sprout when the seed is planted. */
-  sproutLength: 0.6,
+  sproutLength: 0.25,
   /** Growth speed in world units per second while the tree is young. */
   growSpeed: 1.5,
   /**

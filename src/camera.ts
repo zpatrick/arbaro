@@ -5,8 +5,13 @@ import { approach, clamp } from "./util";
 const GROUND_LINE = 0.74;
 /** Fraction of the sky kept clear above the top of the tree. */
 const HEADROOM = 0.18;
+/**
+ * Fraction of the sky kept clear above the top of the tree however fast it grows, while the
+ * camera eases back toward `HEADROOM`.
+ */
+const LEAST_HEADROOM = 0.06;
 /** The camera never moves in closer than this much visible sky, in world units. */
-const MIN_SKY = 9;
+const MIN_SKY = 2;
 /** Widest the tree may get, as a fraction of the view width. */
 const MAX_WIDTH = 0.84;
 /** Seconds for the camera to settle after the tree changes shape. */
@@ -32,6 +37,8 @@ export class Camera {
   scale = 1;
   /** Whether the player has moved the camera, so it stays put instead of following the tree. */
   held = false;
+  /** Whether the player has dragged the view since the camera last framed the tree. */
+  panned = false;
 
   resize(width: number, height: number, dpr: number): void {
     this.width = width;
@@ -50,9 +57,13 @@ export class Camera {
       return;
     }
     const target = this.targetFor(bounds);
-    // Zoom eases in log space so pulling back feels even at every size.
-    this.scale = Math.exp(
-      approach(Math.log(this.scale), Math.log(target.scale), SETTLE, dt),
+    // Zoom eases in log space so pulling back feels even at every size, but never so slowly that
+    // a young tree shooting up runs out of the top of the view.
+    this.scale = Math.min(
+      Math.exp(
+        approach(Math.log(this.scale), Math.log(target.scale), SETTLE, dt),
+      ),
+      (this.groundY * (1 - LEAST_HEADROOM)) / Math.max(bounds.maxY, 1e-6),
     );
     this.centerX = approach(this.centerX, target.centerX, SETTLE, dt);
     this.floor = approach(this.floor, 0, SETTLE, dt);
@@ -61,6 +72,7 @@ export class Camera {
   snap(bounds: Bounds): void {
     const target = this.targetFor(bounds);
     this.held = false;
+    this.panned = false;
     this.scale = target.scale;
     this.centerX = target.centerX;
     this.floor = 0;
@@ -69,6 +81,7 @@ export class Camera {
   /** Moves the view by (dx, dy) CSS pixels, as when dragged, and stops following the tree. */
   pan(dx: number, dy: number): void {
     this.held = true;
+    this.panned = true;
     this.centerX -= dx / this.scale;
     this.floor += dy / this.scale;
   }
@@ -88,6 +101,7 @@ export class Camera {
   /** Goes back to framing the tree, easing over from wherever the player left the view. */
   release(): void {
     this.held = false;
+    this.panned = false;
   }
 
   toScreen(x: number, y: number): { x: number; y: number } {

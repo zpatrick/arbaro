@@ -38,8 +38,10 @@ art and tree-of-life drawings.
 ### Growing and steering
 
 - [x] Hold up to grow the selected limb; left and right steer it. R replants.
-- [x] Growing and steering feel the same on screen at every size: bigger trees grow faster and
-      turn more broadly while the camera pulls back.
+- [x] A tree starts as a short sprout, framed close. The camera pulls back as it grows, never
+      letting it grow out of the view.
+- [x] Once a tree is several meters tall, growing and steering feel the same on screen at every
+      size: bigger trees grow faster and turn more broadly while the camera pulls back.
 - [x] Left alone, a limb drifts back toward upright with a gentle meander.
 - [ ] Plant the seed by clicking the ground. Roots grow down while the trunk grows up.
 - [ ] Growth is blocked by the ground, rocks, solid obstacles and other limbs.
@@ -265,8 +267,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [ ] Win by reaching a level's goals; the result shows the height, flowers and day reached.
 - [ ] Lose if the tree falls, with a hint at what would have kept it standing.
 - [x] Time controls: pause, normal, double and quadruple speed. (In the debug panel for now.)
-- [x] Drag to pan and scroll to zoom around the pointer. The camera then stays where the player
-      left it until F, or planting a new tree, sends it back to following the tree.
+- [x] Drag to pan and scroll to zoom: around the foot of the tree, so zooming all the way in lands
+      on its trunk, or around the pointer once the player has dragged the view. The camera then
+      stays where the player left it until F, or planting a new tree, sends it back to following
+      the tree.
 - [ ] An in-game display of resources, goal progress, wind and time of day, plus facts about the
       selected limb: length, thickness, what it carries or anchors, its flowers, how close it is to
       snapping, and what it has stored.

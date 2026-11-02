@@ -69,9 +69,12 @@ const spoutControl = new SpoutControl(element("#app", HTMLDivElement));
 const dots = new FlowDots();
 const flowers = new Flowers();
 
+/** Where every tree is planted, along the ground. */
+const PLANTING_X = 0;
+
 let seed = 1;
 /** The standing tree. Gone once it falls, until the next one is planted. */
-let tree: Tree | undefined = new Tree(0, seed);
+let tree: Tree | undefined = new Tree(PLANTING_X, seed);
 const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
@@ -110,7 +113,7 @@ function placeHint(): void {
 
 function replant(): void {
   seed += 1;
-  tree = new Tree(0, seed);
+  tree = new Tree(PLANTING_X, seed);
   spoutControl.close();
   dots.clear();
   flowers.clear();
@@ -404,7 +407,8 @@ for (const type of ["pointerup", "pointercancel"] as const) {
     }
   });
 }
-// Scrolling zooms in and out around the pointer.
+// Scrolling zooms in and out around the foot of the tree, so zooming all the way in lands on its
+// trunk. Once the player has dragged the view elsewhere, it zooms around the pointer instead.
 canvas.addEventListener(
   "wheel",
   (event) => {
@@ -417,7 +421,10 @@ canvas.addEventListener(
           : event.deltaY;
     // A trackpad pinch arrives as a scroll with the control key held.
     const rate = event.ctrlKey ? ZOOM_PER_PX.pinch : ZOOM_PER_PX.wheel;
-    camera.zoom(Math.exp(-pixels * rate), event.clientX, event.clientY);
+    const around = camera.panned
+      ? { x: event.clientX, y: event.clientY }
+      : camera.toScreen(PLANTING_X, 0);
+    camera.zoom(Math.exp(-pixels * rate), around.x, around.y);
   },
   { passive: false },
 );
