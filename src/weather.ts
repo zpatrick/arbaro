@@ -1,7 +1,7 @@
 import { barnTopAt } from "./barn";
 import type { Camera } from "./camera";
 import type { Rgb } from "./sky";
-import { at, clamp, Rng } from "./util";
+import { at, clamp, lerp, Rng } from "./util";
 import type { Wind } from "./wind";
 
 /** Lying snow by day, before the light falls on it. */
@@ -67,11 +67,13 @@ export const SNOW = {
 } as const;
 
 /**
- * Snow falls through the air around the view, reaching this far past each edge, as a fraction of
- * the view's size, and with as many flakes in it as `count` in a blizzard. Beyond that air, snow
- * lands evenly without falling as flakes.
+ * Snow falls as flakes through the air around the view, reaching this far past each edge, as a
+ * fraction of the view's size, and up to well above any roof below. The flakes belong to the
+ * world rather than the view: a blizzard puts `density` of them in each square meter of air, so a
+ * view zoomed out shows more of them, until the air would hold more than `most` and they thin
+ * out. Beyond that air, snow lands evenly without falling as flakes.
  */
-const AIR = { count: 2500, margin: 0.1, aboveRoofs: 1 } as const;
+const AIR = { density: 3, most: 4000, margin: 0.1, aboveRoofs: 1 } as const;
 /**
  * The scene is a slice of the world this many meters deep: each flake is snow falling across all
  * of it, and lying snow is as deep as the snow landing on that much ground would lie. Something
@@ -163,6 +165,8 @@ export class Weather {
   private owedTop = 0;
   private owedSide = 0;
   private steps = 0;
+  /** The air the flakes fell through last step, to tell what has newly come into view. */
+  private zone: Zone | undefined;
 
   constructor(settings: WeatherSettings) {
     this.settings = settings;
@@ -241,12 +245,13 @@ export class Weather {
   ): void {
     const width = zone.right - zone.left;
     const height = zone.top - zone.bottom;
+    const area = width * height;
     const fall = this.snowfall;
     // Flakes per square meter of air, and the snow each carries so that together they bring the
     // snowfall down.
     const density =
-      width > 0 && height > 0
-        ? (AIR.count * this.settings.snow) / (width * height)
+      area > 0
+        ? Math.min(AIR.density * this.settings.snow, AIR.most / area)
         : 0;
     const mass = density > 0 ? fall / (density * SNOW.speed) : 0;
 
@@ -295,10 +300,15 @@ export class Weather {
           wind,
         );
       }
+      // Air newly in view is already full of snow, as if it had always been falling there.
+      for (const part of uncovered(zone, this.zone)) {
+        this.fill(part, density, mass, wind);
+      }
     } else {
       this.owedTop = 0;
       this.owedSide = 0;
     }
+    this.zone = zone;
 
     const kept: Flake[] = [];
     for (const [i, flake] of this.flakes.entries()) {
@@ -362,6 +372,25 @@ export class Weather {
     this.flakes = kept;
   }
 
+  /**
+   * Fills `part` of the air with flakes, `density` to the square meter, each carrying `mass`
+   * kilograms, wherever it is air rather than roof or lying snow.
+   */
+  private fill(part: Zone, density: number, mass: number, wind: Wind): void {
+    const expected =
+      density * (part.right - part.left) * (part.top - part.bottom);
+    const count =
+      Math.floor(expected) +
+      (this.rng.next() < expected - Math.floor(expected) ? 1 : 0);
+    for (let i = 0; i < count; i += 1) {
+      const x = lerp(part.left, part.right, this.rng.next());
+      const y = lerp(part.bottom, part.top, this.rng.next());
+      if (y > this.cover.surfaceAt(x)) {
+        this.spawn(x, y, mass, wind);
+      }
+    }
+  }
+
   /** Lets a flake carrying `mass` kilograms into the air at (x, y), already moving with it. */
   private spawn(x: number, y: number, mass: number, wind: Wind): void {
     const air = wind.at(x, Math.max(y, 0), 0);
@@ -419,6 +448,36 @@ const CATCH_CELL = 0.5;
 
 function cellKey(x: number, y: number): number {
   return (x + 32768) * 65536 + (y + 32768);
+}
+
+/** The parts of the air `now` that were not in the air `before`, if there was any. */
+function uncovered(now: Zone, before: Zone | undefined): Zone[] {
+  if (
+    before === undefined ||
+    before.bottom >= before.top ||
+    before.left >= now.right ||
+    before.right <= now.left ||
+    before.bottom >= now.top ||
+    before.top <= now.bottom
+  ) {
+    return [now];
+  }
+  const parts: Zone[] = [];
+  if (now.left < before.left) {
+    parts.push({ ...now, right: before.left });
+  }
+  if (now.right > before.right) {
+    parts.push({ ...now, left: before.right });
+  }
+  const left = Math.max(now.left, before.left);
+  const right = Math.min(now.right, before.right);
+  if (now.top > before.top) {
+    parts.push({ left, right, bottom: before.top, top: now.top });
+  }
+  if (now.bottom < before.bottom) {
+    parts.push({ left, right, bottom: now.bottom, top: before.bottom });
+  }
+  return parts;
 }
 
 function inZone(zone: Zone, x: number, y: number): boolean {

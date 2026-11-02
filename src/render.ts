@@ -101,10 +101,18 @@ const FOG = { far: 0.75, near: 0.3 } as const;
 /** How strongly raindrops show, and their width, in CSS pixels. */
 const RAIN = { alpha: 0.32, width: 0.9 } as const;
 /**
- * Radius of the smallest and largest snowflakes, and of a chunk of snow falling off a roof, in CSS
- * pixels, and how strongly the faint rim around each shows.
+ * Radius of the smallest and largest snowflakes, and of a chunk of snow falling off a roof, in
+ * meters; the fewest and most CSS pixels they are drawn at, however far the view zooms; and how
+ * strongly the faint rim around each shows.
  */
-const FLAKE = { from: 1.2, to: 2.8, chunk: 4, rim: 0.45 } as const;
+const FLAKE = {
+  from: 0.018,
+  to: 0.04,
+  chunk: 0.06,
+  least: 0.8,
+  most: 4.5,
+  rim: 0.45,
+} as const;
 /** Lying snow sinks this far into what it lies on, in meters, so no seam shows beneath it. */
 const SNOW_SINK = 0.03;
 /** Thinnest lying snow drawn, in CSS pixels. */
@@ -403,7 +411,6 @@ export class Renderer {
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, width, ground);
 
-
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
     // A sky thick with cloud hides the stars, the moon and the sun.
     const clear = 1 - light.veiled;
@@ -592,9 +599,10 @@ export class Renderer {
       const flakes = new Path2D();
       for (const flake of weather.flakes) {
         const p = camera.toScreen(flake.x, flake.y);
-        const radius = flake.chunk
+        const size = flake.chunk
           ? FLAKE.chunk
           : lerp(FLAKE.from, FLAKE.to, flake.size);
+        const radius = clamp(size * camera.scale, FLAKE.least, FLAKE.most);
         flakes.moveTo(p.x + radius, p.y);
         flakes.arc(p.x, p.y, radius, 0, Math.PI * 2);
       }

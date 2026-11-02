@@ -242,7 +242,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       by the wind, and stop at the ground.
 - [x] Every chunk of falling snow is a body of its own, carried by the wind, and settles on the
       first thing it meets: a flower, which catches its share and whitens; the barn; or the
-      ground. Wood lets it by. Lying snow slides until it stands no steeper than snow can, so it
+      ground. The snow belongs to the world rather than the view: there are as many flakes to
+      each square meter of air wherever the view pans or zooms, and air coming into view is
+      already snowing. Wood lets it by. Lying snow slides until it stands no steeper than snow can, so it
       slides off the barn's steep lower roof and drops from the eaves in chunks, and drifts
       pile against the walls the wind drives it into. The snow on the flowers weighs their
       limbs down, so a heavy fall bends them. Lying snow melts at a rate the player sets, faster
