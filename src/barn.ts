@@ -124,7 +124,12 @@ export function barnLines(): Path2D {
     path.lineTo(to, 0);
   }
 
-  path.rect(x - loft.width / 2, loft.bottom, loft.width, loft.top - loft.bottom);
+  path.rect(
+    x - loft.width / 2,
+    loft.bottom,
+    loft.width,
+    loft.top - loft.bottom,
+  );
   path.moveTo(x, loft.bottom);
   path.lineTo(x, loft.top);
   return path;
