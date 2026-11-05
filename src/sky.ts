@@ -19,12 +19,16 @@ export function skyBodyAt(
   body: SkyBody,
 ): { x: number; y: number } {
   const angle = Math.PI * (1 - body.along);
-  const rise = camera.groundY - SKY_TOP * camera.height;
+  // From the horizon to near the top of the view, however far below the ground line it lies.
+  const rise =
+    camera.groundY +
+    (camera.horizonRow - camera.groundRow) -
+    SKY_TOP * camera.height;
   return {
     x:
       camera.width *
       (0.5 + 0.5 * SKY_SPAN * Math.cos(angle) + SKY_LEAN * Math.sin(angle)),
-    y: camera.groundRow - rise * Math.sin(angle),
+    y: camera.horizonRow - rise * Math.sin(angle),
   };
 }
 

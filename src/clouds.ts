@@ -262,7 +262,7 @@ export class Clouds {
       if (x + width / 2 < 0 || x - width / 2 > view) {
         continue;
       }
-      const y = camera.groundRow - (middle + bank.rise * CLOUDS.spread) * sky;
+      const y = camera.horizonRow - (middle + bank.rise * CLOUDS.spread) * sky;
       placed.push({
         x,
         y,
@@ -372,7 +372,7 @@ export class Clouds {
       .filter((bank) => bank.depth >= 0.4)
       .map((bank) => ({
         x: bank.x + (bank.x - sun.x) * SHADOW.cast,
-        y: camera.groundRow - SHADOW.low * camera.groundY,
+        y: camera.horizonRow - SHADOW.low * camera.groundY,
         rx: 0.45 * bank.width,
         ry: SHADOW.height * camera.groundY,
         alpha: alpha * bank.alpha,
@@ -396,9 +396,9 @@ export class Clouds {
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
     const color = cloudColor(light);
     const veil = ctx.createLinearGradient(0, 0, 0, camera.height);
-    const ground = camera.groundRow / camera.height;
+    const horizon = camera.horizonRow / camera.height;
     veil.addColorStop(0, css(color, 0.7 * thickness));
-    veil.addColorStop(Math.min(1, Math.max(0, ground)), css(color, thickness));
+    veil.addColorStop(Math.min(1, Math.max(0, horizon)), css(color, thickness));
     veil.addColorStop(1, css(color, 0.85 * thickness));
     ctx.fillStyle = veil;
     ctx.fillRect(0, 0, camera.width, camera.height);

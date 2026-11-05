@@ -1,5 +1,6 @@
 import type { Camera } from "./camera";
 import type { Debris } from "./debris";
+import { type Level, slopeAt } from "./level";
 import { along, type HiveTarget, type HiveView, type Threat } from "./hives";
 import type { Limb } from "./limb";
 import { FAILURE, type Push } from "./physics";
@@ -351,10 +352,13 @@ interface Bear {
   felt: Set<Debris>;
   /** The animation it shows, while posing. */
   showing: BearPose | undefined;
+  /** Where it walks, whose ground it stands on. */
+  level: Level;
 }
 
 /** What the bears live among. */
 export interface BearWorld {
+  level: Level;
   tree: Tree | undefined;
   hives: readonly HiveTarget[];
   fallenHives: readonly Debris[];
@@ -384,12 +388,20 @@ export class Bears {
     return this.bears.length;
   }
 
-  /** Sends a bear in from the edge of the view, to go after the tree. */
-  spawn(camera: Camera): void {
+  /** Sends a bear in from the edge of the view, from a side `level` lets bears come from. */
+  spawn(camera: Camera, level: Level): void {
     const view = viewOf(camera);
-    const facing = this.rng.next() < 0.5 ? 1 : -1;
+    const from = at(
+      level.bearsFrom,
+      Math.floor(this.rng.next() * level.bearsFrom.length),
+    );
     this.bears.push(
-      makeBear(facing > 0 ? view.left - 2 : view.right + 2, facing, "arriving"),
+      makeBear(
+        from < 0 ? view.left - 2 : view.right + 2,
+        from < 0 ? 1 : -1,
+        "arriving",
+        level,
+      ),
     );
   }
 
@@ -397,7 +409,12 @@ export class Bears {
    * Shows a bear playing `showing` in place, a little to one side of the middle of the view, or
    * at the trunk to shove it. It replaces any other bear shown so.
    */
-  show(showing: BearPose, camera: Camera, tree: Tree | undefined): void {
+  show(
+    showing: BearPose,
+    camera: Camera,
+    level: Level,
+    tree: Tree | undefined,
+  ): void {
     this.bears = this.bears.filter((bear) => bear.doing !== "posing");
     const view = viewOf(camera);
     const trunk = tree === undefined ? undefined : trunkAt(tree);
@@ -405,7 +422,7 @@ export class Bears {
       showing === "shove" && trunk !== undefined
         ? trunk.x - (trunk.radius + SHOVE.stand)
         : lerp(view.left, view.right, 0.3);
-    const bear = makeBear(x, 1, "posing");
+    const bear = makeBear(x, 1, "posing", level);
     bear.showing = showing;
     this.bears.push(bear);
   }
@@ -472,7 +489,7 @@ export class Bears {
     this.drawIn -= dt;
     if (this.drawIn <= 0) {
       this.drawIn = undefined;
-      this.spawn(world.camera);
+      this.spawn(world.camera, world.level);
     }
   }
 
@@ -842,7 +859,7 @@ export class Bears {
         bear.aim = {
           x: pose.shoulder.x + bear.facing * (reared ? 0.45 : 0.55),
           y:
-            groundAt(bear.x) +
+            bear.level.groundAt(bear.x) +
             (reared ? REACH.reared - 0.15 : REACH.fours - 0.2),
         };
         if ((reared ? bear.rear : bear.lift) >= 1) {
@@ -955,8 +972,13 @@ const AIM_DOWN = 0.75;
 const COMFORT = 0.82;
 /** A hive this close to the trunk, in meters, is swiped at from the side away from the trunk. */
 const CROWDED = 2;
+/**
+ * Where a bear can stand: ground no steeper than `steepest`, as its rise over its run, and no
+ * further than `drop` meters above or below the ground at the trunk.
+ */
+const STANDING = { steepest: 0.6, drop: 1.5 } as const;
 
-function makeBear(x: number, facing: 1 | -1, doing: Doing): Bear {
+function makeBear(x: number, facing: 1 | -1, doing: Doing, level: Level): Bear {
   return {
     x,
     facing,
@@ -986,6 +1008,7 @@ function makeBear(x: number, facing: 1 | -1, doing: Doing): Bear {
     alpha: 1,
     felt: new Set(),
     showing: undefined,
+    level,
   };
 }
 
@@ -1002,18 +1025,22 @@ function viewOf(camera: Camera): { left: number; right: number } {
   };
 }
 
-/** The way away from the tree for `bear`: 1 right, -1 left. */
+/**
+ * The way away from the tree for `bear`, 1 right or -1 left: the side it is on, unless the land
+ * ends that way, as it does past a cliff.
+ */
 function awayFrom(bear: Bear, world: BearWorld): 1 | -1 {
   const trunk = world.tree === undefined ? undefined : trunkAt(world.tree);
-  if (trunk === undefined) {
-    return bear.facing;
-  }
-  return bear.x >= trunk.x ? 1 : -1;
+  const away = trunk === undefined ? bear.facing : bear.x >= trunk.x ? 1 : -1;
+  return world.level.bearsFrom.includes(away) ? away : away > 0 ? -1 : 1;
 }
 
-/** Height of the ground at `x`, in meters. The world is level ground for now. */
-function groundAt(_x: number): number {
-  return 0;
+/** Whether a bear can stand at `x` on `level`'s ground: not too steep, nor down off the land. */
+function footing(level: Level, x: number, near: number): boolean {
+  return (
+    Math.abs(slopeAt(level, x)) <= STANDING.steepest &&
+    Math.abs(level.groundAt(x) - level.groundAt(near)) <= STANDING.drop
+  );
 }
 
 /** Where the trunk of `tree` stands at the height a bear shoves it, and how thick it is there. */
@@ -1070,24 +1097,35 @@ function planFor(bear: Bear, world: BearWorld): Plan | undefined {
     return shove;
   }
   const aim = aimAt(hive.view);
-  const height = aim.y - groundAt(aim.x);
-  const kind =
-    height <= REACH.fours
-      ? "paw"
-      : height <= REACH.reared
-        ? "swipe"
-        : undefined;
-  if (kind === undefined) {
-    return shove;
-  }
-  const facing: 1 | -1 =
+  const facings: (1 | -1)[] =
     Math.abs(aim.x - trunk.x) < CROWDED
-      ? aim.x <= trunk.x
-        ? 1
-        : -1
+      ? [aim.x <= trunk.x ? 1 : -1]
       : aim.x >= bear.x
-        ? 1
-        : -1;
+        ? [1, -1]
+        : [-1, 1];
+  // It swipes on all fours if it can, else reared up, from whichever side it can stand on.
+  for (const kind of ["paw", "swipe"] as const) {
+    for (const facing of facings) {
+      const standAt = standFor(kind, aim, facing, world.level);
+      if (standAt !== undefined && footing(world.level, standAt, trunk.x)) {
+        return { kind, standAt, facing, hive: { limb: hive.limb, s: hive.s } };
+      }
+    }
+  }
+  return shove;
+}
+
+/**
+ * Where a bear facing `facing` stands, its hips over that spot, to swipe at `aim` in comfortable
+ * reach of its shoulder, on all fours or reared up, on `level`'s ground; undefined if it hangs
+ * too high to reach so from there.
+ */
+function standFor(
+  kind: "paw" | "swipe",
+  aim: Point,
+  facing: 1 | -1,
+  level: Level,
+): number | undefined {
   // Its shoulder, standing as it swipes, ahead of and above its hips.
   const pitch = kind === "paw" ? PAWING.pitch : 1.3;
   const hip = kind === "paw" ? BODY.hip : BODY.rearedHip;
@@ -1096,14 +1134,19 @@ function planFor(bear: Bear, world: BearWorld): Plan | undefined {
     up: hip + BODY.spine * Math.sin(pitch) - ARM_DROP,
   };
   const reach = COMFORT * (BODY.arm + BODY.forearm + LEGS.front.foot.length);
-  const rise = height - shoulder.up;
-  const ahead = Math.sqrt(Math.max(0.01, reach * reach - rise * rise));
-  return {
-    kind,
-    standAt: aim.x - facing * (shoulder.ahead + ahead),
-    facing,
-    hive: { limb: hive.limb, s: hive.s },
-  };
+  const most = kind === "paw" ? REACH.fours : REACH.reared;
+  // Where it stands depends on how high it reaches, which depends on the ground where it stands.
+  let standAt = aim.x - facing * shoulder.ahead;
+  for (let i = 0; i < 3; i += 1) {
+    const height = aim.y - level.groundAt(standAt);
+    if (height > most) {
+      return undefined;
+    }
+    const rise = height - shoulder.up;
+    const ahead = Math.sqrt(Math.max(0.01, reach * reach - rise * rise));
+    standAt = aim.x - facing * (shoulder.ahead + ahead);
+  }
+  return aim.y - level.groundAt(standAt) <= most ? standAt : undefined;
 }
 
 /**
@@ -1269,6 +1312,7 @@ function swipePath(
   aim: Point,
   f: 1 | -1,
   reared: boolean,
+  ground: number,
 ): { wrist: Point; swinging: number } {
   const angleOf = (p: Point): number =>
     Math.atan2(p.y - root.y, f * (p.x - root.x));
@@ -1302,10 +1346,7 @@ function swipePath(
   }
   const wrist = {
     x: root.x + f * r * Math.cos(angle),
-    y: Math.max(
-      groundAt(root.x) + LEGS.front.foot.length,
-      root.y + r * Math.sin(angle),
-    ),
+    y: Math.max(ground + LEGS.front.foot.length, root.y + r * Math.sin(angle)),
   };
   return {
     wrist,
@@ -1368,6 +1409,7 @@ function forepaw(
       bear.aim,
       f,
       reared > 0.5,
+      bear.level.groundAt(root.x),
     );
     return {
       place: {
@@ -1415,10 +1457,19 @@ function poseOf(bear: Bear): Pose {
     ? shoveAt(bear.shove / HUNT.shove)
     : { pitch: 1.3, sink: 0, thrust: 0, cocked: 0 };
   const hipX = bear.x + f * shove.thrust * reared;
-  const ground = groundAt(hipX);
+  const ground = bear.level.groundAt(hipX);
+  // On all fours or lying down, its body follows the slope of the ground under it.
+  const slope = Math.atan2(
+    bear.level.groundAt(hipX + f * BODY.spine) - ground,
+    BODY.spine,
+  );
   const pitch = lerp(
-    lerp(REST.pitch + (PAWING.pitch - REST.pitch) * lift, shove.pitch, reared),
-    -0.04,
+    lerp(
+      REST.pitch + (PAWING.pitch - REST.pitch) * lift + slope,
+      shove.pitch,
+      reared,
+    ),
+    -0.04 + slope,
     down,
   );
   const hipHeight =
@@ -1500,7 +1551,7 @@ function poseOf(bear: Bear): Pose {
           ankle: ankleOver(
             {
               x: standX + f * (shape.foot.length - shape.foot.forward),
-              y: groundAt(standX),
+              y: bear.level.groundAt(standX),
             },
             roll,
             shape.foot,
@@ -1511,7 +1562,10 @@ function poseOf(bear: Bear): Pose {
       : {
           ankle: {
             x: standX,
-            y: groundAt(standX) + shape.foot.height + stepping.lift * moving,
+            y:
+              bear.level.groundAt(standX) +
+              shape.foot.height +
+              stepping.lift * moving,
           },
           angle: roll,
         };
@@ -1526,7 +1580,10 @@ function poseOf(bear: Bear): Pose {
       place = mixPlacing(
         place,
         {
-          ankle: { x: plantedX, y: groundAt(plantedX) + shape.foot.height },
+          ankle: {
+            x: plantedX,
+            y: bear.level.groundAt(plantedX) + shape.foot.height,
+          },
           angle: 0,
         },
         reared,
@@ -1544,7 +1601,7 @@ function poseOf(bear: Bear): Pose {
       {
         ankle: {
           x: root.x + f * (hind ? -0.55 : 0.5) + (near ? 0 : f * 0.12),
-          y: groundAt(root.x) + 0.09,
+          y: bear.level.groundAt(root.x) + 0.09,
         },
         angle: hind ? -0.25 : 0.15,
       },

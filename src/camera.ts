@@ -16,6 +16,8 @@ const MIN_SKY = 2;
 const MAX_WIDTH = 0.84;
 /** Seconds for the camera to settle after the tree changes shape. */
 const SETTLE = 0.7;
+/** Where the lowest height kept in view sits, as a fraction of the view height from the top. */
+const FOOT = 0.93;
 /** Furthest out and closest in the player can zoom, in CSS pixels per world unit. */
 const ZOOM = { min: 1.5, max: 800 } as const;
 
@@ -31,10 +33,21 @@ export class Camera {
   groundY = 0;
   /** World x at the horizontal center of the view. */
   centerX = 0;
-  /** World height shown on the ground line's row. Zero while the camera frames the tree. */
+  /**
+   * World height shown on the ground line's row. Zero while the camera frames the tree on level
+   * ground; lower where it keeps ground below the tree in view.
+   */
   floor = 0;
   /** CSS pixels per world unit. */
   scale = 1;
+  /** World height of the horizon, where the land or the sea far off meets the sky. */
+  horizon = 0;
+  /**
+   * While framing the tree, the lowest world height kept in view, if below the ground the tree
+   * stands on, and how far right of the tree's roots the view reaches at least.
+   */
+  depth = 0;
+  reach = 0;
   /** Whether the player has moved the camera, so it stays put instead of following the tree. */
   held = false;
   /** Whether the player has dragged the view since the camera last framed the tree. */
@@ -47,9 +60,17 @@ export class Camera {
     this.groundY = Math.round(height * GROUND_LINE * dpr) / dpr;
   }
 
-  /** CSS pixel row where the ground begins, which moves off the ground line as the view pans. */
+  /**
+   * CSS pixel row of the ground the tree is planted on, at height zero, which moves off the
+   * ground line as the view pans.
+   */
   get groundRow(): number {
     return this.groundY + this.floor * this.scale;
+  }
+
+  /** CSS pixel row of the horizon. */
+  get horizonRow(): number {
+    return this.groundY - (this.horizon - this.floor) * this.scale;
   }
 
   follow(bounds: Bounds, dt: number): void {
@@ -63,10 +84,11 @@ export class Camera {
       Math.exp(
         approach(Math.log(this.scale), Math.log(target.scale), SETTLE, dt),
       ),
-      (this.groundY * (1 - LEAST_HEADROOM)) / Math.max(bounds.maxY, 1e-6),
+      (this.groundY * (1 - LEAST_HEADROOM)) /
+        Math.max(bounds.maxY - this.floor, 1e-6),
     );
     this.centerX = approach(this.centerX, target.centerX, SETTLE, dt);
-    this.floor = approach(this.floor, 0, SETTLE, dt);
+    this.floor = approach(this.floor, target.floor, SETTLE, dt);
   }
 
   snap(bounds: Bounds): void {
@@ -75,7 +97,7 @@ export class Camera {
     this.panned = false;
     this.scale = target.scale;
     this.centerX = target.centerX;
-    this.floor = 0;
+    this.floor = target.floor;
   }
 
   /** Moves the view by (dx, dy) CSS pixels, as when dragged, and stops following the tree. */
@@ -131,14 +153,32 @@ export class Camera {
     ]);
   }
 
-  private targetFor(bounds: Bounds): { scale: number; centerX: number } {
-    const sky = this.groundY * (1 - HEADROOM);
-    const byHeight = sky / Math.max(MIN_SKY, bounds.maxY);
+  /**
+   * How to frame `bounds`: on level ground, with the ground on the ground line and the tree in the
+   * sky above it; with ground falling away below the tree, the lowest of it near the foot of the
+   * view and the tree above, reaching right as far as asked.
+   */
+  private targetFor(bounds: Bounds): {
+    scale: number;
+    centerX: number;
+    floor: number;
+  } {
+    const maxX = Math.max(bounds.maxX, this.reach);
     const byWidth =
-      (this.width * MAX_WIDTH) / Math.max(bounds.maxX - bounds.minX, 1e-6);
+      (this.width * MAX_WIDTH) / Math.max(maxX - bounds.minX, 1e-6);
+    const centerX = (bounds.minX + maxX) / 2;
+    if (this.depth >= 0) {
+      const sky = this.groundY * (1 - HEADROOM);
+      const byHeight = sky / Math.max(MIN_SKY, bounds.maxY);
+      return { scale: Math.min(byHeight, byWidth), centerX, floor: 0 };
+    }
+    const rows = this.height * FOOT - this.groundY * HEADROOM;
+    const byHeight = rows / (Math.max(MIN_SKY, bounds.maxY) - this.depth);
+    const scale = Math.min(byHeight, byWidth);
     return {
-      scale: Math.min(byHeight, byWidth),
-      centerX: (bounds.minX + bounds.maxX) / 2,
+      scale,
+      centerX,
+      floor: this.depth + (this.height * FOOT - this.groundY) / scale,
     };
   }
 }

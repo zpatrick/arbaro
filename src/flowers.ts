@@ -1,3 +1,4 @@
+import { type Level, slopeAt } from "./level";
 import { type Limb, UPRIGHT } from "./limb";
 import { type Load, PHYSICS } from "./physics";
 import type { Pick, Tree } from "./tree";
@@ -35,6 +36,8 @@ export interface Conditions {
   hold: number;
   /** Whether the tree grows in flow mode, where better-fed limbs grow stronger stems. */
   flowing: boolean;
+  /** Where the tree grows, whose ground fallen flowers land on. */
+  level: Level;
 }
 
 /**
@@ -192,7 +195,12 @@ const FALLING = {
   linger: 6,
   /** Seconds it takes to fade away. */
   fade: 3,
+  /** How fast it tumbles off ground too steep to rest on, in meters per second. */
+  tumble: 0.8,
 } as const;
+
+/** Ground steeper than this, as its rise over its run, is too steep for a fallen flower to rest on. */
+const STEEP = 1;
 
 /** What makes each flower a little different from the next. */
 interface Traits {
@@ -444,7 +452,7 @@ export class Flowers {
       this.expose(dt, settings);
     }
     for (const flower of this.falling) {
-      fall(flower, dt, conditions.wind);
+      fall(flower, dt, conditions.wind, conditions.level);
     }
     this.falling = this.falling.filter((flower) => flower.alpha > 0);
   }
@@ -1235,10 +1243,18 @@ function thinFrom(limb: Limb, girth: number): number | undefined {
   return hi;
 }
 
-/** Moves a flower that came off the tree through the air, and lets it settle and fade. */
-function fall(flower: Falling, dt: number, wind: Wind): void {
-  const ground = 0.22 * flower.size;
-  if (flower.resting > 0 || flower.y <= ground) {
+/**
+ * Moves a flower that came off the tree through the air, and lets it settle on `level`'s ground
+ * and fade. Ground too steep to rest on it tumbles down instead.
+ */
+function fall(flower: Falling, dt: number, wind: Wind, level: Level): void {
+  const ground = level.groundAt(flower.x) + 0.22 * flower.size;
+  const slope = slopeAt(level, flower.x);
+  if (flower.resting === 0 && flower.y <= ground && Math.abs(slope) > STEEP) {
+    flower.y = ground;
+    flower.vx = -Math.sign(slope) * FALLING.tumble;
+    flower.vy = Math.max(0, flower.vy);
+  } else if (flower.resting > 0 || flower.y <= ground) {
     flower.resting += dt;
     flower.y = ground;
     // It settles on its side.

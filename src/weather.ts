@@ -1,5 +1,6 @@
 import { barnTopAt, barnWalls } from "./barn";
 import type { Camera } from "./camera";
+import { type Level, lowestBetween } from "./level";
 import type { Rgb } from "./sky";
 import { at, clamp, lerp, Rng } from "./util";
 import type { Wind } from "./wind";
@@ -156,7 +157,9 @@ interface Zone {
 export class Weather {
   readonly settings: WeatherSettings;
   /** Snow lying on the ground and on the barn. */
-  readonly cover = new SnowCover();
+  cover: SnowCover;
+  /** Where the weather falls, whose ground it lands on. */
+  private level: Level;
   /** Snow falling through the air around the view. */
   flakes: Flake[] = [];
   /** Rain falling across the view. */
@@ -171,8 +174,18 @@ export class Weather {
   /** The air the flakes fell through last step, to tell what has newly come into view. */
   private zone: Zone | undefined;
 
-  constructor(settings: WeatherSettings) {
+  constructor(settings: WeatherSettings, level: Level) {
     this.settings = settings;
+    this.level = level;
+    this.cover = new SnowCover(level);
+  }
+
+  /** Moves the weather to `level`, clearing the snow lying and falling in the last one. */
+  setLevel(level: Level): void {
+    this.level = level;
+    this.cover = new SnowCover(level);
+    this.flakes = [];
+    this.zone = undefined;
   }
 
   /** Snow falling on level ground, in kilograms per square meter each second. */
@@ -215,8 +228,8 @@ export class Weather {
   }
 
   /**
-   * The air snow falls through as flakes: the view and a little around it, down to the ground
-   * and up to well above any roof below.
+   * The air snow falls through as flakes: the view and a little around it, down to the lowest
+   * ground below it and up to well above any roof below.
    */
   private zoneFor(camera: Camera): Zone {
     const corner = camera.toWorld(0, camera.height);
@@ -228,7 +241,10 @@ export class Weather {
     return {
       left,
       right,
-      bottom: Math.max(0, corner.y - marginY),
+      bottom: Math.max(
+        lowestBetween(this.level, left, right, (right - left) / 200),
+        corner.y - marginY,
+      ),
       top: Math.max(
         opposite.y + marginY,
         this.cover.highest(left, right) + AIR.aboveRoofs,
@@ -444,26 +460,37 @@ export class Weather {
   private rain(dt: number, wind: Wind, camera: Camera): void {
     this.drift = wind.at(0, 10, 0).x * RAIN.drift;
     const width = camera.width;
-    const ground = clamp(camera.groundRow, 0, camera.height);
+    // The row of the ground under a drop `x` CSS pixels across the view.
+    const groundAt = (x: number): number => {
+      const world = camera.toWorld(x, 0).x;
+      return clamp(
+        camera.toScreen(world, this.level.groundAt(world)).y,
+        0,
+        camera.height,
+      );
+    };
+    const sky = (groundAt(0) + groundAt(width / 2) + groundAt(width)) / 3;
     const count = Math.round(
-      ((RAIN.drops * width * ground) / 1e6) * this.settings.rain,
+      ((RAIN.drops * width * sky) / 1e6) * this.settings.rain,
     );
     this.drops = this.drops.slice(0, count);
     while (this.drops.length < count) {
+      const x = this.rng.next() * width;
       this.drops.push({
-        x: this.rng.next() * width,
-        y: this.rng.next() * ground,
+        x,
+        y: this.rng.next() * groundAt(x),
         speed: 0.7 + 0.6 * this.rng.next(),
       });
     }
     for (const drop of this.drops) {
       drop.y += dt * RAIN.speed * drop.speed;
       drop.x += dt * this.drift * drop.speed;
+      drop.x = ((drop.x % width) + width) % width;
+      const ground = groundAt(drop.x);
       if (drop.y + this.streak(drop).y > ground) {
         drop.y -= ground + 20;
         drop.x = this.rng.next() * width;
       }
-      drop.x = ((drop.x % width) + width) % width;
     }
   }
 }
@@ -526,7 +553,8 @@ function inZone(zone: Zone, x: number, y: number): boolean {
 
 /**
  * Snow lying on the ground and on the barn, as its depth over each narrow strip. It settles no
- * steeper than it can stand, sliding down roofs and falling off their edges in chunks.
+ * steeper than it can stand, sliding down roofs and hillsides and falling off their edges in
+ * chunks.
  */
 export class SnowCover {
   readonly from = COVER.from;
@@ -538,14 +566,18 @@ export class SnowCover {
   readonly depth: number[];
   /** Snow gathering at the edge of each ledge before it drops off in a chunk, in meters deep. */
   private readonly overhang: number[];
+  private readonly level: Level;
 
-  constructor() {
+  constructor(level: Level) {
+    this.level = level;
     // Snow lies on the roof between the barn's walls. Beyond them it lies on the ground, under
     // the eaves too, since none would stay on their steep pitch.
     const walls = barnWalls();
     this.base = Array.from({ length: this.count }, (_, i) => {
       const x = this.middle(i);
-      return x > walls.left && x < walls.right ? barnTopAt(x) : 0;
+      return level.barn && x > walls.left && x < walls.right
+        ? barnTopAt(x)
+        : level.groundAt(x);
     });
     this.depth = new Array<number>(this.count).fill(0);
     this.overhang = new Array<number>(this.count).fill(0);
@@ -565,13 +597,15 @@ export class SnowCover {
   /** Height of what the snow lies on at `x`, in meters. */
   baseAt(x: number): number {
     const i = this.index(x);
-    return i < 0 ? 0 : at(this.base, i);
+    return i < 0 ? this.level.groundAt(x) : at(this.base, i);
   }
 
   /** Height of the top of the lying snow at `x`, or of the ground or roof under none. */
   surfaceAt(x: number): number {
     const i = this.index(x);
-    return i < 0 ? 0 : at(this.base, i) + at(this.depth, i);
+    return i < 0
+      ? this.level.groundAt(x)
+      : at(this.base, i) + at(this.depth, i);
   }
 
   /**
@@ -596,11 +630,11 @@ export class SnowCover {
     return 0;
   }
 
-  /** Height of the highest roof or snow between `left` and `right`. */
+  /** Height of the highest ground, roof or snow between `left` and `right`. */
   highest(left: number, right: number): number {
     const from = Math.max(0, this.index(left));
     const to = this.index(right) < 0 ? this.count - 1 : this.index(right);
-    let highest = 0;
+    let highest = -Infinity;
     for (let i = from; i <= to; i += 1) {
       highest = Math.max(highest, at(this.base, i) + at(this.depth, i));
     }

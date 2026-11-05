@@ -1,3 +1,4 @@
+import { type Level, slopeAt } from "./level";
 import { PHYSICS } from "./physics";
 import { clamp } from "./util";
 import type { Wind } from "./wind";
@@ -188,15 +189,15 @@ export class Debris {
   }
 
   /**
-   * Moves the piece, and fades it once it has lain on the ground long enough, however much the
-   * wind still rocks it, or once it has been off the tree too long without landing.
+   * Moves the piece over `level`'s ground, and fades it once it has lain there long enough, however
+   * much the wind still rocks it, or once it has been off the tree too long without landing.
    */
-  update(dt: number, wind: Wind): void {
+  update(dt: number, wind: Wind, level: Level): void {
     this.age += dt;
     const steps = Math.max(1, Math.ceil(dt * STEPS_PER_SECOND));
     let touched = false;
     for (let i = 0; i < steps; i += 1) {
-      touched = this.advance(dt / steps, wind) || touched;
+      touched = this.advance(dt / steps, wind, level) || touched;
     }
     if (this.landed !== undefined) {
       this.landed += dt;
@@ -212,8 +213,8 @@ export class Debris {
     }
   }
 
-  /** Moves the piece by `h` seconds. Returns whether it is touching the ground. */
-  private advance(h: number, wind: Wind): boolean {
+  /** Moves the piece by `h` seconds. Returns whether it is touching `level`'s ground. */
+  private advance(h: number, wind: Wind, level: Level): boolean {
     const { mass, inertia, area, hinge } = this.piece;
     const air = wind.at(this.x, this.y, 0);
     const rx = air.x - this.vx;
@@ -244,12 +245,16 @@ export class Debris {
     this.vy += h * ((drag * ry) / mass - PHYSICS.gravity);
     this.spin *= Math.exp(-SPIN_DRAG * h);
 
-    // Every contact point below the ground, with the impulse it has pushed with so far this step.
+    // Every contact point below the ground, pushed out along the ground's normal there, with the
+    // impulse it has pushed with so far this step.
     const cos = Math.cos(this.angle);
     const sin = Math.sin(this.angle);
     const touching: {
       rx: number;
       ry: number;
+      /** The ground's normal there, pointing out of it. */
+      nx: number;
+      ny: number;
       target: number;
       normal: number;
       friction: number;
@@ -259,33 +264,56 @@ export class Debris {
       const oy = contact.y - this.piece.center.y;
       const armX = cos * ox - sin * oy;
       const armY = sin * ox + cos * oy;
-      const depth = contact.r - (this.y + armY);
+      const x = this.x + armX;
+      const slope = slopeAt(level, x);
+      const rise = Math.hypot(1, slope);
+      const nx = -slope / rise;
+      const ny = 1 / rise;
+      const depth = contact.r - (this.y + armY - level.groundAt(x)) / rise;
       if (depth <= 0) {
         continue;
       }
-      const approach = this.vy + this.spin * armX;
+      const approach =
+        (this.vx - this.spin * armY) * nx + (this.vy + this.spin * armX) * ny;
       // Bounce off hard landings; otherwise ease out of the ground.
       const target = Math.max(
         -BOUNCE * approach,
         (SETTLE.rate * Math.max(0, depth - SETTLE.slop)) / h,
       );
-      touching.push({ rx: armX, ry: armY, target, normal: 0, friction: 0 });
+      touching.push({
+        rx: armX,
+        ry: armY,
+        nx,
+        ny,
+        target,
+        normal: 0,
+        friction: 0,
+      });
     }
     for (let pass = 0; pass < CONTACT_PASSES; pass += 1) {
       for (const c of touching) {
-        const normalSpeed = this.vy + this.spin * c.rx;
-        const normalMass = 1 / (1 / mass + (c.rx * c.rx) / inertia);
+        // The tangent runs along the ground, to the right on level ground.
+        const tx = c.ny;
+        const ty = -c.nx;
+        const turnN = c.rx * c.ny - c.ry * c.nx;
+        const normalSpeed =
+          (this.vx - this.spin * c.ry) * c.nx +
+          (this.vy + this.spin * c.rx) * c.ny;
+        const normalMass = 1 / (1 / mass + (turnN * turnN) / inertia);
         const total = Math.max(
           0,
           c.normal + normalMass * (c.target - normalSpeed),
         );
         const push = total - c.normal;
         c.normal = total;
-        this.vy += push / mass;
-        this.spin += (push * c.rx) / inertia;
+        this.vx += (push * c.nx) / mass;
+        this.vy += (push * c.ny) / mass;
+        this.spin += (push * turnN) / inertia;
 
-        const slide = this.vx - this.spin * c.ry;
-        const slideMass = 1 / (1 / mass + (c.ry * c.ry) / inertia);
+        const turnT = c.rx * ty - c.ry * tx;
+        const slide =
+          (this.vx - this.spin * c.ry) * tx + (this.vy + this.spin * c.rx) * ty;
+        const slideMass = 1 / (1 / mass + (turnT * turnT) / inertia);
         const grip = clamp(
           c.friction - slideMass * slide,
           -FRICTION * c.normal,
@@ -293,8 +321,9 @@ export class Debris {
         );
         const drag = grip - c.friction;
         c.friction = grip;
-        this.vx += drag / mass;
-        this.spin -= (drag * c.ry) / inertia;
+        this.vx += (drag * tx) / mass;
+        this.vy += (drag * ty) / mass;
+        this.spin += (drag * turnT) / inertia;
       }
     }
     this.x += h * this.vx;

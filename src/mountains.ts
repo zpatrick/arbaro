@@ -212,7 +212,7 @@ export class Mountains {
       0,
       camera.dpr,
       (camera.width / 2) * camera.dpr,
-      camera.groundRow * camera.dpr,
+      camera.horizonRow * camera.dpr,
     ]);
     const silhouette =
       SILHOUETTE.twilight * light.twilight +
@@ -262,7 +262,7 @@ export class Mountains {
     ctx.drawImage(
       this.carving,
       0,
-      Math.round(camera.groundRow * camera.dpr) - above,
+      Math.round(camera.horizonRow * camera.dpr) - above,
     );
   }
 
@@ -285,7 +285,7 @@ export class Mountains {
       0,
       1,
       camera.width / 2,
-      camera.groundRow,
+      camera.horizonRow,
     ]);
     const bodies = new Path2D();
     for (const mountain of this.built) {

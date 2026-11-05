@@ -541,9 +541,10 @@ export class Hives {
         s += SITE_STEP
       ) {
         const p = limb.pointAt(s);
+        const above = p.y - tree.level.groundAt(p.x);
         const sturdy = limb.radiusAt(s) >= HIVE.minRadius;
         const level = Math.abs(Math.cos(p.heading)) >= Math.cos(HIVE.steepest);
-        const clear = p.y - limb.radiusAt(s) - tallest >= HIVE.clearance;
+        const clear = above - limb.radiusAt(s) - tallest >= HIVE.clearance;
         const apart = anchors.every(
           (a) => Math.hypot(a.x - p.x, a.y - p.y) >= HIVE.spacing,
         );
@@ -560,8 +561,8 @@ export class Hives {
         ) {
           continue;
         }
-        // Bees take to low wood, so a bear can reach their hive.
-        const score = -p.y + 0.3 * this.rng.next();
+        // Bees take to wood low over the ground, so a bear can reach their hive.
+        const score = -above + 0.3 * this.rng.next();
         if (best === undefined || score > best.score) {
           best = { limb, s, score };
         }
@@ -572,7 +573,7 @@ export class Hives {
 
   /**
    * Whether a hive grown to full size, hanging `s` along `limb`, would hang in open air: clear of
-   * any other wood and of the barn.
+   * any other wood, the ground, and the barn if there is one.
    */
   private open(
     tree: Tree,
@@ -598,7 +599,10 @@ export class Hives {
         if (wood !== undefined && (wood.limb !== limb || t > 0.25)) {
           return false;
         }
-        if (p.y < barnTopAt(p.x)) {
+        if (
+          p.y < tree.level.groundAt(p.x) ||
+          (tree.level.barn && p.y < barnTopAt(p.x))
+        ) {
           return false;
         }
       }

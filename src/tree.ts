@@ -1,5 +1,6 @@
 import { barnAhead } from "./barn";
 import type { Contact, Piece } from "./debris";
+import type { Level } from "./level";
 import { type Controls, LIMB, Limb, UPRIGHT } from "./limb";
 import {
   type Failure,
@@ -92,18 +93,61 @@ export interface Bounds {
 }
 
 /**
- * How far the tip of `limb` may grow on the way it heads before it comes within `CLEARANCE` of the
- * ground or the barn, and which of them it would meet first.
+ * How far the tip of `limb` may grow on the way it heads before it comes within `CLEARANCE` of
+ * `level`'s ground or its barn, and which of them it would meet first.
  */
-function roomAhead(limb: Limb): { room: number; obstacle: Obstacle } {
+function roomAhead(
+  limb: Limb,
+  level: Level,
+): { room: number; obstacle: Obstacle } {
   const tip = limb.restTip;
-  const down = -Math.sin(tip.heading);
-  const ground = down > 0 ? tip.y / down : Infinity;
-  const barn = barnAhead(tip.x, tip.y, tip.heading);
+  const ground = groundAhead(level, tip.x, tip.y, tip.heading);
+  const barn = level.barn ? barnAhead(tip.x, tip.y, tip.heading) : Infinity;
   return {
     room: Math.max(0, Math.min(ground, barn) - CLEARANCE),
     obstacle: ground <= barn ? "ground" : "barn",
   };
+}
+
+/** How far ahead a growing tip looks for the ground, and in what steps, in meters. */
+const LOOK_AHEAD = { most: 2, step: 0.05 } as const;
+
+/**
+ * How far a line from (x, y), heading `heading` radians counterclockwise from +x, runs before it
+ * meets `level`'s ground: 0 from under it, and Infinity if it meets none within `LOOK_AHEAD`.
+ */
+function groundAhead(
+  level: Level,
+  x: number,
+  y: number,
+  heading: number,
+): number {
+  const dx = Math.cos(heading);
+  const dy = Math.sin(heading);
+  const above = (t: number): number => y + dy * t - level.groundAt(x + dx * t);
+  if (above(0) <= 0) {
+    return 0;
+  }
+  for (
+    let t: number = LOOK_AHEAD.step;
+    t <= LOOK_AHEAD.most;
+    t += LOOK_AHEAD.step
+  ) {
+    if (above(t) <= 0) {
+      let clear = t - LOOK_AHEAD.step;
+      let under = t;
+      for (let i = 0; i < 12; i += 1) {
+        const mid = (clear + under) / 2;
+        if (above(mid) > 0) {
+          clear = mid;
+        } else {
+          under = mid;
+        }
+      }
+      return clear;
+    }
+  }
+  return Infinity;
 }
 
 /** Distance along its parent where an offshoot forks off. */
@@ -127,6 +171,8 @@ export interface Pick {
 /** Every limb grown from one seed, and which of them is currently being grown and steered. */
 export class Tree {
   readonly baseX: number;
+  /** Where the tree grows, whose ground and barn its tips stop short of. */
+  readonly level: Level;
   /** Per-side scale on the root flare, so no two trees meet the ground identically. */
   private readonly flareScale: { left: number; right: number };
   readonly root: Limb;
@@ -138,9 +184,10 @@ export class Tree {
   blocked: Obstacle | undefined;
   private readonly seed: number;
 
-  constructor(baseX: number, seed: number) {
+  constructor(baseX: number, seed: number, level: Level) {
     this.baseX = baseX;
     this.seed = seed;
+    this.level = level;
     const rng = new Rng(seed);
     this.flareScale = {
       left: rng.range(0.85, 1.2),
@@ -179,7 +226,7 @@ export class Tree {
       const reach = this.reach(this.active);
       const size = Math.max(1, reach / LIMB.steadyLength);
       const speed = controls.grow ? LIMB.growSpeed * size : 0;
-      const ahead = roomAhead(this.active);
+      const ahead = roomAhead(this.active, this.level);
       this.blocked = ahead.room < speed * dt ? ahead.obstacle : undefined;
       changed = this.active.update(
         dt,
@@ -203,7 +250,7 @@ export class Tree {
           steer,
           speed,
           size,
-          Math.min(LIMB.maxReach - reach, roomAhead(limb).room),
+          Math.min(LIMB.maxReach - reach, roomAhead(limb, this.level).room),
         );
         changed = changed || moved;
       }

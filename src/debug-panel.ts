@@ -7,6 +7,7 @@ import {
 } from "./bears";
 import type { BirdSettings } from "./birds";
 import type { HiveSettings } from "./hives";
+import { LEVELS, levelById, type LevelId } from "./level";
 import type { Strength } from "./physics";
 import { clockTime, seasonName, type TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
@@ -29,9 +30,10 @@ const FLOWER_SIZE_RANGE = 5;
 const MAX_FLOW_RATE = 3;
 
 /** The panel's pages, each opened by its own tab down the panel's left edge. */
-type Tab = "weather" | "tree" | "flowers" | "wildlife";
+type Tab = "level" | "weather" | "tree" | "flowers" | "wildlife";
 
 const TABS: readonly { id: Tab; name: string }[] = [
+  { id: "level", name: "Level" },
   { id: "weather", name: "Weather" },
   { id: "tree", name: "Tree" },
   { id: "flowers", name: "Flowers" },
@@ -185,8 +187,15 @@ const HEADINGS = [
   "down and right",
 ];
 
+/** Where the tree grows: the level, and whether mountains line its horizon. */
+export interface WorldSettings {
+  level: LevelId;
+  mountains: boolean;
+}
+
 /** Every setting the panel controls. */
 interface Settings {
+  world: WorldSettings;
   growth: Growth;
   wind: WindSettings;
   weather: WeatherSettings;
@@ -201,7 +210,7 @@ interface Settings {
 
 interface Saved extends Omit<
   Settings,
-  "weather" | "wildlife" | "birds" | "bears"
+  "world" | "weather" | "wildlife" | "birds" | "bears"
 > {
   open: boolean;
   tab: Tab;
@@ -209,6 +218,7 @@ interface Saved extends Omit<
    * Settings saved by an older build have no weather or wildlife, or only some of them; whatever
    * is missing starts as it does by default.
    */
+  world?: Partial<WorldSettings>;
   weather?: Partial<WeatherSettings>;
   wildlife?: Partial<HiveSettings>;
   birds?: Partial<BirdSettings>;
@@ -218,6 +228,7 @@ interface Saved extends Omit<
 /** Every setting as it starts, and as the reset button puts it back. */
 function defaults(): Settings {
   return {
+    world: { level: "meadow", mountains: levelById("meadow").mountains },
     growth: { mode: "steer", flowRate: 1 },
     wind: { direction: 0, strength: 0, model: "steady" },
     weather: {
@@ -272,6 +283,7 @@ function isSaved(saved: unknown): saved is Saved {
     return false;
   }
   const {
+    world,
     growth,
     wind,
     weather,
@@ -283,6 +295,12 @@ function isSaved(saved: unknown): saved is Saved {
     bears,
   } = saved;
   return (
+    (world === undefined ||
+      (isRecord(world) &&
+        (world.level === undefined ||
+          LEVELS.some((level) => level.id === world.level)) &&
+        (world.mountains === undefined ||
+          typeof world.mountains === "boolean"))) &&
     (bears === undefined ||
       (isRecord(bears) &&
         (bears.comes === undefined || typeof bears.comes === "boolean"))) &&
@@ -343,6 +361,8 @@ function load(): Saved | undefined {
  * weather, the tree and its flowers, opened by tabs down its left edge.
  */
 export class DebugPanel {
+  /** Where the tree grows, read every frame. */
+  readonly world: WorldSettings;
   /** Live growth settings, read every frame. */
   readonly growth: Growth;
   /** Live wind settings. The wind reads these directly, so changes apply on the next frame. */
@@ -368,6 +388,8 @@ export class DebugPanel {
    * never loads paused.
    */
   simulationSpeed = 1;
+  /** Called whenever the level changes, to grow a tree there afresh. */
+  onLevel: (level: LevelId) => void = () => {};
   /** Called whenever the growth mode changes. */
   onGrowthMode: (mode: GrowthMode) => void = () => {};
   /** Called to finish building every hive at once. */
@@ -384,6 +406,9 @@ export class DebugPanel {
   private readonly tabs = new Map<Tab, HTMLElement>();
   private readonly pages = new Map<Tab, HTMLElement>();
   private readonly speeds = new Map<number, HTMLElement>();
+  private readonly levels = new Map<LevelId, HTMLElement>();
+  private readonly levelDescription: HTMLElement;
+  private readonly mountainsToggle: HTMLElement;
   private readonly timeOfDay: Slider;
   private readonly dayToggle: HTMLElement;
   private readonly season: Slider;
@@ -420,6 +445,7 @@ export class DebugPanel {
   constructor(host: HTMLElement) {
     const saved = load();
     const settings = saved ?? defaults();
+    this.world = { ...defaults().world, ...settings.world };
     this.growth = { ...settings.growth };
     this.wind = { ...settings.wind };
     this.weather = { ...defaults().weather, ...settings.weather };
@@ -462,6 +488,25 @@ export class DebugPanel {
       chip.addEventListener("click", () => this.setSimulationSpeed(speed));
       this.speeds.set(speed, chip);
     }
+
+    const levelPage = this.page("level", card);
+    const where = element("section", "debug-section", levelPage);
+    element("h2", "debug-title", where, "Level");
+    const levels = element("div", "models", where);
+    for (const level of LEVELS) {
+      this.levels.set(
+        level.id,
+        this.radioRow(levels, level.name, () =>
+          this.setWorld({ level: level.id }),
+        ),
+      );
+    }
+    this.levelDescription = element("p", "model-description", where);
+    this.mountainsToggle = this.toggleRow(
+      where,
+      "Mountains on the horizon",
+      () => this.setWorld({ mountains: !this.world.mountains }),
+    );
 
     const weather = this.page("weather", card);
     const day = element("section", "debug-section", weather);
@@ -688,6 +733,23 @@ export class DebugPanel {
     this.save();
   }
 
+  /**
+   * Changes where the tree grows. A new level brings its own mountains, or none, and a tree grown
+   * there afresh.
+   */
+  setWorld(settings: Partial<WorldSettings>): void {
+    const before = this.world.level;
+    Object.assign(this.world, settings);
+    if (this.world.level !== before && settings.mountains === undefined) {
+      this.world.mountains = levelById(this.world.level).mountains;
+    }
+    this.render();
+    this.save();
+    if (this.world.level !== before) {
+      this.onLevel(this.world.level);
+    }
+  }
+
   setGrowth(settings: Partial<Growth>): void {
     const before = this.growth.mode;
     Object.assign(this.growth, settings);
@@ -776,7 +838,9 @@ export class DebugPanel {
   /** Puts every setting back as it started, the speed of time included. */
   private reset(): void {
     const before = this.growth.mode;
+    const level = this.world.level;
     const fresh = defaults();
+    Object.assign(this.world, fresh.world);
     Object.assign(this.growth, fresh.growth);
     Object.assign(this.wind, fresh.wind);
     Object.assign(this.weather, fresh.weather);
@@ -792,6 +856,9 @@ export class DebugPanel {
     this.save();
     if (this.growth.mode !== before) {
       this.onGrowthMode(this.growth.mode);
+    }
+    if (this.world.level !== level) {
+      this.onLevel(this.world.level);
     }
   }
 
@@ -838,6 +905,12 @@ export class DebugPanel {
     for (const [speed, chip] of this.speeds) {
       chip.classList.toggle("selected", speed === this.simulationSpeed);
     }
+
+    for (const [id, row] of this.levels) {
+      row.classList.toggle("selected", id === this.world.level);
+    }
+    this.levelDescription.textContent = levelById(this.world.level).description;
+    this.mountainsToggle.classList.toggle("selected", this.world.mountains);
 
     this.showTimeOfDay();
     this.dayToggle.classList.toggle("selected", this.time.dayRunning);
@@ -926,6 +999,7 @@ export class DebugPanel {
     const saved: Saved = {
       open: this.open,
       tab: this.tab,
+      world: this.world,
       growth: this.growth,
       wind: this.wind,
       weather: this.weather,

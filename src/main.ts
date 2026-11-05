@@ -2,7 +2,7 @@ import "./style.css";
 import { Camera } from "./camera";
 import { Clouds } from "./clouds";
 import { Debris } from "./debris";
-import { DebugPanel } from "./debug-panel";
+import { DebugPanel, type WorldSettings } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
 import { Bears, type BearPose, type BearSettings } from "./bears";
@@ -18,6 +18,7 @@ import {
   type TimeSettings,
 } from "./sky";
 import { Keyboard } from "./input";
+import { type Level, levelById, type LevelId } from "./level";
 import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
 import { minimumRadius, pieceShapes, Renderer, treeShapes } from "./render";
@@ -52,6 +53,8 @@ const SPOUT_PICK_PX = 10;
 const DOT_SPEED_PX = 90;
 /** A press must move this far, in CSS pixels, before it pans the view, so a click stays a click. */
 const PAN_THRESHOLD_PX = 3;
+/** On ground falling away below the tree, the hint sits this far below the lowest of it kept in view. */
+const HINT_BELOW_DEPTH_PX = 4;
 /**
  * How far each pixel of scrolling zooms, in natural log of the zoom factor: once for a mouse
  * wheel, and once for a trackpad pinch, which scrolls far less for the same gesture.
@@ -83,7 +86,9 @@ const renderer = new Renderer(canvas);
 const keyboard = new Keyboard(window);
 const panel = new DebugPanel(element("#app", HTMLDivElement));
 const wind = new Wind(panel.wind);
-const weather = new Weather(panel.weather);
+/** Where the tree grows. */
+let level: Level = levelById(panel.world.level);
+const weather = new Weather(panel.weather, level);
 const clouds = new Clouds(panel.weather);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
@@ -97,7 +102,7 @@ const PLANTING_X = 0;
 
 let seed = 1;
 /** The standing tree. Gone once it falls, until the next one is planted. */
-let tree: Tree | undefined = new Tree(PLANTING_X, seed);
+let tree: Tree | undefined = new Tree(PLANTING_X, seed, level);
 const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
@@ -138,9 +143,16 @@ function onScene(event: MouseEvent): { x: number; y: number } {
   return { x: event.clientX - box.left, y: event.clientY - box.top };
 }
 
-/** Keeps the hint in the ground, a little below its edge, wherever panning has put the ground. */
+/**
+ * Keeps the hint in the ground, a little below its edge, wherever panning has put the ground; on
+ * ground that falls away below the tree, along the lowest of it in view.
+ */
 function placeHint(): void {
-  const top = `${camera.groundRow + (camera.height - camera.groundY) * 0.42}px`;
+  const below =
+    level.depth < 0
+      ? camera.toScreen(0, level.depth).y + HINT_BELOW_DEPTH_PX
+      : camera.groundRow + (camera.height - camera.groundY) * 0.42;
+  const top = `${below}px`;
   if (hint.style.top !== top) {
     hint.style.top = top;
   }
@@ -148,13 +160,34 @@ function placeHint(): void {
 
 function replant(): void {
   seed += 1;
-  tree = new Tree(PLANTING_X, seed);
+  tree = new Tree(PLANTING_X, seed, level);
   spoutControl.close();
   dots.clear();
   flowers.clear();
   hives.clear();
   bears.clear();
   camera.release();
+}
+
+/** Points the camera at what `level` keeps in view: its horizon, and any ground below the tree. */
+function frameLevel(): void {
+  camera.horizon = level.horizon;
+  camera.depth = level.depth;
+  camera.reach = level.reach;
+}
+
+/** Moves the scene to `next`, clearing everything from the last level, and plants a tree there. */
+function useLevel(next: Level): void {
+  level = next;
+  frameLevel();
+  weather.setLevel(level);
+  debris.length = 0;
+  birds.clear();
+  replant();
+  const view = framing();
+  if (view !== undefined) {
+    camera.snap(view);
+  }
 }
 
 /** Starts a press on the canvas that pans the view once it drags. */
@@ -348,6 +381,7 @@ function step(dt: number, controls: Controls): void {
   const pushes = bears.update(
     dt,
     {
+      level,
       tree,
       hives: hives.targets(panel.wildlife),
       fallenHives: hives.fallenHives(),
@@ -391,6 +425,7 @@ function step(dt: number, controls: Controls): void {
     melt: weather.melt,
     hold: panel.strength.flowers,
     flowing: growth.mode === "flow",
+    level,
   });
   debris.push(
     ...hives.update(dt, tree, panel.wildlife, {
@@ -414,7 +449,7 @@ function step(dt: number, controls: Controls): void {
     dots.clear();
   }
   for (const piece of debris) {
-    piece.update(dt, wind);
+    piece.update(dt, wind, level);
   }
   for (let i = debris.length - 1; i >= 0; i -= 1) {
     if (at(debris, i).done) {
@@ -424,6 +459,7 @@ function step(dt: number, controls: Controls): void {
 }
 
 resize();
+frameLevel();
 camera.snap(tree.bounds());
 showGrowthMode(panel.growth.mode);
 panel.onGrowthMode = showGrowthMode;
@@ -431,8 +467,9 @@ panel.onFinishHives = () => hives.finish();
 panel.onPlaceHive = () => {
   placingHive = true;
 };
-panel.onSendBear = () => bears.spawn(camera);
-panel.onShowBear = (pose: BearPose) => bears.show(pose, camera, tree);
+panel.onLevel = (id: LevelId) => useLevel(levelById(id));
+panel.onSendBear = () => bears.spawn(camera, level);
+panel.onShowBear = (pose: BearPose) => bears.show(pose, camera, level, tree);
 panel.onClearBears = () => bears.clear();
 // The scene resizes with the window, and as the debug panel beside it opens and closes.
 new ResizeObserver(resize).observe(stage);
@@ -656,6 +693,8 @@ function frame(now: number): void {
     }
   }
   renderer.draw(camera, {
+    level,
+    mountains: panel.world.mountains,
     light,
     season: panel.time.season,
     clock,
@@ -731,6 +770,10 @@ interface DebugHandle {
   birdSettings(settings: Partial<BirdSettings>): void;
   /** The bears about the scene. */
   bears(): Bears;
+  /** Moves the scene to another level, as the debug panel would, and plants a tree there. */
+  level(id: LevelId): void;
+  /** Changes where the tree grows, as the debug panel would. */
+  world(settings: Partial<WorldSettings>): void;
   /** Sends a bear in from the edge of the view. */
   sendBear(): void;
   /** Shows a bear playing `pose` in place. */
@@ -833,11 +876,17 @@ if (import.meta.env.DEV) {
       panel.setBirds(settings);
     },
     bears: () => bears,
+    level(id) {
+      panel.setWorld({ level: id });
+    },
+    world(settings) {
+      panel.setWorld(settings);
+    },
     sendBear() {
-      bears.spawn(camera);
+      bears.spawn(camera, level);
     },
     showBear(pose) {
-      bears.show(pose, camera, tree);
+      bears.show(pose, camera, level, tree);
     },
     bearSettings(settings) {
       panel.setBears(settings);

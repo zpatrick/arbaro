@@ -33,6 +33,7 @@ import {
   skyBodyAt,
   type SkyLight,
 } from "./sky";
+import type { Level } from "./level";
 import type { Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
@@ -126,6 +127,10 @@ const SNOW_THINNEST_PX = 0.3;
 
 /** Everything drawn in one frame. */
 export interface Scene {
+  /** Where the tree grows: the lie of its ground, and whether the barn stands there. */
+  level: Level;
+  /** Whether mountains line the horizon. */
+  mountains: boolean;
   /** The light at this time of day. */
   light: SkyLight;
   /** The time of year, from midsummer at 0 to midwinter at 1. */
@@ -170,6 +175,61 @@ export interface Scene {
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
 export function minimumRadius(camera: Camera): number {
   return MIN_WIDTH_PX / 2 / camera.scale;
+}
+
+/** CSS pixels between the points the line of the ground is drawn through. */
+const GROUND_STEP_PX = 3;
+
+/**
+ * The line of `level`'s ground across the view and a little past either side, left to right, in
+ * device pixels.
+ */
+function groundLine(camera: Camera, level: Level): Vec[] {
+  const points: Vec[] = [];
+  const columns = Math.ceil(camera.width / GROUND_STEP_PX) + 1;
+  for (let i = -1; i <= columns; i += 1) {
+    const sx = i * GROUND_STEP_PX;
+    const x = camera.toWorld(sx, 0).x;
+    points.push({
+      x: sx * camera.dpr,
+      y: camera.toScreen(x, level.groundAt(x)).y * camera.dpr,
+    });
+  }
+  return points;
+}
+
+/** Everything below `line` down to `bottom`, in device pixels, wound as the tree's ink is. */
+function belowLine(line: readonly Vec[], bottom: number): Path2D {
+  const path = new Path2D();
+  const floor = bottom + 1;
+  for (const [i, p] of line.entries()) {
+    if (i === 0) {
+      path.moveTo(p.x, Math.min(p.y, floor));
+    } else {
+      path.lineTo(p.x, Math.min(p.y, floor));
+    }
+  }
+  path.lineTo(at(line, line.length - 1).x, floor);
+  path.lineTo(at(line, 0).x, floor);
+  path.closePath();
+  return path;
+}
+
+/** Everything above `line` up to the top of the view, in device pixels. */
+function aboveLine(line: readonly Vec[]): Path2D {
+  const path = new Path2D();
+  const top = -1;
+  for (const [i, p] of line.entries()) {
+    if (i === 0) {
+      path.moveTo(p.x, Math.max(p.y, top));
+    } else {
+      path.lineTo(p.x, Math.max(p.y, top));
+    }
+  }
+  path.lineTo(at(line, line.length - 1).x, top);
+  path.lineTo(at(line, 0).x, top);
+  path.closePath();
+  return path;
 }
 
 interface Vec {
@@ -287,22 +347,28 @@ export class Renderer {
   /** Draws in device pixels throughout so every ink shape shares one grain. */
   draw(camera: Camera, scene: Scene): void {
     invariant(this.resized, "Renderer.resize must run before draw.");
-    const width = this.canvas.width;
-    // The ground begins wherever height zero falls, which moves as the view pans.
-    const ground = clamp(camera.groundRow * camera.dpr, 0, this.canvas.height);
     this.inkColor = css(scene.light.ink);
     this.guideColor = css(scene.light.guide);
 
-    this.drawSky(camera, scene.light, scene.clock, ground, scene.clouds);
+    this.drawSky(
+      camera,
+      scene.light,
+      scene.clock,
+      scene.clouds,
+      scene.mountains,
+    );
     const world = camera.worldTransform();
-    this.drawBarn(camera, world, scene.light);
+    if (scene.level.barn) {
+      this.drawBarn(camera, world, scene.light);
+    }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.far);
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
     // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
     // in, so one lying on the ground merges into it.
     const ink = new Path2D();
-    ink.rect(0, ground, width, this.canvas.height - ground);
+    const skyline = groundLine(camera, scene.level);
+    ink.addPath(belowLine(skyline, this.canvas.height));
     if (scene.tree !== undefined) {
       for (const shape of treeShapes(scene.tree, minimumRadius(camera))) {
         ink.addPath(shape, world);
@@ -370,7 +436,7 @@ export class Renderer {
       }
     }
     drawBees(this.ctx, camera, scene.bees, scene.light);
-    this.drawBears(camera, world, scene.bears, scene.light);
+    this.drawBears(camera, world, scene.bears, scene.light, aboveLine(skyline));
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
     if (scene.tree !== undefined) {
@@ -407,21 +473,22 @@ export class Renderer {
   }
 
   /**
-   * Fills the sky above `ground`, in device pixels, for the time of day: a glow over the middle of
-   * the horizon, the stars, moon and sun, the mountains in front of them, and warm light on the
-   * sun's side at sunrise and sunset.
+   * Fills the sky for the time of day, down behind the ground: a glow over the middle of the
+   * horizon, the stars, moon and sun, the mountains in front of them if there are any, and warm
+   * light on the sun's side at sunrise and sunset.
    */
   private drawSky(
     camera: Camera,
     light: SkyLight,
     clock: number,
-    ground: number,
     clouds: Clouds,
+    mountains: boolean,
   ): void {
     const ctx = this.ctx;
     const width = this.canvas.width;
+    const ground = this.canvas.height;
     const cx = width * 0.5;
-    const cy = camera.groundRow * camera.dpr;
+    const cy = camera.horizonRow * camera.dpr;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const sky = ctx.createRadialGradient(
       cx,
@@ -458,15 +525,17 @@ export class Renderer {
       ctx.arc(sun.x, sun.y, BODY_SIZE * camera.height, 0, Math.PI * 2);
       ctx.fill();
     }
-    this.mountains.draw(ctx, camera, sky, light);
-    // The clouds hang in front of the mountains, casting shadows on them while the sun shines.
     const banks = clouds.placed(camera);
-    this.mountains.shade(
-      ctx,
-      camera,
-      clouds.shadows(camera, light, banks),
-      light.ink,
-    );
+    if (mountains) {
+      this.mountains.draw(ctx, camera, sky, light);
+      // The clouds hang in front of the mountains, casting shadows on them while the sun shines.
+      this.mountains.shade(
+        ctx,
+        camera,
+        clouds.shadows(camera, light, banks),
+        light.ink,
+      );
+    }
     clouds.draw(ctx, camera, light, banks);
 
     // The glow of sunrise and sunset lies over everything in the sky, the mountains too.
@@ -499,10 +568,10 @@ export class Renderer {
     const ctx = this.ctx;
     for (const star of this.stars) {
       const x = star.x * camera.width;
-      const y = star.y * camera.groundY;
+      const y = star.y * Math.max(camera.groundY, camera.horizonRow);
       const horizon = smoothstep(
-        camera.groundRow,
-        camera.groundRow - 0.35 * camera.groundY,
+        camera.horizonRow,
+        camera.horizonRow - 0.35 * camera.groundY,
         y,
       );
       const twinkle = 0.7 + 0.3 * Math.sin(clock * star.rate + star.phase);
@@ -602,24 +671,23 @@ export class Renderer {
 
   /**
    * Draws each bear in ink, ringed by a thin line of the sky's color so it stands out against the
-   * trunk and the ground behind it.
+   * trunk and the ground behind it. The ring shows only in `sky`, above the ground, in device
+   * pixels, so where the bear stands it is one with the ground.
    */
   private drawBears(
     camera: Camera,
     world: DOMMatrix,
     bears: readonly BearView[],
     light: SkyLight,
+    sky: Path2D,
   ): void {
     const ctx = this.ctx;
     for (const bear of bears) {
       const shape = new Path2D();
       shape.addPath(bear.shape, world);
-      // The ring shows only above the ground, so where the bear stands it is one with it.
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.beginPath();
-      ctx.rect(0, 0, this.canvas.width, camera.groundRow * camera.dpr);
-      ctx.clip();
+      ctx.clip(sky);
       ctx.globalAlpha = bear.alpha;
       ctx.strokeStyle = css(light.sky.middle);
       ctx.lineWidth = BEAR_RIM_PX * camera.dpr;
@@ -1255,7 +1323,7 @@ function beyond(points: readonly EdgePoint[], s: number): EdgePoint[] {
 /**
  * The trunk's silhouette: the root flare rising out of the ground on the left, up the left edge,
  * around the tip, down the right edge and back down through the right flare. It closes along
- * the ground line, where the ground takes over.
+ * the ground, where the ground takes over.
  */
 function rootOutline(
   tree: Tree,
@@ -1263,6 +1331,7 @@ function rootOutline(
   minRadius: number,
 ): Path2D {
   const trunk = tree.root;
+  const ground = (x: number): number => tree.level.groundAt(x);
   const baseRadius = Math.max(minRadius, trunk.radiusAt(0));
   const flare = tree.rootFlare(baseRadius);
   const leftSpread = flare.left.spread;
@@ -1271,14 +1340,16 @@ function rootOutline(
   const rightJoin = firstAbove(right, flare.right.rise);
   const groundLeft = at(left, 0).x - leftSpread;
   const groundRight = at(right, 0).x + rightSpread;
+  const leftHug = groundLeft + leftSpread * FLARE_HUG;
+  const rightHug = groundRight - rightSpread * FLARE_HUG;
 
   const path = new Path2D();
-  path.moveTo(groundLeft, 0);
+  path.moveTo(groundLeft, ground(groundLeft));
   const lj = at(left, leftJoin);
-  const leftLift = lj.y * FLARE_LIFT;
+  const leftLift = (lj.y - ground(groundLeft)) * FLARE_LIFT;
   path.bezierCurveTo(
-    groundLeft + leftSpread * FLARE_HUG,
-    0,
+    leftHug,
+    ground(leftHug),
     lj.x - lj.tx * leftLift,
     lj.y - lj.ty * leftLift,
     lj.x,
@@ -1288,18 +1359,26 @@ function rootOutline(
   tipCap(path, trunk, minRadius);
   smoothThrough(path, right.slice(rightJoin).reverse());
   const rj = at(right, rightJoin);
-  const rightLift = rj.y * FLARE_LIFT;
+  const rightLift = (rj.y - ground(groundRight)) * FLARE_LIFT;
   path.bezierCurveTo(
     rj.x - rj.tx * rightLift,
     rj.y - rj.ty * rightLift,
-    groundRight - rightSpread * FLARE_HUG,
-    0,
+    rightHug,
+    ground(rightHug),
     groundRight,
-    0,
+    ground(groundRight),
   );
+  // Back along the ground under the flare.
+  for (let i = 1; i < FLARE_FOOT_STEPS; i += 1) {
+    const x = lerp(groundRight, groundLeft, i / FLARE_FOOT_STEPS);
+    path.lineTo(x, ground(x));
+  }
   path.closePath();
   return path;
 }
+
+/** Points along the ground the trunk's outline closes through under its flare. */
+const FLARE_FOOT_STEPS = 12;
 
 /** An offshoot's silhouette. Its base sits inside its parent, so it closes straight across. */
 function limbOutline(
