@@ -399,6 +399,7 @@ function step(dt: number, controls: Controls): void {
       blooms: flowers.blooms(panel.flowers),
       hold: panel.strength.flowers,
       melt: weather.melt,
+      threats: bears.threats(),
     }),
   );
   birds.update(dt, tree, camera, panel.birds);

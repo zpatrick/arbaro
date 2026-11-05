@@ -300,14 +300,27 @@ switched on in the debug panel beside the original steer-and-grow controls:
       while and flies off, and flies off at once if its limb is cut or breaks.
 - [x] A hive draws a bear after a while. The bear is an ink silhouette ringed with a thin line of
       the sky's color so it stands out against the trunk: one drawn outline of a black bear in
-      profile, its back level to a modest rise at the shoulders, its muzzle long, bent with its
-      hips, shoulders and head, on four heavy legs. It walks in along the ground with its feet
-      stepping in a walk, a stroll or a run.
-      It goes after the nearest hive: if it can reach the hive reared up on its hind legs, it
-      swipes it down; else it rears up under the wood the hive hangs from and swipes at that,
-      shaking it; else it sets its forepaws on the trunk and shoves it in time, rocking the whole
-      tree. It eats a hive it brings down and strolls off, and gives up after a while if it
-      cannot bring it down.
+      profile, its back level to a modest rise at the shoulders, a small rounded ear, a straight
+      muzzle ending in a blunt nose pad, and a mouth whose jaw drops open as it roars or chews,
+      bent with its hips, shoulders and head. Each leg is one smooth outline down to its foot:
+      long flat hind feet with heels, which roll over their toes as it walks, and forepaws with
+      claws. It walks in along the ground, or runs.
+- [x] A bear goes after the nearest hive. If the hive hangs low enough, it lifts its chest and
+      swipes it down on all fours with one forepaw; if it can reach it reared up on its hind
+      legs, it swipes it down so; else it shoves the trunk to shake it down. A swipe is aimed at
+      the hive, and when the claws pass through it they strike it with the momentum of the paw
+      and the bear behind it, swinging it and pulling on its comb; a solid swipe tears it loose
+      and sends it flying. To shove, it rears with its hind feet planted and its forepaws on the
+      bark; each shove it pivots back at the hips with its paws drawn to its chest, waits for the
+      trunk to swing back to it, then lunges forward from the hips and drives its paws into the
+      bark, rocking the tree like a swing pushed in time. On a slight trunk it pushes no harder
+      than the roots can bear. It eats a hive it brings down and walks off, and gives up and
+      walks off after 18 seconds at the tree.
+- [x] A bear swiping at a hive, or shoving its tree, provokes it: every bee pours out over a couple
+      of seconds with guards behind them, sixteen at the usual size and more for a larger hive,
+      dives at the bear, sometimes stings it, hangs back a moment and dives again, and chases it a
+      way when it leaves. Thirty stings drive it off at a run, so the more bees, the sooner it
+      gives up. The bees calm down a while after the bear stops.
 - [x] Wood falling on a bear strikes it by its weight and speed, and glances off. A light blow
       angers it: it rears and roars, and goes back at the hive longer and harder. A heavier one
       drives it off at a run. One heavy and fast enough kills it: it collapses where it stands,

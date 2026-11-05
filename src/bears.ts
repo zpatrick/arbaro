@@ -1,11 +1,11 @@
 import type { Camera } from "./camera";
 import type { Debris } from "./debris";
-import type { HiveTarget } from "./hives";
+import { along, type HiveTarget, type HiveView, type Threat } from "./hives";
 import type { Limb } from "./limb";
-import type { Push } from "./physics";
-import { addCapsule, addPolygon, type Point } from "./silhouette";
+import { FAILURE, type Push } from "./physics";
+import { addPolygon, type Point } from "./silhouette";
 import type { Tree } from "./tree";
-import { approach, at, clamp, lerp, Rng, smoothstep } from "./util";
+import { approach, at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 
 /** The bears, as the debug panel sets them. */
 export interface BearSettings {
@@ -16,50 +16,132 @@ export interface BearSettings {
 /** Animations a bear can be shown playing in place, from the debug panel. */
 export const BEAR_POSES = [
   "walk",
-  "stroll",
   "run",
   "rear",
+  "paw",
   "swipe",
   "shove",
   "eat",
+  "roar",
   "die",
 ] as const;
 export type BearPose = (typeof BEAR_POSES)[number];
 
-/** A bear's body, in meters and kilograms: a black bear's. */
+/** What the debug panel calls each animation. */
+export const BEAR_POSE_NAMES: Readonly<Record<BearPose, string>> = {
+  walk: "Walk",
+  run: "Run",
+  rear: "Rear up",
+  paw: "Swipe on all fours",
+  swipe: "Swipe reared up",
+  shove: "Shove the trunk",
+  eat: "Eat",
+  roar: "Roar",
+  die: "Die",
+};
+
+/** A bear's body, in meters: a black bear's. */
 const BODY = {
   /** From the hip joint to the shoulder joint. */
   spine: 0.8,
   /** Height of the hip joint standing on all fours, and reared up. */
   hip: 0.7,
-  rearedHip: 0.76,
-  /** The bones of the hind leg and the length of the hind foot, which it walks flat on. */
-  thigh: 0.42,
-  shin: 0.38,
-  foot: 0.22,
-  /** The bones of the front leg and the length of the front paw. */
-  arm: 0.37,
-  forearm: 0.34,
-  paw: 0.08,
-  /** From the shoulders to the middle of the head, and the head's size. */
+  rearedHip: 0.8,
+  /** The bones of the hind leg, hip to knee and knee to ankle. */
+  thigh: 0.38,
+  shin: 0.34,
+  /** The bones of the front leg, shoulder to elbow and elbow to wrist. */
+  arm: 0.33,
+  forearm: 0.3,
+  /** From the shoulders to the middle of the head. */
   neck: 0.4,
-  head: 0.18,
-  mass: 180,
 } as const;
 
-/** Highest a bear reared up on its hind legs reaches with a forepaw. */
-const REACH = 2.2;
+/**
+ * A foot or forepaw: its sole's length from heel to toe; how high its ankle or wrist sits above the
+ * sole, and how far forward of the heel; and how thick it is at the heel and at the toes.
+ */
+interface FootShape {
+  length: number;
+  height: number;
+  forward: number;
+  heel: number;
+  toes: number;
+}
+
+/**
+ * How wide a leg is, in meters: where it leaves the body, through the middle of its upper bone, at
+ * the knee or elbow, through the middle of its lower bone, and at the ankle or wrist; how far the
+ * middle of each bone swells out, front then back, as a share of its width; and its foot.
+ */
+interface LegShape {
+  root: number;
+  upper: number;
+  joint: number;
+  lower: number;
+  ankle: number;
+  swell: {
+    upper: readonly [number, number];
+    lower: readonly [number, number];
+  };
+  foot: FootShape;
+}
+
+/** A bear's legs: heavy hams and calves over long flat hind feet, and thick forearms. */
+const LEGS: { hind: LegShape; front: LegShape } = {
+  hind: {
+    root: 0.32,
+    upper: 0.29,
+    joint: 0.18,
+    lower: 0.15,
+    ankle: 0.105,
+    swell: { upper: [0.95, 1.12], lower: [0.85, 1.12] },
+    foot: {
+      length: 0.2,
+      height: 0.075,
+      forward: 0.05,
+      heel: 0.085,
+      toes: 0.058,
+    },
+  },
+  front: {
+    root: 0.27,
+    upper: 0.235,
+    joint: 0.165,
+    lower: 0.155,
+    ankle: 0.12,
+    swell: { upper: [1, 1.06], lower: [1.1, 0.95] },
+    foot: {
+      length: 0.13,
+      height: 0.058,
+      forward: 0.035,
+      heel: 0.072,
+      toes: 0.058,
+    },
+  },
+};
+
+/** A forepaw's claws: how far they reach past its toes, and how thick they are where they start. */
+const CLAWS = { length: 0.045, base: 0.018 } as const;
+
+/**
+ * Highest a bear reaches with its claws, comfortably, in meters: on all fours, lifting one
+ * forepaw, and reared up on its hind legs. Anything higher it shakes down by shoving the trunk.
+ */
+const REACH = { fours: 1.35, reared: 2.15 } as const;
 
 /**
  * How a bear walks and runs: how far each foot travels in a step, the share of each step it
- * spends on the ground, how high it lifts, when in the step each foot goes (near hind, far hind,
- * near front, far front), and how much the body rises and falls.
+ * spends on the ground, how high it lifts, how far each hind foot and forepaw tips toes-down as it
+ * pushes off and swings through, when in the step each foot goes (near hind, far hind, near front,
+ * far front), and how much the body rises and falls.
  */
 const GAITS = {
   walk: {
     stride: 0.72,
     stance: 0.65,
     lift: 0.1,
+    roll: { hind: 0.5, front: 1.1 },
     offsets: [0, 0.5, 0.25, 0.75],
     bob: 0.02,
   },
@@ -67,40 +149,97 @@ const GAITS = {
     stride: 1.1,
     stance: 0.38,
     lift: 0.22,
+    roll: { hind: 0.75, front: 1.4 },
     offsets: [0, 0.08, 0.5, 0.58],
     bob: 0.06,
   },
 } as const;
 
 /** Speeds a bear goes at, in meters per second. */
-const SPEED = { stroll: 0.9, walk: 1.4, run: 6 } as const;
+const SPEED = { walk: 1.4, run: 6 } as const;
 
 /** How a bear goes after a hive, and gives up. */
 const HUNT = {
-  /** Seconds a bear takes to rear up or drop back down. */
+  /** Seconds a bear takes to rear up or drop back down, and to lift its chest to swipe. */
   rear: 0.7,
+  lift: 0.35,
   /** Seconds a swipe takes, and rests between swipes. */
-  swipe: 0.9,
-  swipeRest: 0.6,
-  /** A swipe connects with a hive this close to its middle, beyond its half-width. */
-  swipeReach: 0.15,
-  /** Force a swipe at a branch strikes it with, forward and down, in newtons. */
-  swipeForce: { forward: 900, down: 1400 },
-  /** How fast a swipe sends a hive flying, forward and up, in meters per second. */
-  knock: { forward: 2.5, up: 1.5 },
-  /** Seconds each shove takes, the share of it pushing, and the force of the push, in newtons. */
-  shove: 1.4,
-  pushing: 0.4,
-  shoveForce: 700,
-  /** Each time a bear is angered, it shoves this much harder and keeps at it this much longer. */
+  swipe: 0.85,
+  swipeRest: 0.55,
+  /** Mass a swipe strikes with, in kilograms: the forearm and paw, and the bear's weight behind them. */
+  pawMass: 14,
+  /** A swipe lands on what its claws pass this close to, in meters. */
+  clawReach: 0.04,
+  /**
+   * Seconds each shove takes, not counting how long it waits cocked for the trunk to swing back,
+   * and the force of its push at its strongest, in newtons. On a slight trunk it pushes no harder
+   * than `rootShare` of what the roots hold, so a bear rocks a sapling rather than uproots it.
+   */
+  shove: 1.6,
+  shoveForce: 2500,
+  rootShare: 0.3,
+  /** Each time a bear is angered, it shoves this much harder. */
   angerForce: 0.4,
-  angerPatience: 0.5,
-  /** Seconds a bear keeps at a hive before it gives up. */
-  patience: 30,
+  /**
+   * Seconds a bear keeps at a hive, all told, before it gives up and walks off; each time it is
+   * angered it keeps at it `angerPatience` longer, up to `mostPatience`.
+   */
+  patience: 18,
+  angerPatience: 4,
+  mostPatience: 30,
+  /** Stings that drive a bear off at a run. */
+  stung: 30,
   /** Seconds a bear eats a hive it brought down. */
   eating: 8,
   /** Seconds an angered bear rears and roars before it goes back at the hive. */
   angry: 1.4,
+  /** Seconds a flinch from a sting takes to pass. */
+  flinch: 0.35,
+} as const;
+
+/**
+ * The swipe of a forepaw, as shares of a swipe: wound up by `windUp`, struck through by `strike`,
+ * then drawn back. It winds up above the line to what it swipes at, `raise` radians reared up and
+ * `raiseFours` on all fours, where the paw cocks before its face rather than behind its head;
+ * draws the paw in toward its chest by `tuck` of its reach midway; and follows through `follow`
+ * radians below.
+ */
+const SWIPE = {
+  windUp: 0.38,
+  strike: 0.54,
+  raise: 1.25,
+  raiseFours: 0.75,
+  follow: 0.95,
+  tuck: 0.35,
+} as const;
+
+/**
+ * The shove. A bear stands reared `stand` meters from the bark, hips to bark, its hind feet planted,
+ * its forepaws flat on the trunk `height` up. Each shove, until `load`, it pivots back at the hips
+ * and draws its paws back off the bark to its chest; until `drive` it pivots forward into the
+ * trunk, its paws striking the bark `strike` of the way into the drive and pushing until it ends;
+ * then it eases back to ready. Leaning back it sinks its hips; driving it rises onto them and
+ * thrusts them in toward the trunk.
+ */
+const SHOVE = {
+  stand: 0.8,
+  height: 1.35,
+  load: 0.42,
+  drive: 0.64,
+  strike: 0.3,
+  /** Its body's slope ready, leaned back and thrust in, in radians from level. */
+  pitch: { ready: 1.3, back: 1.45, in: 1.16 },
+  /** How far its hips sink leaning back and rise driving, and thrust in, in meters. */
+  sink: 0.035,
+  rise: 0.02,
+  thrust: 0.05,
+  /**
+   * Cocked, it waits for the trunk to swing back to it and turn away again before it drives, so each
+   * shove adds to the sway; it waits no longer than `wait` seconds. It watches the trunk this share
+   * of the way up it.
+   */
+  wait: 0.6,
+  watch: 0.6,
 } as const;
 
 /**
@@ -127,22 +266,26 @@ type Doing =
   | "dead"
   | "posing";
 
-/** What a bear means to do at the tree, and where it stands to do it. */
+/** A hive a bear goes after: the limb it hangs from, and how far along. */
+interface HiveAt {
+  limb: Limb;
+  s: number;
+}
+
+/**
+ * What a bear means to do at the tree, where it stands to do it, and which way it faces: swipe a
+ * hive down on all fours or reared up, or shove the trunk to shake one down.
+ */
 type Plan =
-  | { kind: "hive"; standAt: number; limb: Limb; s: number }
-  | {
-      kind: "branch";
-      standAt: number;
-      limb: Limb;
-      s: number;
-      hive: { limb: Limb; s: number };
-    }
-  | { kind: "trunk"; standAt: number };
+  | { kind: "paw" | "swipe"; standAt: number; facing: 1 | -1; hive: HiveAt }
+  | { kind: "shove"; standAt: number; facing: 1 | -1 };
 
 interface Leg {
   root: Point;
   knee: Point;
   ankle: Point;
+  /** The back and front of its sole. */
+  heel: Point;
   toe: Point;
 }
 
@@ -153,6 +296,8 @@ interface Pose {
   head: Point;
   /** The way the head faces, in radians from level, toward the way the bear faces. */
   headAngle: number;
+  /** How far its jaw hangs open, from 0 shut to 1 wide. */
+  jaw: number;
   /** Near and far hind legs, then near and far front legs. */
   legs: [Leg, Leg, Leg, Leg];
 }
@@ -165,16 +310,37 @@ interface Bear {
   /** How fast it goes along the ground, and its progress through its gait, from 0 to 1. */
   speed: number;
   gait: number;
-  /** How far it has reared up, lowered its head, and collapsed, each from 0 to 1. */
+  /**
+   * How far it has reared up, lifted its chest to swipe on all fours, lowered its head, and
+   * collapsed, each from 0 to 1.
+   */
   rear: number;
+  lift: number;
   headDown: number;
   collapse: number;
+  /** How far its jaw hangs open, from 0 to 1, and how sharply it flinches from its last sting. */
+  jaw: number;
+  flinch: number;
   /** Seconds into its current swipe, and shove. */
   swipe: number;
   shove: number;
-  /** Seconds it keeps at the hive before it gives up, and how angry it is. */
+  /**
+   * While it holds a shove cocked: how long it has waited, and how fast the trunk was last moving
+   * away from it, toward it if negative.
+   */
+  cocked: { waited: number; away: number } | undefined;
+  /** What its swipes aim at, where its claws were at the last step, and whether this swipe landed. */
+  aim: Point | undefined;
+  claws: Point | undefined;
+  landed: boolean;
+  /** Where its hind feet stand while it shoves, and the bark its forepaws push on. */
+  feet: [number, number] | undefined;
+  bark: { near: Point; far: Point } | undefined;
+  /** Seconds it keeps at the hive before it gives up, and how many times it has been angered. */
   patience: number;
   anger: number;
+  /** Times bees have stung it. */
+  stings: number;
   /** Seconds into what it is doing, for doings that last a while. */
   timer: number;
   plan: Plan | undefined;
@@ -237,7 +403,7 @@ export class Bears {
     const trunk = tree === undefined ? undefined : trunkAt(tree);
     const x =
       showing === "shove" && trunk !== undefined
-        ? trunk.x - (trunk.radius + SHOVE_STAND)
+        ? trunk.x - (trunk.radius + SHOVE.stand)
         : lerp(view.left, view.right, 0.3);
     const bear = makeBear(x, 1, "posing");
     bear.showing = showing;
@@ -252,6 +418,7 @@ export class Bears {
     const pushes: Push[] = [];
     this.attract(dt, world, settings);
     for (const bear of this.bears) {
+      bear.flinch = Math.max(0, bear.flinch - dt / HUNT.flinch);
       this.feel(bear, world);
       this.act(dt, bear, world, pushes);
     }
@@ -272,6 +439,22 @@ export class Bears {
       shape: bearShape(poseOf(bear), bear.facing),
       alpha: bear.alpha,
     }));
+  }
+
+  /** The bears as bees see them: where on each they sting it. A bear shown posing is left be. */
+  threats(): Threat[] {
+    return this.bears
+      .filter((bear) => bear.doing !== "dead" && bear.doing !== "posing")
+      .map((bear) => {
+        const pose = poseOf(bear);
+        return {
+          points: [pose.head, pose.shoulder, mix(pose.hip, pose.shoulder, 0.4)],
+          sting: () => {
+            bear.stings += 1;
+            bear.flinch = 1;
+          },
+        };
+      });
   }
 
   /** Brings a bear to the tree, a while after it carries a hive, while none is about. */
@@ -328,7 +511,10 @@ export class Bears {
           this.flee(bear, world);
         } else {
           bear.anger += 1;
-          bear.patience += HUNT.patience * HUNT.angerPatience;
+          bear.patience = Math.min(
+            HUNT.mostPatience,
+            bear.patience + HUNT.angerPatience,
+          );
           if (bear.doing !== "posing") {
             bear.doing = "angry";
             bear.timer = 0;
@@ -345,6 +531,34 @@ export class Bears {
   /** Moves `bear` on by `dt` seconds at what it is doing. */
   private act(dt: number, bear: Bear, world: BearWorld, pushes: Push[]): void {
     bear.timer += dt;
+    const atTheTree =
+      bear.doing === "arriving" ||
+      bear.doing === "reaching" ||
+      bear.doing === "shoving" ||
+      bear.doing === "angry";
+    // Stung enough, it gives up and runs.
+    if (atTheTree && bear.stings >= HUNT.stung) {
+      this.flee(bear, world);
+    }
+    if (bear.doing !== "posing") {
+      if (bear.doing !== "reaching") {
+        bear.lift = Math.max(0, bear.lift - dt / HUNT.lift);
+      }
+      if (bear.doing !== "shoving") {
+        bear.feet = undefined;
+        bear.bark = undefined;
+      }
+      bear.jaw = approach(
+        bear.jaw,
+        bear.doing === "angry"
+          ? 1
+          : bear.doing === "eating"
+            ? chewing(bear)
+            : 0,
+        0.08,
+        dt,
+      );
+    }
     switch (bear.doing) {
       case "arriving": {
         bear.plan ??= planFor(bear, world);
@@ -353,15 +567,18 @@ export class Bears {
           break;
         }
         if (this.walkTo(dt, bear, bear.plan.standAt, SPEED.walk)) {
-          bear.patience = HUNT.patience * (1 + HUNT.angerPatience * bear.anger);
-          bear.doing = bear.plan.kind === "trunk" ? "shoving" : "reaching";
+          bear.facing = bear.plan.facing;
+          bear.doing = bear.plan.kind === "shove" ? "shoving" : "reaching";
           bear.swipe = 0;
           bear.shove = 0;
+          bear.cocked = { waited: 0, away: 0 };
+          bear.claws = undefined;
+          bear.landed = false;
         }
         break;
       }
       case "reaching":
-        this.reach(dt, bear, world, pushes);
+        this.reach(dt, bear, world);
         break;
       case "shoving":
         this.shoveTrunk(dt, bear, world, pushes);
@@ -372,8 +589,11 @@ export class Bears {
           this.leave(bear, world);
           break;
         }
-        const over = meal.center.x - bear.facing * EAT_REACH;
+        // It comes at the hive from the side it is on, to stand with its head over it.
+        const side = bear.x >= meal.center.x ? 1 : -1;
+        const over = meal.center.x + side * EAT_REACH;
         if (this.walkTo(dt, bear, over, SPEED.walk) && meal.resting) {
+          bear.facing = side > 0 ? -1 : 1;
           bear.doing = "eating";
           bear.timer = 0;
         }
@@ -393,13 +613,14 @@ export class Bears {
       case "leaving":
       case "fleeing": {
         this.settle(dt, bear);
-        const speed = bear.doing === "fleeing" ? SPEED.run : SPEED.stroll;
+        const speed = bear.doing === "fleeing" ? SPEED.run : SPEED.walk;
         bear.speed = approach(bear.speed, speed, 0.4, dt);
         this.stride(dt, bear, bear.doing === "fleeing" ? "run" : "walk");
         bear.x += bear.facing * bear.speed * dt;
         break;
       }
       case "angry": {
+        bear.patience -= dt;
         bear.speed = approach(bear.speed, 0, 0.2, dt);
         bear.headDown = Math.max(0, bear.headDown - dt / 0.4);
         bear.rear = Math.min(0.75, bear.rear + dt / HUNT.rear);
@@ -428,26 +649,21 @@ export class Bears {
   }
 
   /**
-   * Reared up under the hive or the wood it hangs from, `bear` swipes at it now and again until
-   * it brings the hive down or loses patience.
+   * Under the hive, `bear` swipes at it, on all fours with one forepaw if it can reach it so, else
+   * reared up on its hind legs, until it brings the hive down or loses patience. Each swipe rouses
+   * the hive's bees.
    */
-  private reach(
-    dt: number,
-    bear: Bear,
-    world: BearWorld,
-    pushes: Push[],
-  ): void {
+  private reach(dt: number, bear: Bear, world: BearWorld): void {
     const plan = bear.plan;
-    if (plan === undefined || plan.kind === "trunk") {
-      throw new Error("A bear is reaching with nothing to reach for.");
-    }
+    invariant(
+      plan !== undefined && plan.kind !== "shove",
+      "A bear is reaching with nothing to reach for.",
+    );
     if (this.mealDown(bear, world)) {
       return;
     }
-    const hive = world.hives.find((h) =>
-      plan.kind === "hive"
-        ? h.limb === plan.limb && h.s === plan.s
-        : h.limb === plan.hive.limb && h.s === plan.hive.s,
+    const hive = world.hives.find(
+      (h) => h.limb === plan.hive.limb && h.s === plan.hive.s,
     );
     if (hive === undefined || bear.patience <= 0) {
       this.leave(bear, world);
@@ -456,57 +672,65 @@ export class Bears {
     bear.patience -= dt;
     bear.speed = approach(bear.speed, 0, 0.2, dt);
     bear.headDown = Math.max(0, bear.headDown - dt / 0.4);
-    bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
-    if (bear.rear < 1) {
+    const reared = plan.kind === "swipe";
+    if (reared) {
+      bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
+    } else {
+      bear.rear = Math.max(0, bear.rear - dt / HUNT.rear);
+      bear.lift = Math.min(1, bear.lift + dt / HUNT.lift);
+    }
+    bear.aim = aimAt(hive.view);
+    if ((reared ? bear.rear : bear.lift) < 1) {
       return;
     }
-    bear.swipe += dt;
-    if (bear.swipe >= HUNT.swipe + HUNT.swipeRest) {
-      bear.swipe = 0;
-    }
-    const striking =
-      bear.swipe >= SWIPE.strike.from * HUNT.swipe &&
-      bear.swipe <= SWIPE.strike.to * HUNT.swipe;
-    if (!striking) {
-      return;
-    }
-    const paw = poseOf(bear).legs[2].toe;
-    if (plan.kind === "hive") {
-      const middle = alongHive(hive, 0.6);
-      if (
-        Math.hypot(paw.x - middle.x, paw.y - middle.y) <
-        hive.view.width / 2 + HUNT.swipeReach
-      ) {
-        hive.knock({
-          x: bear.facing * HUNT.knock.forward,
-          y: HUNT.knock.up,
-        });
+    hive.provoke();
+    this.swing(dt, bear, (from, to, velocity) => {
+      for (let k = 1; k <= CLAW_SAMPLES; k += 1) {
+        if (hive.contains(mix(from, to, k / CLAW_SAMPLES), HUNT.clawReach)) {
+          hive.strike(velocity, HUNT.pawMass);
+          return true;
+        }
       }
-      return;
-    }
-    const wood = plan.limb.pointAt(plan.s);
-    if (
-      world.tree !== undefined &&
-      world.tree.has(plan.limb) &&
-      plan.s <= plan.limb.length &&
-      Math.hypot(paw.x - wood.x, paw.y - wood.y) < BRANCH_REACH
-    ) {
-      pushes.push({
-        limb: plan.limb,
-        s: plan.s,
-        x: wood.x,
-        y: wood.y,
-        force: {
-          x: bear.facing * HUNT.swipeForce.forward,
-          y: -HUNT.swipeForce.down,
-        },
-      });
-    }
+      return false;
+    });
   }
 
   /**
-   * Reared up with its forepaws on the trunk, `bear` shoves it over and over, harder the angrier
-   * it is, to shake the hive down, until it does or loses patience.
+   * Moves `bear`'s swipe on by `dt` seconds. While its claws strike through, `hits` tells whether
+   * they landed on what it swipes at, passing from `from` to `to` at `velocity`; a swipe lands once.
+   */
+  private swing(
+    dt: number,
+    bear: Bear,
+    hits: (from: Point, to: Point, velocity: Point) => boolean,
+  ): void {
+    bear.swipe += dt;
+    if (bear.swipe >= HUNT.swipe + HUNT.swipeRest) {
+      bear.swipe = 0;
+      bear.landed = false;
+    }
+    const before = bear.claws;
+    const now = clawsOf(poseOf(bear), bear.facing);
+    bear.claws = now;
+    const t = bear.swipe / HUNT.swipe;
+    if (
+      before === undefined ||
+      bear.landed ||
+      t < SWIPE.windUp ||
+      t > SWIPE.strike
+    ) {
+      return;
+    }
+    bear.landed = hits(before, now, {
+      x: (now.x - before.x) / dt,
+      y: (now.y - before.y) / dt,
+    });
+  }
+
+  /**
+   * Reared up with its forepaws on the bark and its hind feet planted, `bear` shoves the trunk over
+   * and over, harder the angrier it is, to shake the hive down, until it does or loses patience.
+   * Shoving rouses the bees of every hive on the tree.
    */
   private shoveTrunk(
     dt: number,
@@ -517,7 +741,8 @@ export class Bears {
     if (this.mealDown(bear, world)) {
       return;
     }
-    if (world.tree === undefined || bear.patience <= 0) {
+    const tree = world.tree;
+    if (tree === undefined || bear.patience <= 0) {
       this.leave(bear, world);
       return;
     }
@@ -525,69 +750,124 @@ export class Bears {
     bear.speed = approach(bear.speed, 0, 0.2, dt);
     bear.headDown = Math.max(0, bear.headDown - dt / 0.4);
     bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
+    bear.feet ??= plantedFeet(bear);
+    bear.bark = barkOf(tree, bear.facing);
     if (bear.rear < 1) {
       return;
     }
-    this.push(dt, bear, world.tree, pushes);
+    for (const hive of world.hives) {
+      hive.provoke();
+    }
+    this.push(dt, bear, tree, pushes);
   }
 
-  /** Shoves `tree`'s trunk at the height of `bear`'s forepaws, in time with its shoving. */
+  /**
+   * Moves `bear`'s shove on, and shoves `tree`'s trunk where its forepaws are on it, from when they
+   * strike the bark until it has driven all the way forward. Cocked, it holds until the trunk swings
+   * back to it and turns away again, so it rocks the tree like a swing pushed in time.
+   */
   private push(dt: number, bear: Bear, tree: Tree, pushes: Push[]): void {
-    bear.shove = (bear.shove + dt) % HUNT.shove;
-    if (bear.shove > HUNT.pushing * HUNT.shove) {
+    const trunk = tree.root;
+    if (bear.shove / HUNT.shove >= SHOVE.load && bear.cocked !== undefined) {
+      const watched = trunk.pointAt(trunk.length * SHOVE.watch);
+      const away =
+        bear.facing *
+        tree.physics.velocityAt(
+          trunk,
+          trunk.length * SHOVE.watch,
+          watched.x,
+          watched.y,
+        ).x;
+      // A tree at rest it shoves at once.
+      const turned =
+        (bear.cocked.away < 0 && away >= 0) ||
+        (bear.cocked.away === 0 && away === 0);
+      bear.cocked.waited += dt;
+      if (!turned && bear.cocked.waited < SHOVE.wait) {
+        bear.cocked.away = away;
+        return;
+      }
+      bear.cocked = undefined;
+    }
+    bear.shove += dt;
+    if (bear.shove >= HUNT.shove) {
+      bear.shove -= HUNT.shove;
+      bear.cocked = { waited: 0, away: 0 };
+    }
+    const into =
+      (bear.shove / HUNT.shove - SHOVE.load) / (SHOVE.drive - SHOVE.load);
+    const drive = (into - SHOVE.strike) / (1 - SHOVE.strike);
+    if (drive <= 0 || drive >= 1) {
       return;
     }
-    const trunk = tree.root;
-    const s = Math.min(trunk.length, SHOVE_HEIGHT);
+    const s = Math.min(trunk.length, SHOVE.height);
     const at = trunk.pointAt(s);
+    const strongest = Math.min(
+      HUNT.shoveForce * (1 + HUNT.angerForce * bear.anger),
+      (HUNT.rootShare * FAILURE.rootHold * trunk.radiusAt(0) ** 3) / s,
+    );
     pushes.push({
       limb: trunk,
       s,
       x: at.x,
       y: at.y,
-      force: {
-        x:
-          bear.facing *
-          HUNT.shoveForce *
-          (1 + HUNT.angerForce * bear.anger) *
-          Math.sin((Math.PI * bear.shove) / (HUNT.pushing * HUNT.shove)),
-        y: 0,
-      },
+      force: { x: bear.facing * strongest * Math.sin(Math.PI * drive), y: 0 },
     });
   }
 
   /** Plays the animation `bear` shows, in place. */
   private pose(dt: number, bear: Bear, world: BearWorld, pushes: Push[]): void {
     const showing = bear.showing;
-    if (showing === undefined) {
-      throw new Error("A bear is posing with nothing to show.");
-    }
+    invariant(showing !== undefined, "A bear is posing with nothing to show.");
     switch (showing) {
       case "walk":
-      case "stroll":
       case "run": {
-        const speed = SPEED[showing];
-        bear.speed = approach(bear.speed, speed, 0.3, dt);
-        this.stride(dt, bear, showing === "run" ? "run" : "walk");
+        bear.speed = approach(bear.speed, SPEED[showing], 0.3, dt);
+        this.stride(dt, bear, showing);
         break;
       }
       case "rear":
         bear.rear = 0.5 - 0.5 * Math.cos((bear.timer * Math.PI) / 2);
         break;
-      case "swipe":
-        bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
-        if (bear.rear >= 1) {
-          bear.swipe = (bear.swipe + dt) % (HUNT.swipe + HUNT.swipeRest);
+      case "paw":
+      case "swipe": {
+        const reared = showing === "swipe";
+        if (reared) {
+          bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
+        } else {
+          bear.lift = Math.min(1, bear.lift + dt / HUNT.lift);
+        }
+        // At a point in the air where a hive would hang.
+        const pose = poseOf(bear);
+        bear.aim = {
+          x: pose.shoulder.x + bear.facing * (reared ? 0.45 : 0.55),
+          y:
+            groundAt(bear.x) +
+            (reared ? REACH.reared - 0.15 : REACH.fours - 0.2),
+        };
+        if ((reared ? bear.rear : bear.lift) >= 1) {
+          this.swing(dt, bear, () => false);
         }
         break;
-      case "shove":
+      }
+      case "shove": {
         bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
-        if (bear.rear >= 1 && world.tree !== undefined) {
-          this.push(dt, bear, world.tree, pushes);
+        bear.feet ??= plantedFeet(bear);
+        if (world.tree !== undefined) {
+          bear.bark = barkOf(world.tree, bear.facing);
+          if (bear.rear >= 1) {
+            this.push(dt, bear, world.tree, pushes);
+          }
         }
         break;
+      }
       case "eat":
         bear.headDown = Math.min(1, bear.headDown + dt / 0.6);
+        bear.jaw = chewing(bear);
+        break;
+      case "roar":
+        bear.rear = Math.min(0.75, bear.rear + dt / HUNT.rear);
+        bear.jaw = approach(bear.jaw, bear.timer % 3 < 1.8 ? 1 : 0, 0.1, dt);
         break;
       case "die": {
         const cycle = bear.timer % (DEATH.collapse + 2.5);
@@ -609,11 +889,10 @@ export class Bears {
     }
     bear.meal = meal;
     bear.doing = "toHive";
-    bear.facing = meal.center.x >= bear.x ? 1 : -1;
     return true;
   }
 
-  /** Sends `bear` off, away from the tree, at a stroll. */
+  /** Sends `bear` off, away from the tree, at a walk. */
   private leave(bear: Bear, world: BearWorld): void {
     bear.doing = "leaving";
     bear.facing = awayFrom(bear, world);
@@ -660,20 +939,6 @@ export class Bears {
   }
 }
 
-/** The swipe of a forepaw: wound up, struck through, and drawn back, as shares of a swipe. */
-const SWIPE = {
-  windUp: 0.3,
-  strike: { from: 0.3, to: 0.5 },
-  /** The paw's angle from level ahead, raised back over the head, and struck through low. */
-  raised: 1.9,
-  low: -0.6,
-  rest: 0.4,
-} as const;
-/** A swipe strikes the wood it aims at when the paw passes this close. */
-const BRANCH_REACH = 0.3;
-/** A bear shoves the trunk this high, and stands this far back from it, hips to bark. */
-const SHOVE_HEIGHT = 1.35;
-const SHOVE_STAND = 0.78;
 /** A bear eats a hive standing this far behind it, so its head is over it. */
 const EAT_REACH = 0.95;
 /** A bear has arrived where it was going once this close, in meters. */
@@ -682,6 +947,14 @@ const ARRIVED = 0.08;
 const STRUCK_SPEED = 1;
 /** Wood striking a bear glances off with this much of the speed it struck with. */
 const GLANCE = 0.5;
+/** Points along each step's sweep of a swipe's claws tested for landing on what it swipes at. */
+const CLAW_SAMPLES = 4;
+/** A bear swipes at a hive this far down from where it hangs, as a share of its height. */
+const AIM_DOWN = 0.75;
+/** A bear stands so what it swipes at is this share of its claws' reach from its shoulder. */
+const COMFORT = 0.82;
+/** A hive this close to the trunk, in meters, is swiped at from the side away from the trunk. */
+const CROWDED = 2;
 
 function makeBear(x: number, facing: 1 | -1, doing: Doing): Bear {
   return {
@@ -691,12 +964,22 @@ function makeBear(x: number, facing: 1 | -1, doing: Doing): Bear {
     speed: 0,
     gait: 0,
     rear: 0,
+    lift: 0,
     headDown: 0,
     collapse: 0,
+    jaw: 0,
+    flinch: 0,
     swipe: 0,
     shove: 0,
+    cocked: { waited: 0, away: 0 },
+    aim: undefined,
+    claws: undefined,
+    landed: false,
+    feet: undefined,
+    bark: undefined,
     patience: HUNT.patience,
     anger: 0,
+    stings: 0,
     timer: 0,
     plan: undefined,
     meal: undefined,
@@ -704,6 +987,11 @@ function makeBear(x: number, facing: 1 | -1, doing: Doing): Bear {
     felt: new Set(),
     showing: undefined,
   };
+}
+
+/** How far `bear`'s jaw hangs open as it chews. */
+function chewing(bear: Bear): number {
+  return 0.3 * (0.5 + 0.5 * Math.sin(bear.timer * 7));
 }
 
 /** The part of the world in view, in meters. */
@@ -730,14 +1018,37 @@ function groundAt(_x: number): number {
 
 /** Where the trunk of `tree` stands at the height a bear shoves it, and how thick it is there. */
 function trunkAt(tree: Tree): { x: number; radius: number } {
-  const s = Math.min(tree.root.length, SHOVE_HEIGHT);
+  const s = Math.min(tree.root.length, SHOVE.height);
   return { x: tree.root.pointAt(s).x, radius: tree.root.radiusAt(s) };
 }
 
+/** Where a bear facing `f` sets its forepaws on the bark of `tree`'s trunk, near paw then far. */
+function barkOf(tree: Tree, f: 1 | -1): { near: Point; far: Point } {
+  const trunk = tree.root;
+  const bark = (height: number): Point => {
+    const s = Math.min(trunk.length, height);
+    const p = trunk.pointAt(s);
+    return { x: p.x - f * trunk.radiusAt(s), y: p.y };
+  };
+  return { near: bark(SHOVE.height), far: bark(SHOVE.height - 0.24) };
+}
+
+/** Where `bear` plants its hind feet to shove from, near then far. */
+function plantedFeet(bear: Bear): [number, number] {
+  return [bear.x + bear.facing * 0.1, bear.x + bear.facing * 0.03];
+}
+
+/** The point on the hive in `view` a bear swipes at: low on its body, where it is widest. */
+function aimAt(view: HiveView): Point {
+  return along(view, AIM_DOWN);
+}
+
 /**
- * What `bear` means to do at the tree: swipe the nearest hive down if it can reach it reared up;
- * else swipe at the wood it hangs from, where that is in reach nearest the hive; else shove the
- * trunk to shake it down. With no hive it shoves the trunk all the same. Undefined with no tree.
+ * What `bear` means to do at the tree, going after the nearest hive: swipe it down on all fours
+ * if it hangs low enough, else reared up if it can reach it so, else shove the trunk to shake it
+ * down. It stands so the hive is in comfortable reach of its shoulder, on the side away from the
+ * trunk if the hive hangs close to it. With no hive it shoves the trunk all the same. Undefined with
+ * no tree.
  */
 function planFor(bear: Bear, world: BearWorld): Plan | undefined {
   const tree = world.tree;
@@ -745,54 +1056,53 @@ function planFor(bear: Bear, world: BearWorld): Plan | undefined {
     return undefined;
   }
   const trunk = trunkAt(tree);
+  // Bears come at the tree from the side they arrive on.
+  const side = bear.x <= trunk.x ? 1 : -1;
+  const shove: Plan = {
+    kind: "shove",
+    standAt: trunk.x - side * (trunk.radius + SHOVE.stand),
+    facing: side,
+  };
   const hive = [...world.hives].sort(
     (a, b) => Math.abs(a.view.x - bear.x) - Math.abs(b.view.x - bear.x),
   )[0];
-  // Bears come at the tree from the side they arrive on.
-  const side = bear.x <= trunk.x ? 1 : -1;
-  const trunkPlan: Plan = {
-    kind: "trunk",
-    standAt: trunk.x - side * (trunk.radius + SHOVE_STAND),
-  };
   if (hive === undefined) {
-    return trunkPlan;
+    return shove;
   }
-  const bottom = alongHive(hive, 1);
-  if (bottom.y <= REACH) {
-    const facing = bottom.x >= bear.x ? 1 : -1;
-    return {
-      kind: "hive",
-      standAt: bottom.x - facing * HIVE_STAND,
-      limb: hive.limb,
-      s: hive.s,
-    };
+  const aim = aimAt(hive.view);
+  const height = aim.y - groundAt(aim.x);
+  const kind =
+    height <= REACH.fours
+      ? "paw"
+      : height <= REACH.reared
+        ? "swipe"
+        : undefined;
+  if (kind === undefined) {
+    return shove;
   }
-  for (let s = hive.s; s >= 0; s -= 0.1) {
-    const wood = hive.limb.pointAt(s);
-    if (wood.y <= REACH - 0.1) {
-      const facing = wood.x >= bear.x ? 1 : -1;
-      return {
-        kind: "branch",
-        standAt: wood.x - facing * BRANCH_STAND,
-        limb: hive.limb,
-        s,
-        hive: { limb: hive.limb, s: hive.s },
-      };
-    }
-  }
-  return trunkPlan;
-}
-
-/** A bear swipes at a hive standing this far short of it, hips to hive, and at wood this far. */
-const HIVE_STAND = 0.5;
-const BRANCH_STAND = 0.45;
-
-/** The point `t` of the way down the axis of the hive `hive`. */
-function alongHive(hive: HiveTarget, t: number): Point {
-  const { view } = hive;
+  const facing: 1 | -1 =
+    Math.abs(aim.x - trunk.x) < CROWDED
+      ? aim.x <= trunk.x
+        ? 1
+        : -1
+      : aim.x >= bear.x
+        ? 1
+        : -1;
+  // Its shoulder, standing as it swipes, ahead of and above its hips.
+  const pitch = kind === "paw" ? PAWING.pitch : 1.3;
+  const hip = kind === "paw" ? BODY.hip : BODY.rearedHip;
+  const shoulder = {
+    ahead: BODY.spine * Math.cos(pitch),
+    up: hip + BODY.spine * Math.sin(pitch) - ARM_DROP,
+  };
+  const reach = COMFORT * (BODY.arm + BODY.forearm + LEGS.front.foot.length);
+  const rise = height - shoulder.up;
+  const ahead = Math.sqrt(Math.max(0.01, reach * reach - rise * rise));
   return {
-    x: view.x + Math.sin(view.swing) * view.height * t,
-    y: view.y - Math.cos(view.swing) * view.height * t,
+    kind,
+    standAt: aim.x - facing * (shoulder.ahead + ahead),
+    facing,
+    hive: { limb: hive.limb, s: hive.s },
   };
 }
 
@@ -831,34 +1141,308 @@ function bendLeg(
   };
 }
 
+/** Swiping on all fours, a bear lifts its chest to this slope, in radians from level. */
+const PAWING = { pitch: 0.2, look: 0.45 } as const;
+/** The front legs hang from this far below the shoulder joint. */
+const ARM_DROP = 0.12;
+
+/** Whether `bear` is shoving the trunk, or shown doing so. */
+function shoving(bear: Bear): boolean {
+  return (
+    bear.doing === "shoving" ||
+    (bear.doing === "posing" && bear.showing === "shove")
+  );
+}
+
+/** Whether `bear` is swiping, on all fours or reared up, or shown doing so. */
+function swiping(bear: Bear): boolean {
+  return (
+    bear.doing === "reaching" ||
+    (bear.doing === "posing" &&
+      (bear.showing === "swipe" || bear.showing === "paw"))
+  );
+}
+
+/**
+ * How a bear shoving is bent `k` of the way through a shove: the slope of its body, how far its
+ * hips sink, how far they thrust in toward the trunk, and how far its paws are drawn back off the
+ * bark, from 0 on it to 1 at its chest.
+ */
+function shoveAt(k: number): {
+  pitch: number;
+  sink: number;
+  thrust: number;
+  cocked: number;
+} {
+  const { pitch } = SHOVE;
+  if (k < SHOVE.load) {
+    const e = smoothstep(0, SHOVE.load, k);
+    return {
+      pitch: lerp(pitch.ready, pitch.back, e),
+      sink: SHOVE.sink * e,
+      thrust: -0.4 * SHOVE.thrust * e,
+      cocked: e,
+    };
+  }
+  if (k < SHOVE.drive) {
+    const into = (k - SHOVE.load) / (SHOVE.drive - SHOVE.load);
+    const e = smoothstep(0, 1, into);
+    return {
+      pitch: lerp(pitch.back, pitch.in, e),
+      sink: lerp(SHOVE.sink, -SHOVE.rise, e),
+      thrust: lerp(-0.4 * SHOVE.thrust, SHOVE.thrust, e),
+      cocked: 1 - smoothstep(0, SHOVE.strike, into),
+    };
+  }
+  const e = smoothstep(SHOVE.drive, 1, k);
+  return {
+    pitch: lerp(pitch.in, pitch.ready, e),
+    sink: lerp(-SHOVE.rise, 0, e),
+    thrust: lerp(SHOVE.thrust, 0, e),
+    cocked: 0,
+  };
+}
+
+/** Where a foot is placed: its ankle or wrist, and how far its sole tips toes-down, in radians. */
+interface Placing {
+  ankle: Point;
+  angle: number;
+}
+
+function mixPlacing(a: Placing, b: Placing, t: number): Placing {
+  return { ankle: mix(a.ankle, b.ankle, t), angle: lerp(a.angle, b.angle, t) };
+}
+
+/** The way a sole runs from heel to toe, tipped `angle` toes-down, for a bear facing `f`. */
+function soleWay(angle: number, f: 1 | -1): Point {
+  return { x: f * Math.cos(angle), y: -Math.sin(angle) };
+}
+
+/** The side of a bone running `way` that faces the way the bear faces: forward on a leg, up on a sole. */
+function frontOf(way: Point, f: 1 | -1): Point {
+  return { x: -f * way.y, y: f * way.x };
+}
+
+/** Where the ankle of `foot` is with its toes resting at `toe` and its sole tipped `angle`. */
+function ankleOver(
+  toe: Point,
+  angle: number,
+  foot: FootShape,
+  f: 1 | -1,
+): Point {
+  const way = soleWay(angle, f);
+  const up = frontOf(way, f);
+  return {
+    x: toe.x + way.x * (foot.forward - foot.length) + up.x * foot.height,
+    y: toe.y + way.y * (foot.forward - foot.length) + up.y * foot.height,
+  };
+}
+
+/** Where the heel and toe of `foot` are, from its ankle and its sole tipped `angle`. */
+function soleUnder(
+  ankle: Point,
+  angle: number,
+  foot: FootShape,
+  f: 1 | -1,
+): { heel: Point; toe: Point } {
+  const way = soleWay(angle, f);
+  const up = frontOf(way, f);
+  const heel = {
+    x: ankle.x - way.x * foot.forward - up.x * foot.height,
+    y: ankle.y - way.y * foot.forward - up.y * foot.height,
+  };
+  return {
+    heel,
+    toe: { x: heel.x + way.x * foot.length, y: heel.y + way.y * foot.length },
+  };
+}
+
+/**
+ * Where the wrist of a forepaw swiping from `root` at `aim` is, `t` of the way through its swipe,
+ * setting out from and coming back to `rest`, and how far into the swipe it is, from 0 at rest to
+ * 1 in full swing.
+ */
+function swipePath(
+  t: number,
+  root: Point,
+  rest: Point,
+  aim: Point,
+  f: 1 | -1,
+  reared: boolean,
+): { wrist: Point; swinging: number } {
+  const angleOf = (p: Point): number =>
+    Math.atan2(p.y - root.y, f * (p.x - root.x));
+  const restAngle = angleOf(rest);
+  const restReach = Math.hypot(rest.x - root.x, rest.y - root.y);
+  const toward = angleOf(aim);
+  // Its claws reach a paw's length past its wrist, along its forearm.
+  const reach = clamp(
+    Math.hypot(aim.x - root.x, aim.y - root.y) - LEGS.front.foot.length,
+    0.3,
+    BODY.arm + BODY.forearm - 0.02,
+  );
+  const raised = toward + (reared ? SWIPE.raise : SWIPE.raiseFours);
+  const through = toward - SWIPE.follow;
+  let angle: number;
+  let r: number;
+  if (t >= 1) {
+    angle = restAngle;
+    r = restReach;
+  } else if (t < SWIPE.windUp) {
+    const e = smoothstep(0, SWIPE.windUp, t);
+    angle = lerp(restAngle, raised, e);
+    r = lerp(restReach, reach, e) * (1 - SWIPE.tuck * Math.sin(Math.PI * e));
+  } else if (t < SWIPE.strike) {
+    angle = lerp(raised, through, smoothstep(SWIPE.windUp, SWIPE.strike, t));
+    r = reach;
+  } else {
+    const e = smoothstep(SWIPE.strike, 1, t);
+    angle = lerp(through, restAngle, e);
+    r = lerp(reach, restReach, e);
+  }
+  const wrist = {
+    x: root.x + f * r * Math.cos(angle),
+    y: Math.max(
+      groundAt(root.x) + LEGS.front.foot.length,
+      root.y + r * Math.sin(angle),
+    ),
+  };
+  return {
+    wrist,
+    swinging:
+      t >= 1 ? 0 : smoothstep(0, 0.12, t) * (1 - smoothstep(0.86, 1, t)),
+  };
+}
+
+/**
+ * Where a forepaw of `bear`, rooted at `root`, reaches when it is off the ground, given where it
+ * would stand: on the bark while it shoves, swiping, raised as it roars, or held before its chest
+ * reared up. Also how strongly that wins over standing, and how far the paw turns to point along
+ * its forearm, claws first. Undefined while it stands on the paw.
+ */
+function forepaw(
+  bear: Bear,
+  root: Point,
+  near: boolean,
+  standing: Placing,
+  reared: number,
+  lift: number,
+): { place: Placing; weight: number; along: number } | undefined {
+  const f = bear.facing;
+  if (shoving(bear) && bear.bark !== undefined) {
+    const bark = near ? bear.bark.near : bear.bark.far;
+    const onBark: Placing = {
+      ankle: { x: bark.x - f * LEGS.front.foot.height, y: bark.y },
+      angle: -Math.PI / 2 + 0.2,
+    };
+    const atChest: Placing = {
+      ankle: {
+        x: root.x + f * (near ? 0.24 : 0.2),
+        y: root.y - (near ? 0.04 : 0.13),
+      },
+      angle: 0.7,
+    };
+    return {
+      place: mixPlacing(
+        onBark,
+        atChest,
+        shoveAt(bear.shove / HUNT.shove).cocked,
+      ),
+      weight: reared,
+      along: 0,
+    };
+  }
+  const held: Placing = {
+    ankle: {
+      x: root.x + f * (near ? 0.3 : 0.25),
+      y: root.y - (near ? 0.08 : 0.18),
+    },
+    angle: 1.25,
+  };
+  if (swiping(bear) && near && bear.aim !== undefined) {
+    const rest = reared > 0.5 ? held : standing;
+    const swipe = swipePath(
+      bear.swipe / HUNT.swipe,
+      root,
+      rest.ankle,
+      bear.aim,
+      f,
+      reared > 0.5,
+    );
+    return {
+      place: {
+        ankle: mix(rest.ankle, swipe.wrist, swipe.swinging),
+        angle: rest.angle,
+      },
+      weight: Math.max(reared, lift),
+      along: swipe.swinging,
+    };
+  }
+  if (reared <= 0) {
+    return undefined;
+  }
+  const roaring =
+    bear.doing === "angry" ||
+    (bear.doing === "posing" && bear.showing === "roar");
+  if (roaring) {
+    return {
+      place: {
+        ankle: {
+          x: root.x + f * (near ? 0.36 : 0.3),
+          y: root.y + (near ? 0.1 : 0.02),
+        },
+        angle: 0.5,
+      },
+      weight: reared,
+      along: 0,
+    };
+  }
+  return { place: held, weight: reared, along: 0 };
+}
+
 /** Where every part of `bear` is, from what it is doing and how far into it. */
 function poseOf(bear: Bear): Pose {
   const f = bear.facing;
   const reared = smoothstep(0, 1, bear.rear);
   const down = smoothstep(0, 1, bear.collapse);
+  const lift = smoothstep(0, 1, bear.lift) * (1 - reared);
   const running = smoothstep(SPEED.walk, SPEED.run, bear.speed);
   const gait = running > 0.5 ? GAITS.run : GAITS.walk;
   const moving = smoothstep(0, 0.3, bear.speed) * (1 - reared) * (1 - down);
   const bob = gait.bob * moving * Math.sin(bear.gait * Math.PI * 4);
-  // Leaning in and out against the trunk as it shoves.
-  const lean =
-    (bear.doing === "shoving" || bear.showing === "shove") && reared > 0.9
-      ? 0.08 * Math.sin((Math.PI * bear.shove) / (HUNT.pushing * HUNT.shove))
-      : 0;
-  const hipX = bear.x + f * lean;
+  // Shoving, it pivots at the hips over its planted feet.
+  const shove = shoving(bear)
+    ? shoveAt(bear.shove / HUNT.shove)
+    : { pitch: 1.3, sink: 0, thrust: 0, cocked: 0 };
+  const hipX = bear.x + f * shove.thrust * reared;
   const ground = groundAt(hipX);
-  const pitch = lerp(lerp(0.06, 1.3, reared), -0.04, down);
+  const pitch = lerp(
+    lerp(REST.pitch + (PAWING.pitch - REST.pitch) * lift, shove.pitch, reared),
+    -0.04,
+    down,
+  );
   const hipHeight =
-    lerp(lerp(BODY.hip, BODY.rearedHip, reared), 0.34, down) + bob;
+    lerp(lerp(BODY.hip, BODY.rearedHip - shove.sink, reared), 0.34, down) + bob;
   const hip = { x: hipX, y: ground + hipHeight };
   const shoulder = {
     x: hip.x + f * BODY.spine * Math.cos(pitch),
     y: hip.y + BODY.spine * Math.sin(pitch),
   };
-  const roar = bear.doing === "angry" ? 0.5 : 0;
-  // On all fours it carries its head low, below its hump; reared up, it holds it up.
+  const roar =
+    bear.doing === "angry" ||
+    (bear.doing === "posing" && bear.showing === "roar")
+      ? 0.45
+      : 0;
+  // Driving a shove home, it tucks its head down between its shoulders.
+  const tuck = shoving(bear)
+    ? (-0.35 * Math.max(0, shove.thrust)) / SHOVE.thrust
+    : 0;
+  // On all fours it carries its head low, below its hump, lifting it to look up at what it swipes
+  // at; reared up, it holds it up. A sting jerks it up and back.
   const headAngle = lerp(
-    lerp(-0.18, 0.35 + roar, reared) - 0.85 * smoothstep(0, 1, bear.headDown),
+    lerp(REST.head + PAWING.look * lift, 0.35 + roar + tuck, reared) -
+      0.85 * smoothstep(0, 1, bear.headDown) +
+      0.3 * bear.flinch,
     -0.15,
     down,
   );
@@ -867,16 +1451,30 @@ function poseOf(bear: Bear): Pose {
     y: shoulder.y + BODY.neck * Math.sin(headAngle),
   };
 
-  // Where each foot goes in its step, ahead of or behind where it stands, and how high.
-  const step = (offset: number): { ahead: number; lift: number } => {
+  // Where each foot goes in its step, ahead of or behind where it stands, how high, and how far it
+  // tips toes-down: late in its stance the heel lifts as it rolls over its toes, and through its
+  // swing the toes hang until it reaches for the ground again.
+  const step = (
+    offset: number,
+    hind: boolean,
+  ): { ahead: number; lift: number; roll: number; planted: boolean } => {
     const phase = (bear.gait + offset) % 1;
+    const roll = hind ? gait.roll.hind : gait.roll.front;
     if (phase < gait.stance) {
-      return { ahead: gait.stride * (0.5 - phase / gait.stance), lift: 0 };
+      const p = phase / gait.stance;
+      return {
+        ahead: gait.stride * (0.5 - p),
+        lift: 0,
+        roll: roll * smoothstep(0.6, 1, p) * (hind ? 1 : 0.5),
+        planted: true,
+      };
     }
     const swing = (phase - gait.stance) / (1 - gait.stance);
     return {
       ahead: gait.stride * (swing - 0.5),
       lift: gait.lift * Math.sin(Math.PI * swing),
+      roll: roll * (1 - smoothstep(0.35, 0.9, swing)),
+      planted: false,
     };
   };
   const hindRoots = [
@@ -884,97 +1482,101 @@ function poseOf(bear: Bear): Pose {
     { x: hip.x + f * 0.03, y: hip.y - 0.08 },
   ];
   const frontRoots = [
-    { x: shoulder.x - f * 0.02, y: shoulder.y - 0.12 },
-    { x: shoulder.x + f * 0.05, y: shoulder.y - 0.12 },
+    { x: shoulder.x - f * 0.02, y: shoulder.y - ARM_DROP },
+    { x: shoulder.x + f * 0.05, y: shoulder.y - ARM_DROP },
   ];
-  const legs = [0, 1, 2, 3].map((i) => {
+  const legs = [0, 1, 2, 3].map((i): Leg => {
     const hind = i < 2;
-    const root = hind ? at(hindRoots, i) : at(frontRoots, i - 2);
     const near = i % 2 === 0;
-    const { ahead, lift } = step(at(gait.offsets, i));
-    // Standing on all fours, stepping as it goes.
-    const standX = root.x + f * (hind ? 0.06 : 0.04) + f * ahead * moving;
-    let target: Point = {
-      x: standX,
-      y: groundAt(standX) + (hind ? 0.07 : 0.06) + lift * moving,
-    };
+    const shape = hind ? LEGS.hind : LEGS.front;
+    const root = hind ? at(hindRoots, i) : at(frontRoots, i - 2);
+    const stepping = step(at(gait.offsets, i), hind);
+    // On all fours, stepping as it goes.
+    const standX =
+      root.x + f * (hind ? 0.06 : 0.04) + f * stepping.ahead * moving;
+    const roll = stepping.roll * moving;
+    const standing: Placing = stepping.planted
+      ? {
+          ankle: ankleOver(
+            {
+              x: standX + f * (shape.foot.length - shape.foot.forward),
+              y: groundAt(standX),
+            },
+            roll,
+            shape.foot,
+            f,
+          ),
+          angle: roll,
+        }
+      : {
+          ankle: {
+            x: standX,
+            y: groundAt(standX) + shape.foot.height + stepping.lift * moving,
+          },
+          angle: roll,
+        };
+    let place = standing;
+    let along = 0;
     if (hind) {
-      // Reared up, it stands on its hind feet under its hips.
-      const planted = {
-        x: hip.x + f * (near ? 0.08 : 0.02),
-        y: groundAt(hip.x) + 0.07,
-      };
-      target = mix(target, planted, reared);
+      // Reared up, it stands flat on its hind feet under its hips.
+      const plantedX =
+        bear.feet === undefined
+          ? hip.x + f * (near ? 0.1 : 0.03)
+          : at(bear.feet, near ? 0 : 1);
+      place = mixPlacing(
+        place,
+        {
+          ankle: { x: plantedX, y: groundAt(plantedX) + shape.foot.height },
+          angle: 0,
+        },
+        reared,
+      );
     } else {
-      target = mix(target, forepaw(bear, shoulder, near), reared);
+      const raised = forepaw(bear, root, near, standing, reared, lift);
+      if (raised !== undefined) {
+        place = mixPlacing(place, raised.place, raised.weight);
+        along = raised.along;
+      }
     }
     // Collapsed, its legs splay out along the ground.
-    const splayed = {
-      x: root.x + f * (hind ? -0.55 : 0.5) + (near ? 0 : f * 0.12),
-      y: groundAt(root.x) + 0.08,
-    };
-    target = mix(target, splayed, down);
+    place = mixPlacing(
+      place,
+      {
+        ankle: {
+          x: root.x + f * (hind ? -0.55 : 0.5) + (near ? 0 : f * 0.12),
+          y: groundAt(root.x) + 0.09,
+        },
+        angle: hind ? -0.25 : 0.15,
+      },
+      down,
+    );
     const { knee, end } = hind
-      ? bendLeg(root, target, BODY.thigh, BODY.shin, f > 0 ? 1 : -1)
-      : bendLeg(root, target, BODY.arm, BODY.forearm, f > 0 ? -1 : 1);
-    const footLength = hind ? BODY.foot : BODY.paw;
-    // A hind foot lies flat along the ground; a forepaw points the way its forearm does once
-    // reared up.
-    const along = hind
-      ? 0
-      : reared * Math.atan2(end.y - knee.y, f * (end.x - knee.x));
-    const toe = {
-      x: end.x + f * footLength * Math.cos(along),
-      y: end.y + footLength * Math.sin(along) - (hind ? 0.04 : 0.02),
-    };
-    return { root, knee, ankle: end, toe };
+      ? bendLeg(root, place.ankle, BODY.thigh, BODY.shin, f > 0 ? 1 : -1)
+      : bendLeg(root, place.ankle, BODY.arm, BODY.forearm, f > 0 ? -1 : 1);
+    // A swiping paw points along its forearm, claws first.
+    const forearm = Math.atan2(-(end.y - knee.y), f * (end.x - knee.x));
+    const angle = lerp(place.angle, forearm, along);
+    const { heel, toe } = soleUnder(end, angle, shape.foot, f);
+    return { root, knee, ankle: end, heel, toe };
   });
   return {
     hip,
     shoulder,
     head,
     headAngle,
+    jaw: clamp(bear.jaw + 0.5 * bear.flinch, 0, 1),
     legs: [at(legs, 0), at(legs, 1), at(legs, 2), at(legs, 3)],
   };
 }
 
-/** Where a forepaw of `bear`, reared up, reaches for: swiping, on the trunk, or held up. */
-function forepaw(bear: Bear, shoulder: Point, near: boolean): Point {
-  const f = bear.facing;
-  const length = (BODY.arm + BODY.forearm) * 0.95;
-  const shoving =
-    bear.doing === "shoving" ||
-    (bear.doing === "posing" && bear.showing === "shove");
-  if (shoving) {
-    return {
-      x: shoulder.x + f * 0.55,
-      y: shoulder.y - (near ? 0.05 : 0.2),
-    };
-  }
-  const swiping =
-    bear.doing === "reaching" ||
-    (bear.doing === "posing" && bear.showing === "swipe");
-  if (swiping && near) {
-    const t = bear.swipe / HUNT.swipe;
-    const angle =
-      t < SWIPE.windUp
-        ? lerp(SWIPE.rest, SWIPE.raised, smoothstep(0, SWIPE.windUp, t))
-        : t < SWIPE.strike.to
-          ? lerp(
-              SWIPE.raised,
-              SWIPE.low,
-              smoothstep(SWIPE.strike.from, SWIPE.strike.to, t),
-            )
-          : lerp(SWIPE.low, SWIPE.rest, smoothstep(SWIPE.strike.to, 1, t));
-    return {
-      x: shoulder.x + f * length * Math.cos(angle),
-      y: shoulder.y + length * Math.sin(angle),
-    };
-  }
-  // Held up before it, the far paw a little lower.
+/** The tip of the claws of the near forepaw in `pose`, for a bear facing `f`. */
+function clawsOf(pose: Pose, f: 1 | -1): Point {
+  const paw = pose.legs[2];
+  const way = unit(paw.heel, paw.toe);
+  const up = frontOf(way, f);
   return {
-    x: shoulder.x + f * (near ? 0.42 : 0.36),
-    y: shoulder.y - (near ? 0.12 : 0.24),
+    x: paw.toe.x + way.x * CLAWS.length + up.x * 0.01,
+    y: paw.toe.y + way.y * CLAWS.length + up.y * 0.01,
   };
 }
 
@@ -996,13 +1598,21 @@ function bodyOf(pose: Pose): { x: number; y: number; r: number }[] {
 }
 
 /**
- * A bear's body and head without its legs, standing on all fours facing right, in meters, its hip
- * joint at (0, 0.7) and its shoulder joint at (0.8, 0.75): around from its tail over its back, its
- * modest shoulder rise, its neck, a small ear, its brow and long muzzle, under its jaw and down its
- * chest, along its belly and back up under its rump. Each point follows the bones by its third
- * number: 0 the hips, 1 the shoulders, 2 the head, and between them as a blend of the two.
+ * A point of the drawn outline of a bear standing on all fours facing right, in meters, its hip
+ * joint at (0, 0.7) and its shoulder joint at (0.8, 0.75). The third number says which bones it
+ * follows: 0 the hips, 1 the shoulders, 2 the head, and between them a blend of the two; or
+ * `JAW_BONE`, the lower jaw.
  */
-const OUTLINE: readonly (readonly [number, number, number])[] = [
+type Spec = readonly [number, number, number];
+
+/** Points of the outline that follow the lower jaw. */
+const JAW_BONE = 3;
+
+/**
+ * The outline from under the rump, over the back and the modest rise at the shoulders, to the nape
+ * of the neck.
+ */
+const BACK: readonly Spec[] = [
   [-0.37, 0.79, 0],
   [-0.34, 0.86, 0],
   [-0.25, 0.93, 0],
@@ -1012,21 +1622,55 @@ const OUTLINE: readonly (readonly [number, number, number])[] = [
   [0.62, 1.02, 0.85],
   [0.8, 1.05, 1],
   [0.96, 1.01, 1.3],
-  [1.07, 0.95, 1.8],
-  [1.1, 0.98, 2],
-  [1.12, 1.03, 2],
-  [1.16, 1.05, 2],
-  [1.2, 1.01, 2],
-  [1.27, 0.94, 2],
-  [1.35, 0.87, 2],
-  [1.46, 0.81, 2],
-  [1.54, 0.77, 2],
-  [1.57, 0.735, 2],
-  [1.545, 0.7, 2],
-  [1.47, 0.675, 2],
-  [1.37, 0.64, 2],
-  [1.25, 0.6, 1.8],
-  [1.1, 0.575, 1.4],
+  [1.05, 0.975, 1.75],
+];
+
+/**
+ * The head, from the nape over a small rounded ear, along the nearly level crown and brow and the
+ * long straight bridge of the muzzle to a soft nose pad standing a little proud at its end, and
+ * back under it along the upper lip.
+ */
+const HEAD: readonly Spec[] = [
+  [1.085, 0.99, 2],
+  [1.1, 1.03, 2],
+  [1.118, 1.059, 2],
+  [1.145, 1.071, 2],
+  [1.171, 1.06, 2],
+  [1.186, 1.032, 2],
+  [1.198, 1.006, 2],
+  [1.232, 0.997, 2],
+  [1.28, 0.982, 2],
+  [1.335, 0.955, 2],
+  [1.395, 0.922, 2],
+  [1.448, 0.894, 2],
+  [1.478, 0.881, 2],
+  [1.498, 0.872, 2],
+  [1.508, 0.857, 2],
+  [1.509, 0.84, 2],
+  [1.498, 0.825, 2],
+  [1.475, 0.816, 2],
+  [1.45, 0.808, 2],
+];
+
+/**
+ * The corner of the mouth: where the lips meet when the jaw is shut, just behind the nose, and how
+ * far back the mouth opens when it hangs wide.
+ */
+const MOUTH = { shut: { x: 1.432, y: 0.801 }, wide: { x: 1.34, y: 0.818 } };
+
+/** The lower jaw, from the lower lip around the chin and back under the jaw. */
+const JAW: readonly Spec[] = [
+  [1.44, 0.79, JAW_BONE],
+  [1.436, 0.773, JAW_BONE],
+  [1.408, 0.757, JAW_BONE],
+  [1.352, 0.742, JAW_BONE],
+];
+
+/** The jowl and throat, down the neck and chest, along the belly and back up under the rump. */
+const BELLY: readonly Spec[] = [
+  [1.28, 0.722, 2],
+  [1.19, 0.672, 1.8],
+  [1.08, 0.6, 1.4],
   [0.96, 0.54, 1],
   [0.86, 0.45, 1],
   [0.7, 0.41, 0.85],
@@ -1038,6 +1682,12 @@ const OUTLINE: readonly (readonly [number, number, number])[] = [
   [-0.36, 0.69, 0],
 ];
 
+/**
+ * The lower jaw's hinge, behind the corner of the mouth, and how far it swings open at its widest,
+ * in radians.
+ */
+const HINGE = { x: 1.3, y: 0.795, open: 0.42 } as const;
+
 /** Where the bones the outline follows lie in it: the hips, the shoulders, and the head on its neck. */
 const REST = {
   hip: { x: 0, y: 0.7 },
@@ -1048,40 +1698,19 @@ const REST = {
 } as const;
 
 /**
- * Widths of a bear's legs, in meters: the hind leg at the hip, knee and heel, and its foot's height;
- * the front leg at the shoulder, elbow and wrist, and its paw's.
- */
-const LEGS = {
-  hind: { hip: 0.32, knee: 0.19, heel: 0.13, foot: 0.11 },
-  front: { shoulder: 0.28, elbow: 0.18, wrist: 0.145, paw: 0.13 },
-} as const;
-
-/**
  * The silhouette of a bear in `pose`, facing `facing`, in meters: its body and head from a drawn
- * outline bent with its bones, and its four legs, the far ones behind the near.
+ * outline bent with its bones, and its four legs, each one smooth outline down to its foot, with
+ * claws on its forepaws.
  */
 function bearShape(pose: Pose, facing: 1 | -1): Path2D {
   const path = new Path2D();
   const f = facing;
   addPolygon(path, smooth(skin(pose, f)));
   for (const [i, leg] of pose.legs.entries()) {
-    if (i < 2) {
-      const { hip, knee, heel, foot } = LEGS.hind;
-      addCapsule(path, leg.root, leg.knee, hip / 2, knee / 2);
-      addCapsule(path, leg.knee, leg.ankle, knee / 2, heel / 2);
-      // Flat along the ground from its heel to its toes.
-      addCapsule(
-        path,
-        { x: leg.ankle.x - f * 0.02, y: leg.toe.y + foot / 2 - 0.005 },
-        { x: leg.toe.x, y: leg.toe.y + foot * 0.4 },
-        foot / 2,
-        foot * 0.4,
-      );
-    } else {
-      const { shoulder, elbow, wrist, paw } = LEGS.front;
-      addCapsule(path, leg.root, leg.knee, shoulder / 2, elbow / 2);
-      addCapsule(path, leg.knee, leg.ankle, elbow / 2, wrist / 2);
-      addCapsule(path, leg.ankle, leg.toe, paw / 2, paw * 0.42);
+    const hind = i < 2;
+    addPolygon(path, smooth(legOutline(leg, hind ? LEGS.hind : LEGS.front, f)));
+    if (!hind) {
+      addClaws(path, leg, f);
     }
   }
   return path;
@@ -1089,7 +1718,7 @@ function bearShape(pose: Pose, facing: 1 | -1): Path2D {
 
 /**
  * The outline of `pose`'s body and head, each point carried by the bones it follows from where it
- * lies at rest to where those bones are now.
+ * lies at rest to where those bones are now, the lower jaw swung open as far as the pose has it.
  */
 function skin(pose: Pose, f: 1 | -1): Point[] {
   const pitch = Math.atan2(
@@ -1110,15 +1739,103 @@ function skin(pose: Pose, f: 1 | -1): Point[] {
       now: { ...pose.shoulder, angle: pose.headAngle },
     },
   ];
-  return OUTLINE.map(([x, y, follows]) => {
+  const head = at(bones, 2);
+  const jaw = {
+    rest: { x: HINGE.x, y: HINGE.y, angle: REST.head },
+    now: {
+      ...carry(head, HINGE, f),
+      angle: pose.headAngle - HINGE.open * pose.jaw,
+    },
+  };
+  const place = ([x, y, follows]: Spec): Point => {
+    if (follows === JAW_BONE) {
+      return carry(jaw, { x, y }, f);
+    }
     const i = Math.min(1, Math.floor(follows));
-    const blend = follows - i;
     return mix(
       carry(at(bones, i), { x, y }, f),
       carry(at(bones, i + 1), { x, y }, f),
-      blend,
+      follows - i,
     );
+  };
+  return [
+    ...BACK.map(place),
+    ...HEAD.map(place),
+    carry(head, mix(MOUTH.shut, MOUTH.wide, pose.jaw), f),
+    ...JAW.map(place),
+    ...BELLY.map(place),
+  ];
+}
+
+/**
+ * The outline of `leg`, shaped by `shape`, for a bear facing `f`: down the front of its upper bone,
+ * around the front of its knee or elbow, down the front of its lower bone, over its foot to its
+ * toes, back along its sole and around its heel, and up the back of the leg, each part as wide as
+ * `shape` says, the knee or elbow fuller on the side it bends out to.
+ */
+function legOutline(leg: Leg, shape: LegShape, f: 1 | -1): Point[] {
+  const { root, knee, ankle, heel, toe } = leg;
+  const upper = unit(root, knee);
+  const lower = unit(knee, ankle);
+  const frontUpper = frontOf(upper, f);
+  const frontLower = frontOf(lower, f);
+  const bisector = unit(
+    { x: 0, y: 0 },
+    {
+      x: frontUpper.x + frontLower.x,
+      y: frontUpper.y + frontLower.y,
+    },
+  );
+  // Which side the joint bends out to: its front for a knee, its back for an elbow.
+  const outFront = f * (upper.x * lower.y - upper.y * lower.x) < 0 ? 1 : -1;
+  const jointFront = shape.joint / 2 / (outFront > 0 ? 0.85 : 1.1);
+  const jointBack = shape.joint / 2 / (outFront > 0 ? 1.1 : 0.85);
+  const way = unit(heel, toe);
+  const up = frontOf(way, f);
+  const { foot } = shape;
+  const midUpper = mix(root, knee, 0.5);
+  const midLower = mix(knee, ankle, 0.5);
+  const offset = (p: Point, side: Point, by: number): Point => ({
+    x: p.x + side.x * by,
+    y: p.y + side.y * by,
   });
+  const into = (p: Point, by: number): Point => offset(p, upper, -by);
+  return [
+    into(offset(root, frontUpper, shape.root / 2), 0.06),
+    offset(midUpper, frontUpper, (shape.upper / 2) * shape.swell.upper[0]),
+    offset(knee, bisector, jointFront),
+    offset(midLower, frontLower, (shape.lower / 2) * shape.swell.lower[0]),
+    offset(ankle, frontLower, shape.ankle / 2),
+    offset(offset(toe, way, -0.04), up, foot.toes),
+    offset(offset(toe, way, 0.006), up, foot.toes * 0.45),
+    offset(toe, way, -0.012),
+    offset(heel, way, 0.04),
+    offset(offset(heel, way, -0.014), up, foot.heel * 0.5),
+    offset(ankle, frontLower, -shape.ankle / 2),
+    offset(midLower, frontLower, -(shape.lower / 2) * shape.swell.lower[1]),
+    offset(knee, bisector, -jointBack),
+    offset(midUpper, frontUpper, -(shape.upper / 2) * shape.swell.upper[1]),
+    into(offset(root, frontUpper, -shape.root / 2), 0.06),
+  ];
+}
+
+/** Adds the claws of the forepaw on `leg` to `path`: two hooked points past its toes. */
+function addClaws(path: Path2D, leg: Leg, f: 1 | -1): void {
+  const way = unit(leg.heel, leg.toe);
+  const up = frontOf(way, f);
+  const point = (along: number, rise: number): Point => ({
+    x: leg.toe.x + way.x * along + up.x * rise,
+    y: leg.toe.y + way.y * along + up.y * rise,
+  });
+  for (const rise of [0.012, 0.03]) {
+    addPolygon(path, [
+      point(-0.01, rise + CLAWS.base / 2),
+      point(CLAWS.length * 0.55, rise + CLAWS.base * 0.2),
+      point(CLAWS.length, rise - CLAWS.base * 0.5),
+      point(CLAWS.length * 0.5, rise - CLAWS.base * 0.35),
+      point(-0.01, rise - CLAWS.base / 2),
+    ]);
+  }
 }
 
 /** A bone: where it starts, and its angle from level toward the way the bear faces. */
@@ -1173,6 +1890,14 @@ function smooth(points: readonly Point[]): Point[] {
     }
   }
   return out;
+}
+
+/** The unit vector from `a` toward `b`. */
+function unit(a: Point, b: Point): Point {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: dx / length, y: dy / length };
 }
 
 function mix(a: Point, b: Point, t: number): Point {

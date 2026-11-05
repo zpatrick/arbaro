@@ -3,7 +3,7 @@ import { type Contact, Debris, type Piece } from "./debris";
 import type { Limb } from "./limb";
 import type { Load } from "./physics";
 import type { Tree } from "./tree";
-import { approach, at, clamp, lerp, Rng, smoothstep } from "./util";
+import { approach, at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import type { Catcher } from "./weather";
 import type { Wind } from "./wind";
 
@@ -69,7 +69,21 @@ export const HIVE = {
   /** Bees flying about a finished hive, and about one being built. */
   bees: 8,
   builders: 5,
+  /** Bees that pour out of a provoked hive at size one, all of them stinging. */
+  guards: 16,
+  /** Seconds a provoked hive's bees keep at whatever provoked them, after it last did. */
+  anger: 12,
+  /** Bees chase what provoked them this far from their hive, in meters. */
+  chase: 14,
 } as const;
+
+/**
+ * A blow on a hive, as from a bear's paw: the share of the paw's speed it bounces back with, and
+ * the seconds the blow lasts, which sets how hard it pulls on where the comb holds the wood.
+ */
+const BLOW = { bounce: 0.3, contact: 0.05 } as const;
+/** Fastest a blow sends a hive flying, in meters per second. */
+const FASTEST_KNOCK = 5;
 
 /** Where bees settle are tried along each limb this far apart, in meters. */
 const SITE_STEP = 0.2;
@@ -98,9 +112,26 @@ const BEE = {
   daylight: 0.3,
   /** Seconds bees scatter from a fallen hive before they are gone. */
   scatter: 6,
+  /** Speed of a bee diving at what provoked it, how close it comes, and the chance a dive stings. */
+  attack: 3.2,
+  sting: 0.1,
+  stingChance: 0.35,
+  /** Seconds over which the bees inside a provoked hive pour out of it. */
+  pour: 2.5,
+  /** Seconds a bee hangs back after it stings before it dives again, from least to most. */
+  regroup: { from: 0.8, to: 2.6 },
+  /** How far a bee hangs back from what it stings, in meters, from least to most. */
+  hangBack: { from: 0.35, to: 0.9 },
 } as const;
 
-type Doing = "inside" | "out" | "visiting" | "home" | "building";
+type Doing =
+  | "inside"
+  | "out"
+  | "visiting"
+  | "home"
+  | "building"
+  | "diving"
+  | "regrouping";
 
 interface Bee {
   x: number;
@@ -110,10 +141,20 @@ interface Bee {
   doing: Doing;
   /** Where it is headed, in meters. */
   target: { x: number; y: number };
-  /** Seconds left at what it is doing, while visiting, inside or scattering. */
+  /** Seconds left at what it is doing, while visiting, inside, regrouping or scattering. */
   timer: number;
   /** Progress through its wobble, in radians. */
   phase: number;
+  /** Which part of what provoked it a diving bee goes for, and how far off it it aims. */
+  mark: number;
+  aim: { x: number; y: number };
+}
+
+/** Something that provoked a hive, as its bees see it: where they sting it, and what a sting does. */
+export interface Threat {
+  /** Places on it bees dive at, in meters. */
+  points: readonly { x: number; y: number }[];
+  sting(): void;
 }
 
 interface Hive {
@@ -135,6 +176,8 @@ interface Hive {
   last: { x: number; y: number } | undefined;
   /** How fast a blow that knocked it loose sends it off, in meters per second, once knocked. */
   kick: { x: number; y: number } | undefined;
+  /** Seconds its bees keep after whatever provoked it. */
+  provoked: number;
   bees: Bee[];
 }
 
@@ -144,8 +187,16 @@ export interface HiveTarget {
   /** The limb it hangs from, and how far along. */
   limb: Limb;
   s: number;
-  /** Knocks it loose with a blow that sends it off at `kick`, in meters per second. */
-  knock(kick: { x: number; y: number }): void;
+  /** Whether `point` lies within the hive, or within `margin` meters of it. */
+  contains(point: { x: number; y: number }, margin: number): boolean;
+  /**
+   * Strikes it with a blow from something of `mass` kilograms moving at `velocity`, in meters per
+   * second, such as a bear's paw. The blow swings it and pulls on where its comb holds the wood; a
+   * hard enough blow tears it loose and sends it flying.
+   */
+  strike(velocity: { x: number; y: number }, mass: number): void;
+  /** Rouses its bees against whatever is near it. */
+  provoke(): void;
 }
 
 /** A hive where it hangs, or lies once it has fallen, for drawing, in meters. */
@@ -189,6 +240,8 @@ export interface HiveConditions {
   hold: number;
   /** Fraction of the snow lying on a hive that melts each second. */
   melt: number;
+  /** Whatever the bees of a provoked hive go after. */
+  threats: readonly Threat[];
 }
 
 /** The hives hanging on the tree, and the bees flying about them. */
@@ -201,6 +254,8 @@ export class Hives {
   private swarmIn: number | undefined;
   /** Hives that have fallen, lying where they came down until they fade, and how each looked as it fell. */
   private fallen: { piece: Debris; view: HiveView }[] = [];
+  /** Multiplier on how hard combs hold, as of the last step. */
+  private holding = 1;
 
   /** Clears every hive and bee away, for a new tree. */
   clear(): void {
@@ -223,6 +278,7 @@ export class Hives {
       swingRate: 0,
       last: undefined,
       kick: undefined,
+      provoked: 0,
       bees: [],
     });
   }
@@ -240,15 +296,55 @@ export class Hives {
 
   /** The hives hanging on the tree, as a bear sees them. */
   targets(settings: HiveSettings): HiveTarget[] {
-    return this.hives.map((hive) => ({
-      view: this.viewOf(hive, settings),
-      limb: hive.limb,
-      s: hive.s,
-      knock: (kick: { x: number; y: number }): void => {
-        hive.damage = 1;
-        hive.kick = kick;
-      },
-    }));
+    return this.hives.map((hive) => {
+      const view = this.viewOf(hive, settings);
+      return {
+        view,
+        limb: hive.limb,
+        s: hive.s,
+        contains: (point, margin) => inside(view, point, margin),
+        strike: (velocity, mass) => this.strike(hive, settings, velocity, mass),
+        provoke: () => {
+          hive.provoked = HIVE.anger;
+        },
+      };
+    });
+  }
+
+  /**
+   * Strikes `hive` with something of `mass` kilograms moving at `velocity`. The blow passes it the
+   * momentum two bodies share in a collision, swinging it about where it hangs, and pulls on its
+   * comb as hard as that momentum over the moment the blow lasts: a blow past what the comb holds
+   * tears it loose at once, and a lesser one damages it by the square of its share of that.
+   */
+  private strike(
+    hive: Hive,
+    settings: HiveSettings,
+    velocity: { x: number; y: number },
+    mass: number,
+  ): void {
+    const hiveMass = massOf(hive, settings.size);
+    const shared = (mass * hiveMass) / (mass + hiveMass);
+    const impulse = {
+      x: shared * (1 + BLOW.bounce) * velocity.x,
+      y: shared * (1 + BLOW.bounce) * velocity.y,
+    };
+    const pull = Math.hypot(impulse.x, impulse.y) / BLOW.contact;
+    const hold = holdOf(settings.size, this.holding);
+    hive.damage += (pull / hold) ** 2;
+    // Struck below where it hangs, it swings away from the blow.
+    const reach = this.viewOf(hive, settings).height / 2;
+    const across =
+      impulse.x * Math.cos(hive.swing) + impulse.y * Math.sin(hive.swing);
+    hive.swingRate += across / (hiveMass * reach);
+    if (hive.damage >= 1) {
+      const speed = Math.hypot(impulse.x, impulse.y) / hiveMass;
+      const scale = Math.min(1, FASTEST_KNOCK / Math.max(speed, 1e-6));
+      hive.kick = {
+        x: (impulse.x / hiveMass) * scale,
+        y: (impulse.y / hiveMass) * scale,
+      };
+    }
   }
 
   /** Hives that have fallen and not yet faded, where they lie. */
@@ -302,9 +398,11 @@ export class Hives {
     settings: HiveSettings,
     conditions: HiveConditions,
   ): Debris[] {
+    this.holding = conditions.hold;
     const fallen: { piece: Debris; view: HiveView }[] = [];
     const kept: Hive[] = [];
     for (const hive of this.hives) {
+      hive.provoked = Math.max(0, hive.provoked - dt);
       if (
         tree === undefined ||
         !attached(tree, hive) ||
@@ -558,7 +656,7 @@ export class Hives {
           gy * Math.cos(swing) +
           reach * hive.swingRate ** 2,
       );
-    const hold = HIVE.hold * settings.size ** HIVE.holdGrowth * conditions.hold;
+    const hold = holdOf(settings.size, conditions.hold);
     if (pull > hold) {
       hive.damage +=
         dt * (HIVE.damageAtLimit + HIVE.damagePerOverload * (pull / hold - 1));
@@ -570,7 +668,9 @@ export class Hives {
 
   /**
    * Flies the bees of `hive`: while it is built, they fly about it; once built, by day they fly out
-   * to the flowers nearby, dance about them a while and come home, and by night they stay in.
+   * to the flowers nearby, dance about them a while and come home, and by night they stay in. Once
+   * provoked, every bee pours out with guards behind them and dives at whatever provoked it while
+   * it stays near, stings it, hangs back a moment and dives again, until the hive calms down.
    */
   private fly(
     dt: number,
@@ -581,9 +681,15 @@ export class Hives {
     const view = this.viewOf(hive, settings);
     const door = along(view, 0.82);
     const finished = hive.built >= 1;
-    const wanted = finished
-      ? Math.round(HIVE.bees * settings.size)
-      : Math.round(HIVE.builders * smoothstep(0, 0.1, hive.built));
+    const threat =
+      finished && hive.provoked > 0
+        ? nearest(door, conditions.threats)
+        : undefined;
+    const wanted = !finished
+      ? Math.round(HIVE.builders * smoothstep(0, 0.1, hive.built))
+      : Math.round(
+          (threat === undefined ? HIVE.bees : HIVE.guards) * settings.size,
+        );
     while (hive.bees.length < wanted) {
       hive.bees.push({
         x: door.x,
@@ -594,12 +700,36 @@ export class Hives {
         target: { x: door.x, y: door.y },
         timer: lerp(0, BEE.inside.to, this.rng.next()),
         phase: this.rng.next() * Math.PI * 2,
+        mark: 0,
+        aim: { x: 0, y: 0 },
       });
     }
-    hive.bees.length = wanted;
+    // Guards no longer needed go back in for good once they are home.
+    let spare = hive.bees.length - wanted;
+    hive.bees = hive.bees.filter((bee) => {
+      if (spare > 0 && (bee.doing === "inside" || !finished)) {
+        spare -= 1;
+        return false;
+      }
+      return true;
+    });
     const day = conditions.daylight > BEE.daylight;
     for (const bee of hive.bees) {
       if (finished && bee.doing === "building") {
+        bee.doing = "home";
+      }
+      const roused = bee.doing === "diving" || bee.doing === "regrouping";
+      if (threat !== undefined && !roused) {
+        if (bee.doing !== "inside") {
+          this.rouse(bee, threat);
+        } else {
+          // Those inside pour out one after another.
+          bee.timer = Math.min(
+            bee.timer,
+            (BEE.pour * bee.phase) / (Math.PI * 2),
+          );
+        }
+      } else if (threat === undefined && roused) {
         bee.doing = "home";
       }
       if (!day && (bee.doing === "out" || bee.doing === "visiting")) {
@@ -610,7 +740,9 @@ export class Hives {
           bee.x = door.x;
           bee.y = door.y;
           bee.timer -= dt;
-          if (bee.timer <= 0 && day) {
+          if (bee.timer <= 0 && threat !== undefined) {
+            this.rouse(bee, threat);
+          } else if (bee.timer <= 0 && day) {
             bee.doing = "out";
             bee.target = this.forage(door, conditions.blooms);
           }
@@ -638,12 +770,57 @@ export class Hives {
         case "building":
           this.dance(dt, bee, along(view, 0.5), BEE.building);
           break;
+        case "diving": {
+          invariant(threat !== undefined, "A bee dives at nothing.");
+          const mark = at(threat.points, bee.mark % threat.points.length);
+          bee.target = { x: mark.x + bee.aim.x, y: mark.y + bee.aim.y };
+          if (this.steer(dt, bee, BEE.attack, BEE.sting)) {
+            if (this.rng.next() < BEE.stingChance) {
+              threat.sting();
+            }
+            bee.doing = "regrouping";
+            bee.timer = lerp(BEE.regroup.from, BEE.regroup.to, this.rng.next());
+            const angle = this.rng.next() * Math.PI;
+            const away = lerp(
+              BEE.hangBack.from,
+              BEE.hangBack.to,
+              this.rng.next(),
+            );
+            bee.aim = { x: Math.cos(angle) * away, y: Math.sin(angle) * away };
+          }
+          break;
+        }
+        case "regrouping": {
+          invariant(threat !== undefined, "A bee regroups from nothing.");
+          const mark = at(threat.points, bee.mark % threat.points.length);
+          this.dance(
+            dt,
+            bee,
+            { x: mark.x + bee.aim.x, y: mark.y + bee.aim.y },
+            0.15,
+          );
+          bee.timer -= dt;
+          if (bee.timer <= 0) {
+            this.rouse(bee, threat);
+          }
+          break;
+        }
         default: {
           const unknown: never = bee.doing;
           throw new Error(`Unknown thing for a bee to do: ${String(unknown)}.`);
         }
       }
     }
+  }
+
+  /** Sends `bee` diving at a part of `threat`, aiming a little off it. */
+  private rouse(bee: Bee, threat: Threat): void {
+    bee.doing = "diving";
+    bee.mark = Math.floor(this.rng.next() * threat.points.length);
+    bee.aim = {
+      x: (this.rng.next() - 0.5) * 0.16,
+      y: (this.rng.next() - 0.5) * 0.16,
+    };
   }
 
   /** A flower near `door` for a bee to fly out to, or somewhere near the hive if none is. */
@@ -666,14 +843,19 @@ export class Hives {
   }
 
   /**
-   * Flies `bee` toward its target at `speed`, wobbling as it goes. Returns whether it has
-   * arrived.
+   * Flies `bee` toward its target at `speed`, wobbling as it goes. Returns whether it has come
+   * within `arrive` meters of it.
    */
-  private steer(dt: number, bee: Bee, speed: number): boolean {
+  private steer(
+    dt: number,
+    bee: Bee,
+    speed: number,
+    arrive: number = BEE.arrive,
+  ): boolean {
     const dx = bee.target.x - bee.x;
     const dy = bee.target.y - bee.y;
     const distance = Math.hypot(dx, dy);
-    if (distance < BEE.arrive) {
+    if (distance < arrive) {
       return true;
     }
     bee.phase += dt * BEE.wobbleRate;
@@ -807,6 +989,49 @@ function massOf(hive: Hive, size: number): number {
 
 /** A hive just begun already weighs this fraction of what it will. */
 const BEGUN = 0.05;
+
+/** Of `threats`, the nearest to `door` within the bees' chase, if any is. */
+function nearest(
+  door: { x: number; y: number },
+  threats: readonly Threat[],
+): Threat | undefined {
+  let best: { threat: Threat; distance: number } | undefined;
+  for (const threat of threats) {
+    for (const point of threat.points) {
+      const distance = Math.hypot(point.x - door.x, point.y - door.y);
+      if (
+        distance <= HIVE.chase &&
+        (best === undefined || distance < best.distance)
+      ) {
+        best = { threat, distance };
+      }
+    }
+  }
+  return best?.threat;
+}
+
+/** Pull the comb of a hive at size `size` holds against, with `multiplier` on how hard combs hold. */
+function holdOf(size: number, multiplier: number): number {
+  return HIVE.hold * size ** HIVE.holdGrowth * multiplier;
+}
+
+/** Whether `point` lies within the hive in `view`, or within `margin` meters of it. */
+function inside(
+  view: HiveView,
+  point: { x: number; y: number },
+  margin: number,
+): boolean {
+  const dx = point.x - view.x;
+  const dy = point.y - view.y;
+  // In the hive's own frame: across it, and down it from where it hangs.
+  const u = dx * Math.cos(view.swing) + dy * Math.sin(view.swing);
+  const v = dx * Math.sin(view.swing) - dy * Math.cos(view.swing);
+  if (v < -margin || v > view.height + margin) {
+    return false;
+  }
+  const t = clamp(v / view.height, 0, 1);
+  return Math.abs(u) <= (view.width / 2) * widthAt(t) + margin;
+}
 
 /** Most snow a hive `width` across holds on its shoulders, in kilograms. */
 function snowHeld(width: number): number {

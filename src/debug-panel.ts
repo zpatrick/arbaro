@@ -1,5 +1,10 @@
 import type { FlowerPlacement, FlowerSettings } from "./flowers";
-import { BEAR_POSES, type BearPose, type BearSettings } from "./bears";
+import {
+  BEAR_POSE_NAMES,
+  BEAR_POSES,
+  type BearPose,
+  type BearSettings,
+} from "./bears";
 import type { BirdSettings } from "./birds";
 import type { HiveSettings } from "./hives";
 import type { Strength } from "./physics";
@@ -640,7 +645,7 @@ export class DebugPanel {
       "p",
       "model-description",
       sleuth,
-      "A hive draws a bear after a while. It swipes the hive down if it can reach it reared up, else swipes at the wood it hangs from, else shoves the trunk to shake it down; it eats a hive it brings down, and gives up after a while. Wood falling on it angers it, drives it off, or kills it.",
+      "A hive draws a bear after a while. It swipes the hive down on all fours if it hangs low enough, else reared up if it can reach it, else shoves the trunk to shake it down. Its swipes and shoves rouse the bees, which sting it until it runs; it eats a hive it brings down, and gives up after a while. Wood falling on it angers it, drives it off, or kills it.",
     );
     this.bearsToggle = this.toggleRow(sleuth, "Hives draw bears", () =>
       this.setBears({ comes: !this.bears.comes }),
@@ -652,7 +657,7 @@ export class DebugPanel {
     for (const pose of BEAR_POSES) {
       this.bearPoses.set(
         pose,
-        this.radioRow(poses, pose[0]?.toUpperCase() + pose.slice(1), () => {
+        this.radioRow(poses, BEAR_POSE_NAMES[pose], () => {
           this.shownPose = pose;
           this.onShowBear(pose);
           this.render();
