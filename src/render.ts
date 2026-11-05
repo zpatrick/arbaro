@@ -3,7 +3,8 @@ import { type BirdView, birdShape } from "./birds";
 import type { Camera } from "./camera";
 import type { Clouds } from "./clouds";
 import type { Debris } from "./debris";
-import { type HiveView, hiveCarving, hiveOutline, hiveSnow } from "./hives";
+import { drawBees, drawHive, hiveLook } from "./hive-art";
+import type { BeeView, HiveView } from "./hives";
 import type { Dot } from "./flow";
 import {
   drawFlower,
@@ -118,11 +119,6 @@ const FLAKE = {
 } as const;
 /** Width of the line of sky ringing a bear, in CSS pixels. */
 const BEAR_RIM_PX = 2.5;
-/** Width of the lines carved into a hive, in meters. */
-const HIVE_LINE = 0.012;
-/** Radius of a bee, in meters, and the fewest and most CSS pixels it is drawn at. */
-const BEE_SIZE = 0.012;
-const BEE_PX = { least: 1.6, most: 3 } as const;
 /** Lying snow sinks this far into what it lies on, in meters, so no seam shows beneath it. */
 const SNOW_SINK = 0.03;
 /** Thinnest lying snow drawn, in CSS pixels. */
@@ -132,6 +128,8 @@ const SNOW_THINNEST_PX = 0.3;
 export interface Scene {
   /** The light at this time of day. */
   light: SkyLight;
+  /** The time of year, from midsummer at 0 to midwinter at 1. */
+  season: number;
   /** Seconds of simulated time, which set the stars twinkling. */
   clock: number;
   /** The standing tree, if there is one. */
@@ -159,10 +157,10 @@ export interface Scene {
   weather: Weather;
   /** The clouds across the sky, and any fog. */
   clouds: Clouds;
-  /** The hives hanging on the tree. */
+  /** The hives hanging on the tree, and those that fell. */
   hives: readonly HiveView[];
-  /** The bees flying about, and how strongly each shows. */
-  bees: readonly { x: number; y: number; alpha: number }[];
+  /** The bees flying about. */
+  bees: readonly BeeView[];
   /** The birds flying about and sitting on the tree. */
   birds: readonly BirdView[];
   /** The bears about the tree. */
@@ -310,9 +308,6 @@ export class Renderer {
         ink.addPath(shape, world);
       }
     }
-    for (const hive of scene.hives) {
-      ink.addPath(hiveOutline(hive), world);
-    }
     for (const bird of scene.birds) {
       ink.addPath(birdShape(bird), world);
     }
@@ -340,7 +335,6 @@ export class Renderer {
 
     const snowColor = css(lit(SNOW_COLOR, scene.light.flowerLight));
     this.drawSnowCover(camera, scene.weather.cover, snowColor);
-    this.drawHives(camera, world, scene.hives, scene.light, snowColor);
     if (scene.tree !== undefined) {
       if (scene.strain) {
         this.drawStrain(camera, scene.tree, ink);
@@ -348,6 +342,11 @@ export class Renderer {
       if (scene.flow !== undefined) {
         this.drawDots(camera, scene.tree, scene.flow.dots);
       }
+    }
+    // Hives hang in front of the wood and behind the flowers.
+    const look = hiveLook(scene.light, scene.season, snowColor);
+    for (const hive of scene.hives) {
+      drawHive(this.ctx, camera, world, hive, look);
     }
     const shown = scene.flowers.filter((flower) => inView(camera, flower));
     const looks = shown.map((flower) =>
@@ -370,7 +369,7 @@ export class Renderer {
         drawFlower(this.ctx, camera.dpr, look);
       }
     }
-    this.drawBees(camera, scene.bees);
+    drawBees(this.ctx, camera, scene.bees, scene.light);
     this.drawBears(camera, world, scene.bears, scene.light);
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
@@ -602,41 +601,6 @@ export class Renderer {
   }
 
   /**
-   * Draws what is carved into the hives, whose ink is filled with the tree's: the bands of comb
-   * and the door, in the barn's pale lines, and any snow on their shoulders.
-   */
-  private drawHives(
-    camera: Camera,
-    world: DOMMatrix,
-    hives: readonly HiveView[],
-    light: SkyLight,
-    snowColor: string,
-  ): void {
-    if (hives.length === 0) {
-      return;
-    }
-    const carving = new Path2D();
-    const snow = new Path2D();
-    for (const hive of hives) {
-      carving.addPath(hiveCarving(hive));
-      const cap = hiveSnow(hive);
-      if (cap !== undefined) {
-        snow.addPath(cap);
-      }
-    }
-    const ctx = this.ctx;
-    ctx.setTransform(world);
-    ctx.strokeStyle = css(light.sky.middle, BARN_LINE_ALPHA);
-    ctx.lineWidth = Math.max(HIVE_LINE, BARN_LINE_MIN_PX / camera.scale);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke(carving);
-    ctx.fillStyle = snowColor;
-    ctx.fill(snow);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-  }
-
-  /**
    * Draws each bear in ink, ringed by a thin line of the sky's color so it stands out against the
    * trunk and the ground behind it.
    */
@@ -664,28 +628,6 @@ export class Renderer {
       ctx.restore();
       this.fillInk(shape, bear.alpha);
     }
-  }
-
-  /** Draws each bee as a speck of ink. */
-  private drawBees(
-    camera: Camera,
-    bees: readonly { x: number; y: number; alpha: number }[],
-  ): void {
-    if (bees.length === 0) {
-      return;
-    }
-    const ctx = this.ctx;
-    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.fillStyle = this.inkColor;
-    const radius = clamp(BEE_SIZE * camera.scale, BEE_PX.least, BEE_PX.most);
-    for (const bee of bees) {
-      const p = camera.toScreen(bee.x, bee.y);
-      ctx.globalAlpha = bee.alpha;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
   }
 
   /** Draws the rain and snow falling across the view. */

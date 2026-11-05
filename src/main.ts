@@ -656,6 +656,7 @@ function frame(now: number): void {
   }
   renderer.draw(camera, {
     light,
+    season: panel.time.season,
     clock,
     tree,
     debris,

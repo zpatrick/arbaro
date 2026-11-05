@@ -148,18 +148,34 @@ export interface HiveTarget {
   knock(kick: { x: number; y: number }): void;
 }
 
-/** A hive where it hangs, for drawing, in meters. */
+/** A hive where it hangs, or lies once it has fallen, for drawing, in meters. */
 export interface HiveView {
-  /** Where it hangs from the wood. */
+  /** Where it hangs from the wood, or hung from before it fell. */
   x: number;
   y: number;
-  /** How far it swings from hanging straight down, counterclockwise, in radians. */
+  /** How far above where it hangs its comb wraps up over the wood. */
+  grip: number;
+  /** How far it turns from hanging straight down, counterclockwise, in radians. */
   swing: number;
   /** Its height and widest width as built so far. */
   height: number;
   width: number;
   /** How much snow lies on it, from 0 to 1, the most it holds. */
   snow: number;
+  /** How strongly it shows, as a fallen hive fades away. */
+  alpha: number;
+}
+
+/** A bee flying about, for drawing, in meters. */
+export interface BeeView {
+  x: number;
+  y: number;
+  /** The way it flies, in radians counterclockwise from the right. */
+  heading: number;
+  /** Progress through the beat of its wings, in radians. */
+  beat: number;
+  /** How strongly it shows, as a stray fades away. */
+  alpha: number;
 }
 
 /** What the hives live through. */
@@ -183,8 +199,8 @@ export class Hives {
   private readonly rng = new Rng(9091);
   /** Seconds until the next swarm comes, while the tree can draw one. */
   private swarmIn: number | undefined;
-  /** Hives that have fallen, lying where they came down until they fade. */
-  private fallen: Debris[] = [];
+  /** Hives that have fallen, lying where they came down until they fade, and how each looked as it fell. */
+  private fallen: { piece: Debris; view: HiveView }[] = [];
 
   /** Clears every hive and bee away, for a new tree. */
   clear(): void {
@@ -237,7 +253,7 @@ export class Hives {
 
   /** Hives that have fallen and not yet faded, where they lie. */
   fallenHives(): readonly Debris[] {
-    return this.fallen;
+    return this.fallen.map((hive) => hive.piece);
   }
 
   /** The weight of the hives still hanging on the tree, which their limbs carry. */
@@ -286,7 +302,7 @@ export class Hives {
     settings: HiveSettings,
     conditions: HiveConditions,
   ): Debris[] {
-    const fallen: Debris[] = [];
+    const fallen: { piece: Debris; view: HiveView }[] = [];
     const kept: Hive[] = [];
     for (const hive of this.hives) {
       if (
@@ -302,9 +318,13 @@ export class Hives {
       kept.push(hive);
     }
     this.hives = kept;
-    this.fallen = [...this.fallen.filter((piece) => !piece.done), ...fallen];
+    this.fallen = [
+      ...this.fallen.filter((hive) => !hive.piece.done),
+      ...fallen,
+    ];
     for (const bee of this.strays) {
       bee.timer -= dt;
+      bee.phase += dt * BEE.wobbleRate;
       bee.x += bee.vx * dt;
       bee.y += bee.vy * dt;
     }
@@ -314,30 +334,47 @@ export class Hives {
     } else {
       this.swarmIn = undefined;
     }
-    return fallen;
+    return fallen.map((hive) => hive.piece);
   }
 
-  /** The hives where they hang, for drawing. */
+  /** The hives where they hang, then those that fell where they lie, for drawing. */
   views(settings: HiveSettings): HiveView[] {
-    return this.hives.map((hive) => this.viewOf(hive, settings));
+    return [
+      ...this.hives.map((hive) => this.viewOf(hive, settings)),
+      ...this.fallen.map(({ piece, view }) => {
+        // Carried as the piece is from where it fell to where it lies.
+        const placed = piece.transform;
+        const anchor = placed.transformPoint({ x: view.x, y: view.y });
+        return {
+          ...view,
+          x: anchor.x,
+          y: anchor.y,
+          swing: view.swing + Math.atan2(placed.b, placed.a),
+          alpha: piece.alpha,
+        };
+      }),
+    ];
   }
 
-  /** Where the bees out of their hives are, in meters, and how strongly each shows. */
-  bees(): { x: number; y: number; alpha: number }[] {
-    const out: { x: number; y: number; alpha: number }[] = [];
+  /** The bees out of their hives, for drawing. */
+  bees(): BeeView[] {
+    const out: BeeView[] = [];
+    const view = (bee: Bee, alpha: number): BeeView => ({
+      x: bee.x,
+      y: bee.y,
+      heading: Math.atan2(bee.vy, bee.vx),
+      beat: bee.phase,
+      alpha,
+    });
     for (const hive of this.hives) {
       for (const bee of hive.bees) {
         if (bee.doing !== "inside") {
-          out.push({ x: bee.x, y: bee.y, alpha: 1 });
+          out.push(view(bee, 1));
         }
       }
     }
     for (const bee of this.strays) {
-      out.push({
-        x: bee.x,
-        y: bee.y,
-        alpha: smoothstep(0, BEE.scatter / 3, bee.timer),
-      });
+      out.push(view(bee, smoothstep(0, BEE.scatter / 3, bee.timer)));
     }
     return out;
   }
@@ -429,10 +466,12 @@ export class Hives {
     const view: HiveView = {
       x: anchor.x,
       y: anchor.y,
+      grip: 0,
       swing: 0,
       height: HIVE.height * settings.size,
       width: HIVE.width * settings.size,
       snow: 0,
+      alpha: 1,
     };
     for (const t of [0.25, 0.5, 0.75, 1]) {
       for (const side of [-1, 0, 1]) {
@@ -670,8 +709,15 @@ export class Hives {
     bee.y += bee.vy * dt;
   }
 
-  /** `hive` torn or cut loose, falling as a piece of its own, its bees scattering. */
-  private fall(hive: Hive, settings: HiveSettings): Debris {
+  /**
+   * `hive` torn or cut loose, falling as a piece of its own, its bees scattering, and how it looked
+   * as it fell. The piece carries no ink of its own; the hive is drawn in its colors wherever the
+   * piece takes it.
+   */
+  private fall(
+    hive: Hive,
+    settings: HiveSettings,
+  ): { piece: Debris; view: HiveView } {
     const view = this.viewOf(hive, settings);
     for (const bee of hive.bees) {
       const angle = this.rng.next() * Math.PI * 2;
@@ -685,7 +731,6 @@ export class Hives {
       });
     }
     const mass = massOf(hive, settings.size);
-    const outline = hiveOutline(view);
     const points = outlinePoints(view);
     const xs = points.map((p) => p.x);
     const ys = points.map((p) => p.y);
@@ -712,11 +757,14 @@ export class Hives {
     };
     const moving = hive.last ?? { x: 0, y: 0 };
     const kick = hive.kick ?? { x: 0, y: 0 };
-    return new Debris([outline], piece, {
-      x: moving.x + kick.x,
-      y: moving.y + kick.y,
-      spin: hive.swingRate,
-    });
+    return {
+      piece: new Debris([], piece, {
+        x: moving.x + kick.x,
+        y: moving.y + kick.y,
+        spin: hive.swingRate,
+      }),
+      view,
+    };
   }
 
   private viewOf(hive: Hive, settings: HiveSettings): HiveView {
@@ -726,16 +774,20 @@ export class Hives {
     return {
       x: anchor.x,
       y: anchor.y,
+      grip: GRIP * hive.limb.radiusAt(Math.min(hive.s, hive.limb.length)),
       swing: hive.swing,
       height: HIVE.height * settings.size * lerp(0.15, 1, grown),
       width,
       snow: hive.snow > 0 ? Math.min(1, hive.snow / snowHeld(width)) : 0,
+      alpha: 1,
     };
   }
 }
 
 /** Snow on a hive lighter than this, in kilograms, while it melts, has melted away. */
 const SNOW_TRACE = 0.002;
+/** A hive's comb wraps up over the underside of its wood this many of the wood's radii. */
+const GRIP = 0.9;
 
 /** Whether `hive` still hangs on `tree`: its limb is still there, and still reaches it. */
 function attached(tree: Tree, hive: Hive): boolean {
@@ -809,7 +861,10 @@ export function across(
   };
 }
 
-/** Points around the outline of `view`, down its left side and up its right, in meters. */
+/**
+ * Points around the outline of `view`, in meters: over the rounded cap its comb wraps up over its
+ * wood with, down its left side and up its right.
+ */
 function outlinePoints(view: HiveView): { x: number; y: number }[] {
   const steps = 20;
   const left: { x: number; y: number }[] = [];
@@ -820,8 +875,23 @@ function outlinePoints(view: HiveView): { x: number; y: number }[] {
     left.push(across(view, t, -w));
     right.push(across(view, t, w));
   }
-  return [...left, ...right.reverse()];
+  const cap: { x: number; y: number }[] = [];
+  const neck = widthAt(0);
+  for (let i = 1; i < CAP_STEPS; i += 1) {
+    const angle = (Math.PI * i) / CAP_STEPS;
+    cap.push(
+      across(
+        view,
+        (-view.grip * Math.sin(angle)) / view.height,
+        neck * Math.cos(angle),
+      ),
+    );
+  }
+  return [...cap, ...left, ...right.reverse()];
 }
+
+/** Points around the cap a hive wraps over its wood with, between the two sides of its neck. */
+const CAP_STEPS = 8;
 
 /** The outline of the hive in `view`, in meters. */
 export function hiveOutline(view: HiveView): Path2D {
@@ -837,10 +907,10 @@ export function hiveOutline(view: HiveView): Path2D {
 }
 
 /**
- * Lines carved across the hive in `view`, in meters: the bands of comb it is built in, each bowed
- * a little, and its door near the bottom.
+ * Lines across the hive in `view`, in meters, between the bands of comb it is built in, each bowed
+ * a little.
  */
-export function hiveCarving(view: HiveView): Path2D {
+export function hiveBands(view: HiveView): Path2D {
   const path = new Path2D();
   for (const t of [0.24, 0.41, 0.58, 0.74]) {
     const w = widthAt(t) * 0.92;
@@ -856,14 +926,21 @@ export function hiveCarving(view: HiveView): Path2D {
       to.y,
     );
   }
+  return path;
+}
+
+/** The door of the hive in `view`, near its bottom, in meters. */
+export function hiveDoor(view: HiveView): Path2D {
+  const path = new Path2D();
   const door = along(view, 0.86);
-  path.moveTo(door.x + view.width * 0.08, door.y);
+  const start = across(view, 0.86, 0.16);
+  path.moveTo(start.x, start.y);
   path.ellipse(
     door.x,
     door.y,
     view.width * 0.08,
     view.height * 0.025,
-    -view.swing,
+    view.swing,
     0,
     Math.PI * 2,
   );

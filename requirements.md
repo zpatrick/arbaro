@@ -275,14 +275,21 @@ switched on in the debug panel beside the original steer-and-grow controls:
       half a day, hanging under low, sturdy, level wood among the flowers, in open air clear of
       other wood and the barn, and never within 8 m of another hive. Low wood leaves the hive in
       reach of a bear.
-- [x] A hive is an ink silhouette like the barn: a bell carved with bands of comb and a door. It
+- [x] A hive is a golden bell ringed with bands of comb, with a door near its bottom and a rounded
+      cap that wraps up over its wood. It hangs in front of the wood and behind the flowers. Its side
+      turned from the sun, or the moon by night, is toned and hatched like the mountains, so the
+      shading swings around it through the day and evens out under thick cloud. Its gold is lit
+      like the flowers through the day and night, deepens to amber through the fall and weathers to
+      pale straw by winter. A fallen hive keeps its colors where it lies. It
       swings from its wood with the wood's motion and the wind, and weighs on its limb with the
       cube of its size. Its comb holds against its weight, the wind, the snow on its shoulders
       and the shaking of the wood, up to a limit that grows more slowly than its weight, so a
       large hive hangs by less. A hurricane or a hard shake tears it loose and it falls; it also
       falls with any limb cut or snapped under it, and its bees scatter.
 - [x] By day, bees fly out from a finished hive to the flowers nearby, dance about them a while
-      and fly home; by night they stay in. Bees fly about a hive while they build it.
+      and fly home; by night they stay in. Bees fly about a hive while they build it. A bee is drawn
+      side on, facing the way it flies: a dark head and thorax, a gold abdomen banded in ink, and a
+      grey blur of wings.
 - [ ] Hives grow over a couple of days, up to four times the size they are first built.
 - [x] Birds fly across the scene as ink silhouettes like the tree, beating their wings and now
       and then gliding, as often as the player sets. Some, as many as the player sets, land on
