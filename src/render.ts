@@ -32,7 +32,7 @@ import {
   skyBodyAt,
   type SkyLight,
 } from "./sky";
-import { FLARE, type Pick, type Tree } from "./tree";
+import type { Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
 
@@ -1322,17 +1322,11 @@ function rootOutline(
 ): Path2D {
   const trunk = tree.root;
   const baseRadius = Math.max(minRadius, trunk.radiusAt(0));
-  const maxRise = 0.3 * trunk.restTip.y;
-  const leftSpread = FLARE.spread * baseRadius * tree.flare.left;
-  const rightSpread = FLARE.spread * baseRadius * tree.flare.right;
-  const leftJoin = firstAbove(
-    left,
-    Math.min(FLARE.rise * baseRadius * tree.flare.left, maxRise),
-  );
-  const rightJoin = firstAbove(
-    right,
-    Math.min(FLARE.rise * baseRadius * tree.flare.right, maxRise),
-  );
+  const flare = tree.rootFlare(baseRadius);
+  const leftSpread = flare.left.spread;
+  const rightSpread = flare.right.spread;
+  const leftJoin = firstAbove(left, flare.left.rise);
+  const rightJoin = firstAbove(right, flare.right.rise);
   const groundLeft = at(left, 0).x - leftSpread;
   const groundRight = at(right, 0).x + rightSpread;
 

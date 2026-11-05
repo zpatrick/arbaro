@@ -8,15 +8,36 @@ import {
   type Strength,
   TreePhysics,
 } from "./physics";
-import { at, clamp, invariant, Rng } from "./util";
+import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import type { Wind } from "./wind";
 
-export const FLARE = {
-  /** How far the root flare reaches along the ground past the trunk, in base radii. */
-  spread: 1.5,
-  /** How high up the trunk the root flare blends in, in base radii. */
-  rise: 2.6,
+/**
+ * The root flare where the trunk meets the ground. A sapling's is a small fillet; as the tree grows
+ * tall it fans out, wider along the ground and higher up the trunk.
+ */
+const FLARE = {
+  /** How far the flare reaches along the ground past the trunk, in base radii: young, then grown. */
+  spread: { young: 1.5, grown: 2.6 },
+  /** How high up the trunk the flare blends in, in base radii: young, then grown. */
+  rise: { young: 2.6, grown: 6 },
+  /** Heights of the tree, in meters, over which its flare grows from a sapling's to a grown tree's. */
+  grows: { from: 6, to: 30 },
+  /** Highest up the trunk the flare reaches, as a fraction of the trunk's height. */
+  highest: 0.3,
+  /**
+   * How much larger the flare is on the side the trunk leans away from, and how much smaller on the
+   * side it leans toward, for each unit of lean: the cosine of its heading off upright.
+   */
+  lean: { away: 0.3, toward: 0.2 },
 } as const;
+
+/** One side of the root flare, in meters. */
+export interface FlareSide {
+  /** How far it reaches along the ground past the trunk. */
+  spread: number;
+  /** How high up the trunk it blends in. */
+  rise: number;
+}
 
 /**
  * A new offshoot may start leaning this much past the free lean, or past its parent's own lean if
@@ -107,7 +128,7 @@ export interface Pick {
 export class Tree {
   readonly baseX: number;
   /** Per-side scale on the root flare, so no two trees meet the ground identically. */
-  readonly flare: { left: number; right: number };
+  private readonly flareScale: { left: number; right: number };
   readonly root: Limb;
   /** Parents always come before their offshoots. */
   readonly limbs: Limb[];
@@ -121,7 +142,10 @@ export class Tree {
     this.baseX = baseX;
     this.seed = seed;
     const rng = new Rng(seed);
-    this.flare = { left: rng.range(0.85, 1.2), right: rng.range(0.85, 1.2) };
+    this.flareScale = {
+      left: rng.range(0.85, 1.2),
+      right: rng.range(0.85, 1.2),
+    };
     this.root = new Limb(undefined, 0.3, seed);
     this.root.sprout(LIMB.sproutLength);
     this.limbs = [this.root];
@@ -340,7 +364,8 @@ export class Tree {
       // With its roots torn loose, the whole tree pivots on the base of its trunk. The root flare
       // tips up with it.
       contacts.push({ x: this.baseX, y: 0, r: 0 });
-      from = FLARE.rise * limb.radiusAt(0);
+      const flare = this.rootFlare();
+      from = Math.max(flare.left.rise, flare.right.rise);
     }
     // Every limb in the piece can land, spaced out so a big piece stays affordable.
     const parts: { part: Limb; start: number }[] = [];
@@ -440,11 +465,47 @@ export class Tree {
     return distance;
   }
 
+  /**
+   * The root flare on each side of the trunk, for a trunk `baseRadius` thick at the ground: a
+   * sapling's is a small fillet, and a tall tree's fans out wide and high, the more so on the side
+   * its trunk leans away from.
+   */
+  rootFlare(baseRadius = this.root.radiusAt(0)): {
+    left: FlareSide;
+    right: FlareSide;
+  } {
+    const trunk = this.root;
+    let height = 0;
+    for (const limb of this.limbs) {
+      height = Math.max(height, limb.restTip.y);
+    }
+    const grown = smoothstep(FLARE.grows.from, FLARE.grows.to, height);
+    const spread =
+      baseRadius * lerp(FLARE.spread.young, FLARE.spread.grown, grown);
+    const rise = baseRadius * lerp(FLARE.rise.young, FLARE.rise.grown, grown);
+    const highest = FLARE.highest * trunk.restTip.y;
+    // Positive leaning right, negative leaning left.
+    const lean = Math.cos(
+      trunk.restPointAt(Math.min(trunk.length, rise)).heading,
+    );
+    const side = (scale: number, away: number): FlareSide => {
+      const k =
+        scale *
+        (away >= 0 ? 1 + FLARE.lean.away * away : 1 + FLARE.lean.toward * away);
+      return { spread: spread * k, rise: Math.min(rise * k, highest) };
+    };
+    return {
+      left: side(this.flareScale.left, lean),
+      right: side(this.flareScale.right, -lean),
+    };
+  }
+
   /** Extent of the tree as grown, so the camera holds still while it sways. */
   bounds(): Bounds {
     const baseRadius = this.root.radiusAt(0);
-    let minX = this.baseX - baseRadius * (1 + FLARE.spread * this.flare.left);
-    let maxX = this.baseX + baseRadius * (1 + FLARE.spread * this.flare.right);
+    const flare = this.rootFlare(baseRadius);
+    let minX = this.baseX - baseRadius - flare.left.spread;
+    let maxX = this.baseX + baseRadius + flare.right.spread;
     let maxY = 0;
     for (const limb of this.limbs) {
       for (const p of limb.restPoints) {

@@ -24,7 +24,9 @@ art and tree-of-life drawings.
 
 - [x] Stark, heavy, dark silhouettes on warm sand-colored paper, with a fine sand grain.
 - [x] Continuous, smooth tapers and organic curves. No kinks, creases or polygonal joints.
-- [x] The trunk flares into the ground with concave root curves that melt into it.
+- [x] The trunk flares into the ground with concave root curves that melt into it. A sapling's
+      flare is a small fillet; as the tree grows tall it fans out wide along the ground and high
+      up the trunk, a little more on the side the trunk leans away from.
 - [x] The ground and the tree are the same dark ink. That reads well and should stay the default
       view.
 - [x] Mountains drawn with flowing organic lines, as in the references.
