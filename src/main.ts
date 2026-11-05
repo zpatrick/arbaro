@@ -5,6 +5,7 @@ import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
+import { Hives, type HiveSettings } from "./hives";
 import {
   advanceDay,
   clockTime,
@@ -85,6 +86,7 @@ const clouds = new Clouds(panel.weather);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
 const flowers = new Flowers();
+const hives = new Hives();
 
 /** Where every tree is planted, along the ground. */
 const PLANTING_X = 0;
@@ -98,6 +100,8 @@ let pointer: { x: number; y: number } | undefined;
 let shiftHeld = false;
 /** Whether C is held, which turns a click on a limb into pruning it there. */
 let pruneHeld = false;
+/** Whether H is held, which turns a click on a limb into hanging a hive from it there. */
+let hiveHeld = false;
 /** Seconds of simulated time so far, which set the stars twinkling. */
 let clock = 0;
 /** What the selected limb last ran into as it was grown, so the news is given only once. */
@@ -142,6 +146,7 @@ function replant(): void {
   spoutControl.close();
   dots.clear();
   flowers.clear();
+  hives.clear();
   camera.release();
 }
 
@@ -340,7 +345,7 @@ function step(dt: number, controls: Controls): void {
       wind,
       panel.strength,
       growth,
-      flowers.loads(),
+      [...flowers.loads(standing), ...hives.loads(standing, panel.wildlife)],
     )) {
       if (tree !== standing) {
         break;
@@ -361,7 +366,19 @@ function step(dt: number, controls: Controls): void {
     hold: panel.strength.flowers,
     flowing: growth.mode === "flow",
   });
-  weather.update(dt, wind, camera, flowers.catchers(panel.flowers));
+  debris.push(
+    ...hives.update(dt, tree, panel.wildlife, {
+      wind,
+      daylight: skyAt(panel.time.timeOfDay).daylight,
+      blooms: flowers.blooms(panel.flowers),
+      hold: panel.strength.flowers,
+      melt: weather.melt,
+    }),
+  );
+  weather.update(dt, wind, camera, [
+    ...flowers.catchers(panel.flowers),
+    ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
+  ]);
   clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay));
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
@@ -382,6 +399,7 @@ resize();
 camera.snap(tree.bounds());
 showGrowthMode(panel.growth.mode);
 panel.onGrowthMode = showGrowthMode;
+panel.onFinishHives = () => hives.finish();
 // The scene resizes with the window, and as the debug panel beside it opens and closes.
 new ResizeObserver(resize).observe(stage);
 window.addEventListener("resize", resize);
@@ -391,6 +409,9 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "KeyC") {
     pruneHeld = true;
+  }
+  if (event.code === "KeyH") {
+    hiveHeld = true;
   }
   if (event.code === "KeyR" && !event.repeat) {
     replant();
@@ -409,10 +430,14 @@ window.addEventListener("keyup", (event) => {
   if (event.code === "KeyC") {
     pruneHeld = false;
   }
+  if (event.code === "KeyH") {
+    hiveHeld = false;
+  }
 });
 window.addEventListener("blur", () => {
   shiftHeld = false;
   pruneHeld = false;
+  hiveHeld = false;
 });
 canvas.addEventListener("pointermove", (event) => {
   pointer = onScene(event);
@@ -461,7 +486,8 @@ canvas.addEventListener(
 );
 // Clicking a limb makes it the one that grows and steers. Clicking the limb that already is
 // forks a new offshoot from that spot. Holding C, a click prunes the limb there instead, and
-// everything beyond falls. In flow mode, clicking a spout opens it; a click anywhere else just
+// everything beyond falls; holding H, a click hangs a hive from the limb there, to be built. In
+// flow mode, clicking a spout opens it; a click anywhere else just
 // closes the open one. While flowers are placed by hand, a shift-click places or knocks off a
 // flower instead. Dragging from open space, or with the middle button from anywhere, pans the
 // view.
@@ -489,6 +515,15 @@ canvas.addEventListener("pointerdown", (event) => {
     if (s !== undefined) {
       breakOff(tree, pick.limb, s);
     }
+    return;
+  }
+  if (hiveHeld) {
+    const pick = pickAt(tree, x, y);
+    if (pick === undefined) {
+      startPanning(event);
+      return;
+    }
+    hives.place(pick.limb, pick.s);
     return;
   }
   if (placingFlowers(event)) {
@@ -563,7 +598,7 @@ function frame(now: number): void {
   canvas.style.cursor =
     panning?.dragging === true
       ? "grabbing"
-      : pruneHeld && hover !== undefined
+      : (pruneHeld || hiveHeld) && hover !== undefined
         ? "crosshair"
         : pointing
           ? "pointer"
@@ -598,6 +633,8 @@ function frame(now: number): void {
       : undefined,
     weather,
     clouds,
+    hives: hives.views(panel.wildlife),
+    bees: hives.bees(),
   });
   if (controls.grow || controls.steer !== 0) {
     hint.classList.add("quiet");
@@ -643,6 +680,12 @@ interface DebugHandle {
   placeFlower(index: number, fraction: number, side: 1 | -1): void;
   /** How many flowers are on the tree, and how many have come off and not yet faded. */
   flowerCount(): { onTree: number; falling: number };
+  /** Hangs a hive at `fraction` of limb `index`'s length, to be built, like an H-click. */
+  placeHive(index: number, fraction: number): void;
+  /** The hives and their bees. */
+  hives(): Hives;
+  /** Changes the hives, as the debug panel would. */
+  wildlife(settings: Partial<HiveSettings>): void;
   /** Stops time so frames can be captured exactly as simulated. */
   freeze(): void;
 }
@@ -726,6 +769,14 @@ if (import.meta.env.DEV) {
       );
     },
     flowerCount: () => flowers.count(),
+    placeHive(index, fraction) {
+      const limb = at(standing().limbs, index);
+      hives.place(limb, limb.length * fraction);
+    },
+    hives: () => hives,
+    wildlife(settings) {
+      panel.setWildlife(settings);
+    },
     freeze() {
       frozen = true;
     },

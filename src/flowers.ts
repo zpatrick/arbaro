@@ -369,11 +369,11 @@ export class Flowers {
       .filter((f) => f.dropped === undefined && f.grown > 0)
       .map((flower) => {
         const pose = this.poseOf(flower, settings);
-        const reach = middleReach(pose.clusters) * pose.size;
+        const middle = middleOf(pose);
         return {
           key: flower,
-          x: pose.x + Math.cos(pose.angle) * reach,
-          y: pose.y + Math.sin(pose.angle) * reach,
+          x: middle.x,
+          y: middle.y,
           radius: pose.size / 2,
           exposure: flower.exposure,
           area: FLOWERS.area * pose.size * pose.size,
@@ -386,10 +386,25 @@ export class Flowers {
       });
   }
 
-  /** The snow lying on the flowers on the tree, which their limbs carry. */
-  loads(): Load[] {
+  /** Where the open flowers on the tree are, in world units: the middle of each. */
+  blooms(settings: FlowerSettings): { x: number; y: number }[] {
     return this.flowers
-      .filter((f) => f.dropped === undefined && f.weight > 0)
+      .filter(
+        (f) => f.dropped === undefined && f.grown >= 1 && f.opened >= BLOOMING,
+      )
+      .map((flower) => middleOf(this.poseOf(flower, settings)));
+  }
+
+  /** The snow lying on the flowers still on `tree`, which their limbs carry. */
+  loads(tree: Tree): Load[] {
+    return this.flowers
+      .filter(
+        (f) =>
+          f.dropped === undefined &&
+          f.weight > 0 &&
+          tree.has(f.limb) &&
+          f.s <= f.limb.length,
+      )
       .map((f) => ({
         limb: f.limb,
         s: Math.min(f.s, f.limb.length),
@@ -1062,6 +1077,18 @@ function moundness(clusters: number): number {
  */
 function spacingOf(size: number): number {
   return HABIT.spacing * FLOWERS.size * Math.min(1, size);
+}
+
+/** A flower this far open is in bloom. */
+const BLOOMING = 0.8;
+
+/** The middle of a flower posed as `pose`, in world units. */
+function middleOf(pose: Pose): { x: number; y: number } {
+  const reach = middleReach(pose.clusters) * pose.size;
+  return {
+    x: pose.x + Math.cos(pose.angle) * reach,
+    y: pose.y + Math.sin(pose.angle) * reach,
+  };
 }
 
 /** The size of every flower, as a multiple of the size of one cluster. */

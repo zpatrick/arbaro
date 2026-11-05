@@ -1,4 +1,5 @@
 import type { FlowerPlacement, FlowerSettings } from "./flowers";
+import type { HiveSettings } from "./hives";
 import type { Strength } from "./physics";
 import { clockTime, seasonName, type TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
@@ -21,13 +22,17 @@ const FLOWER_SIZE_RANGE = 5;
 const MAX_FLOW_RATE = 3;
 
 /** The panel's pages, each opened by its own tab down the panel's left edge. */
-type Tab = "weather" | "tree" | "flowers";
+type Tab = "weather" | "tree" | "flowers" | "wildlife";
 
 const TABS: readonly { id: Tab; name: string }[] = [
   { id: "weather", name: "Weather" },
   { id: "tree", name: "Tree" },
   { id: "flowers", name: "Flowers" },
+  { id: "wildlife", name: "Wildlife" },
 ];
+
+/** The hive size slider runs from a hive as first built to one grown this many times larger. */
+const LARGEST_HIVE = 4;
 
 const FLOWER_PLACEMENTS: readonly {
   id: FlowerPlacement;
@@ -180,16 +185,18 @@ interface Settings {
   showStrain: boolean;
   flowers: FlowerSettings;
   time: TimeSettings;
+  wildlife: HiveSettings;
 }
 
-interface Saved extends Omit<Settings, "weather"> {
+interface Saved extends Omit<Settings, "weather" | "wildlife"> {
   open: boolean;
   tab: Tab;
   /**
-   * Settings saved by an older build have no weather, or only some of it; whatever is missing
-   * starts as it does by default.
+   * Settings saved by an older build have no weather or wildlife, or only some of them; whatever
+   * is missing starts as it does by default.
    */
   weather?: Partial<WeatherSettings>;
+  wildlife?: Partial<HiveSettings>;
 }
 
 /** Every setting as it starts, and as the reset button puts it back. */
@@ -208,6 +215,7 @@ function defaults(): Settings {
     showStrain: false,
     flowers: { placement: "tree", size: 1 },
     time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
+    wildlife: { size: 1, swarms: true },
   };
 }
 
@@ -245,8 +253,13 @@ function isSaved(saved: unknown): saved is Saved {
   if (!isRecord(saved)) {
     return false;
   }
-  const { growth, wind, weather, strength, flowers, time } = saved;
+  const { growth, wind, weather, strength, flowers, time, wildlife } = saved;
   return (
+    (wildlife === undefined ||
+      (isRecord(wildlife) &&
+        (wildlife.size === undefined || isNumber(wildlife.size)) &&
+        (wildlife.swarms === undefined ||
+          typeof wildlife.swarms === "boolean"))) &&
     (weather === undefined ||
       (isRecord(weather) &&
         ["rain", "snow", "melt", "clouds", "cloudHeight"].every(
@@ -308,6 +321,8 @@ export class DebugPanel {
   readonly flowers: FlowerSettings;
   /** Live time of day and of year. The day moves the time of day on while it runs. */
   readonly time: TimeSettings;
+  /** Live settings for the bees and their hives, read every frame. */
+  readonly wildlife: HiveSettings;
   /**
    * How fast the simulation runs, as a multiple of real time; 0 pauses it. Not saved, so the game
    * never loads paused.
@@ -315,6 +330,8 @@ export class DebugPanel {
   simulationSpeed = 1;
   /** Called whenever the growth mode changes. */
   onGrowthMode: (mode: GrowthMode) => void = () => {};
+  /** Called to finish building every hive at once. */
+  onFinishHives: () => void = () => {};
   private open: boolean;
   private tab: Tab;
   private readonly root: HTMLElement;
@@ -345,6 +362,8 @@ export class DebugPanel {
   private readonly placementDescription: HTMLElement;
   private readonly flowerSize: Slider;
   private readonly flowerHold: Slider;
+  private readonly hiveSize: Slider;
+  private readonly swarmsToggle: HTMLElement;
 
   constructor(host: HTMLElement) {
     const saved = load();
@@ -360,6 +379,7 @@ export class DebugPanel {
       size: settings.flowers.size,
     };
     this.time = { ...settings.time };
+    this.wildlife = { ...defaults().wildlife, ...settings.wildlife };
     this.open = saved?.open ?? false;
     this.tab = saved?.tab ?? "weather";
 
@@ -532,6 +552,24 @@ export class DebugPanel {
       this.setStrength({ flowers: sliderToRatio(value, STRENGTH_RANGE) }),
     );
 
+    const wildlife = this.page("wildlife", card);
+    const bees = element("section", "debug-section", wildlife);
+    element("h2", "debug-title", bees, "Bees");
+    element(
+      "p",
+      "model-description",
+      bees,
+      "A tree in flower draws a swarm of bees for every 40 open flowers. They build a hive under low, sturdy wood among the flowers, far from any other hive, over half a day. Hold H and click a limb to hang a hive there.",
+    );
+    this.swarmsToggle = this.toggleRow(bees, "Swarms come on their own", () =>
+      this.setWildlife({ swarms: !this.wildlife.swarms }),
+    );
+    this.hiveSize = new Slider(bees, "Hive size", (value) =>
+      this.setWildlife({ size: 1 + value * (LARGEST_HIVE - 1) }),
+    );
+    const finish = element("div", "debug-reset", bees, "Finish building");
+    finish.addEventListener("click", () => this.onFinishHives());
+
     const reset = element("div", "debug-reset", card, "Reset to defaults");
     reset.addEventListener("click", () => this.reset());
 
@@ -573,6 +611,12 @@ export class DebugPanel {
 
   setFlowers(settings: Partial<FlowerSettings>): void {
     Object.assign(this.flowers, settings);
+    this.render();
+    this.save();
+  }
+
+  setWildlife(settings: Partial<HiveSettings>): void {
+    Object.assign(this.wildlife, settings);
     this.render();
     this.save();
   }
@@ -625,6 +669,7 @@ export class DebugPanel {
     Object.assign(this.weather, fresh.weather);
     Object.assign(this.strength, fresh.strength);
     Object.assign(this.flowers, fresh.flowers);
+    Object.assign(this.wildlife, fresh.wildlife);
     Object.assign(this.time, fresh.time);
     this.showStrain = fresh.showStrain;
     this.simulationSpeed = 1;
@@ -746,6 +791,10 @@ export class DebugPanel {
       ratioToSlider(this.strength.flowers, STRENGTH_RANGE),
       `×${this.strength.flowers.toFixed(2)}`,
     );
+
+    const hive = this.wildlife.size;
+    this.hiveSize.show((hive - 1) / (LARGEST_HIVE - 1), `×${hive.toFixed(2)}`);
+    this.swarmsToggle.classList.toggle("selected", this.wildlife.swarms);
   }
 
   private save(): void {
@@ -759,6 +808,7 @@ export class DebugPanel {
       showStrain: this.showStrain,
       flowers: this.flowers,
       time: this.time,
+      wildlife: this.wildlife,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   }

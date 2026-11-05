@@ -193,8 +193,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 - [x] A limb's own weight counts toward what it carries, so a limb grown too long, or a trunk grown
       too tall and crooked, can break under itself.
-- [ ] Loads weigh limbs down: flowers, beehives sitting on a branch, and anything else hung on the
-      tree.
+- [x] Loads weigh limbs down: beehives hanging from a branch, and the snow on flowers.
+- [ ] Flowers weigh limbs down by their own weight too.
 - [x] Limbs break when the bending stress in them stays past what the wood can take; brief peaks
       are survived, sustained overload is not. The broken piece falls with the motion it had,
       lands, and always fades away a few seconds later, even if the wind keeps rocking it. A
@@ -268,6 +268,22 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [ ] Limits on growth: level edges, solid obstacles, and a sky ceiling that caps height.
 - [ ] Birds drift across the sky as decoration.
 
+## Wildlife
+
+- [x] A tree in flower draws a swarm of bees for every 40 open flowers. The bees build a hive over
+      half a day, hanging under low, sturdy, level wood among the flowers, in open air clear of
+      other wood and the barn, and never within 8 m of another hive. Low wood leaves the hive in
+      reach of a bear.
+- [x] A hive is an ink silhouette like the barn: a bell carved with bands of comb and a door. It
+      swings from its wood with the wood's motion and the wind, and weighs on its limb with the
+      cube of its size. Its comb holds against its weight, the wind, the snow on its shoulders
+      and the shaking of the wood, up to a limit that grows more slowly than its weight, so a
+      large hive hangs by less. A hurricane or a hard shake tears it loose and it falls; it also
+      falls with any limb cut or snapped under it, and its bees scatter.
+- [x] By day, bees fly out from a finished hive to the flowers nearby, dance about them a while
+      and fly home; by night they stay in. Bees fly about a hive while they build it.
+- [ ] Hives grow over a couple of days, up to four times the size they are first built.
+
 ## Game structure
 
 - [ ] A main menu (New game, Options) and a level select. Each level has a name, a short
@@ -307,7 +323,7 @@ _Open._ A button flips into a view of the roots:
 ## Debug tools
 
 - [x] A collapsible debug panel down the right, beside the scene rather than over it, with a tab
-      down its left edge for each page: weather, the tree, and flowers. The scene narrows as the
+      down its left edge for each page: weather, the tree, flowers, and wildlife. The scene narrows as the
       panel opens. Time controls stay at the top of every page, and a button at the bottom puts
       every setting back to its default.
 - [x] A plain black strip down the left of the scene, kept for tools.
@@ -323,3 +339,6 @@ _Open._ A button flips into a view of the roots:
 - [x] Flowers page: whether flowers are grown by the tree, as they are to begin with, or placed by
       hand; one size for all of them, from a fifth to five times the usual, which grows clusters
       into mounds; and how hard their stems hold.
+- [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
+      first built to four times larger; a button that finishes building every hive at once.
+      Holding H and clicking a limb hangs a hive from it there.
