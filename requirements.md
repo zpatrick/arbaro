@@ -251,10 +251,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
       in rain.
 - [x] Clouds drift across the sky with the wind: banks of layers like brushstrokes, after the
       banded clouds of old prints rather than puffs, each with a round head and a long tail
-      tapering to a point, stacked with their heads together. Each layer is filled flat, hatched
-      faintly along its underside and carved finely along its top, or outlined in ink like the
-      mountains when chosen. How much of the sky they cover and how high they hang are set on
-      the weather page.
+      tapering to a point, stacked with their heads together, streaming with the wind so their
+      tails trail behind them. Each layer is filled flat, hatched faintly along its underside and
+      carved finely along its top. How much of the sky they cover and how high they hang are set
+      on the weather page.
 - [x] Clouds dim the light. Their cover greys the sky and dulls sunrise and sunset, and a bank
       passing over the sun or moon takes away the direct light, so the mountains' shading fades
       and comes back. On a broken day the banks cast soft shadows across the mountains. A thick
@@ -313,8 +313,8 @@ _Open._ A button flips into a view of the roots:
 - [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed;
       the season; the wind: a compass whose arrow you drag to point where it blows toward, a
       strength slider, and a choice of wind model with a description of each; how hard it rains
-      and snows, and how fast lying snow melts; and how much of the sky the clouds cover, how
-      high they hang, and whether they are outlined.
+      and snows, and how fast lying snow melts; and how much of the sky the clouds cover and how
+      high they hang.
 - [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
       how much the wood and the roots can take; and an overlay showing how close each joint is to
       breaking.

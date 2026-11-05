@@ -37,9 +37,11 @@ const CLOUDS = {
   far: 0.6,
   /** Seconds the light takes to follow a bank across the sun. */
   passing: 0.6,
-  /** Width of the outlines, in CSS pixels at the base horizon height, and how strongly they show. */
-  line: 1.3,
-  lineAlpha: { day: 0.6, night: 0.4 },
+  /**
+   * Seconds a bank takes to fade out, or back in, when the wind turns it to stream the other way:
+   * it turns around while it is out of sight.
+   */
+  turning: 1.5,
 } as const;
 
 /** Horizon height the line widths are given for, in CSS pixels; lines scale with the view. */
@@ -110,6 +112,12 @@ interface Layer {
 }
 
 interface Bank {
+  /** Its layers, back to front, laid out with its tail to the left. */
+  layers: Omit<Layer, "tail">[];
+  /** The side its tail trails on: away from the way it drifts. */
+  tail: -1 | 1;
+  /** How far it has faded back in after turning around, from 0 to 1. */
+  shown: number;
   /** Where along the strip it starts, in view widths. */
   along: number;
   /** Where it hangs, from -1 below the clouds' height to 1 above it. */
@@ -119,8 +127,6 @@ interface Bank {
   depth: number;
   /** Cover the sky must reach for this bank to show. */
   shows: number;
-  /** Back to front. */
-  layers: Layer[];
 }
 
 /** A cloud's shadow on the mountains: a soft oval, in CSS pixels, this dark at its middle. */
@@ -152,6 +158,8 @@ export class Clouds {
   private drift = 0;
   /** How much of the sun or the moon the banks hide, eased as they pass. */
   private covered = 0;
+  /** Whether the banks have been turned to stream with the wind yet. */
+  private turned = false;
   private readonly banks: Bank[];
 
   constructor(settings: WeatherSettings) {
@@ -170,10 +178,29 @@ export class Clouds {
     );
   }
 
-  /** Drifts the banks with `wind`, and follows how much of the sun or moon they hide. */
+  /**
+   * Drifts the banks with `wind`, turns any streaming against it around, and follows how much of
+   * the sun or moon they hide.
+   */
   update(dt: number, wind: Wind, camera: Camera, light: SkyLight): void {
     const air = wind.at(0, 30, 0);
-    this.drift += dt * (CLOUDS.still + CLOUDS.drift * air.x);
+    const speed = CLOUDS.still + CLOUDS.drift * air.x;
+    this.drift += dt * speed;
+    const tail = speed >= 0 ? -1 : 1;
+    for (const bank of this.banks) {
+      if (!this.turned) {
+        bank.tail = tail;
+      } else if (bank.tail !== tail) {
+        bank.shown -= dt / CLOUDS.turning;
+        if (bank.shown <= 0) {
+          bank.shown = 0;
+          bank.tail = tail;
+        }
+      } else {
+        bank.shown = Math.min(1, bank.shown + dt / CLOUDS.turning);
+      }
+    }
+    this.turned = true;
     const body = light.daylight > 0.5 ? light.sun : light.moon;
     const at = skyBodyAt(camera, body);
     const hidden = this.hiding(
@@ -223,7 +250,8 @@ export class Clouds {
     const grow = lerp(CLOUDS.growth.from, CLOUDS.growth.to, cover);
     const placed: PlacedBank[] = [];
     for (const bank of this.banks) {
-      const alpha = smoothstep(bank.shows, bank.shows + CLOUDS.fadeIn, cover);
+      const alpha =
+        smoothstep(bank.shows, bank.shows + CLOUDS.fadeIn, cover) * bank.shown;
       if (alpha <= 0) {
         continue;
       }
@@ -242,11 +270,14 @@ export class Clouds {
         alpha,
         depth: bank.depth,
         layers: bank.layers.map((layer) => ({
-          x: x + (layer.x - 0.5) * width,
+          x:
+            x +
+            ((bank.tail < 0 ? layer.x : 1 - layer.x - layer.width) - 0.5) *
+              width,
           y: y + layer.y * width,
           width: layer.width * width,
           height: layer.height * width,
-          tail: layer.tail,
+          tail: bank.tail,
         })),
       });
     }
@@ -255,7 +286,7 @@ export class Clouds {
 
   /**
    * Draws `banks` in `light`, far ones first, each layer back to front: filled flat, hatched lightly
-   * along its underside, and carved along its top, or outlined in ink when chosen.
+   * along its underside, and carved along its top.
    */
   draw(
     ctx: CanvasRenderingContext2D,
@@ -273,10 +304,6 @@ export class Clouds {
     const carve = css(
       light.ink,
       lerp(SHADING.carve.night, SHADING.carve.day, light.daylight),
-    );
-    const outline = css(
-      light.guide,
-      lerp(CLOUDS.lineAlpha.night, CLOUDS.lineAlpha.day, light.daylight),
     );
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
@@ -312,17 +339,11 @@ export class Clouds {
         ctx.stroke(hatching(layer, SHADING.gap * scale));
         ctx.restore();
 
-        if (this.settings.cloudOutline) {
-          ctx.strokeStyle = outline;
-          ctx.lineWidth = CLOUDS.line * scale;
-          ctx.stroke(shape);
-        } else {
-          const top = new Path2D();
-          addTop(top, layer);
-          ctx.strokeStyle = carve;
-          ctx.lineWidth = SHADING.carveWidth * scale;
-          ctx.stroke(top);
-        }
+        const top = new Path2D();
+        addTop(top, layer);
+        ctx.strokeStyle = carve;
+        ctx.lineWidth = SHADING.carveWidth * scale;
+        ctx.stroke(top);
       }
     }
     ctx.globalAlpha = 1;
@@ -430,8 +451,6 @@ function makeBank(rng: Rng, index: number): Bank {
     CLOUDS.thickness.to,
     rng.next(),
   );
-  const tail = rng.next() < 0.5 ? -1 : 1;
-  // Laid out with the tails to the left, then turned around if they point right.
   const layers: Omit<Layer, "tail">[] = [];
   if (rng.next() < 0.55) {
     const crown = lerp(0.28, 0.38, rng.next());
@@ -464,11 +483,9 @@ function makeBank(rng: Rng, index: number): Bank {
     width: lerp(CLOUDS.width.from, CLOUDS.width.to, rng.next()),
     depth: rng.next(),
     shows: (index + 0.6 * rng.next()) / CLOUDS.count,
-    layers: layers.map((layer) => ({
-      ...layer,
-      x: tail < 0 ? layer.x : 1 - layer.x - layer.width,
-      tail,
-    })),
+    layers,
+    tail: -1,
+    shown: 1,
   };
 }
 

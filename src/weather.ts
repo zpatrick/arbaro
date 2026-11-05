@@ -19,8 +19,6 @@ export interface WeatherSettings {
   clouds: number;
   /** How high the clouds hang, from 0 down on the ground as fog to 1 high in the sky. */
   cloudHeight: number;
-  /** Whether the clouds are outlined in ink, as the mountains are. */
-  cloudOutline: boolean;
 }
 
 /**

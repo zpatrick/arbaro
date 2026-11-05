@@ -203,7 +203,6 @@ function defaults(): Settings {
       melt: 1,
       clouds: 0,
       cloudHeight: 0.6,
-      cloudOutline: false,
     },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
@@ -252,9 +251,7 @@ function isSaved(saved: unknown): saved is Saved {
       (isRecord(weather) &&
         ["rain", "snow", "melt", "clouds", "cloudHeight"].every(
           (key) => weather[key] === undefined || isNumber(weather[key]),
-        ) &&
-        (weather.cloudOutline === undefined ||
-          typeof weather.cloudOutline === "boolean"))) &&
+        ))) &&
     typeof saved.open === "boolean" &&
     TABS.some((t) => t.id === saved.tab) &&
     typeof saved.showStrain === "boolean" &&
@@ -335,7 +332,6 @@ export class DebugPanel {
   private readonly melt: Slider;
   private readonly cloudCover: Slider;
   private readonly cloudHeight: Slider;
-  private readonly cloudOutline: HTMLElement;
   private readonly models = new Map<WindModel, HTMLElement>();
   private readonly description: HTMLElement;
   private readonly modes = new Map<GrowthMode, HTMLElement>();
@@ -483,9 +479,6 @@ export class DebugPanel {
     );
     this.cloudHeight = new Slider(sky, "Height", (value) =>
       this.setWeather({ cloudHeight: value }),
-    );
-    this.cloudOutline = this.toggleRow(sky, "Outlined", () =>
-      this.setWeather({ cloudOutline: !this.weather.cloudOutline }),
     );
 
     const tree = this.page("tree", card);
@@ -710,14 +703,12 @@ export class DebugPanel {
     const chosen = WIND_MODELS.find((m) => m.id === model);
     invariant(chosen !== undefined, `Unknown wind model ${model}.`);
     this.description.textContent = chosen.description;
-    const { rain, snow, melt, clouds, cloudHeight, cloudOutline } =
-      this.weather;
+    const { rain, snow, melt, clouds, cloudHeight } = this.weather;
     this.rain.show(rain, nameFor(RAINS, rain));
     this.snow.show(snow, nameFor(SNOWS, snow));
     this.melt.show(ratioToSlider(melt, MELT_RANGE), `×${melt.toFixed(2)}`);
     this.cloudCover.show(clouds, nameFor(COVERS, clouds));
     this.cloudHeight.show(cloudHeight, nameFor(HEIGHTS, cloudHeight));
-    this.cloudOutline.classList.toggle("selected", cloudOutline);
 
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);
