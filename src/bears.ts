@@ -3,7 +3,7 @@ import type { Debris } from "./debris";
 import type { HiveTarget } from "./hives";
 import type { Limb } from "./limb";
 import type { Push } from "./physics";
-import { addCapsule, addCircle, addEllipse, type Point } from "./silhouette";
+import { addCapsule, addPolygon, type Point } from "./silhouette";
 import type { Tree } from "./tree";
 import { approach, at, clamp, lerp, Rng, smoothstep } from "./util";
 
@@ -40,7 +40,7 @@ const BODY = {
   /** The bones of the front leg and the length of the front paw. */
   arm: 0.37,
   forearm: 0.34,
-  paw: 0.13,
+  paw: 0.08,
   /** From the shoulders to the middle of the head, and the head's size. */
   neck: 0.4,
   head: 0.18,
@@ -996,68 +996,183 @@ function bodyOf(pose: Pose): { x: number; y: number; r: number }[] {
 }
 
 /**
- * The silhouette of a bear in `pose`, facing `facing`, in meters: a heavy body humped at the
- * shoulders, a round head with a blunt snout and small ears, and four thick legs, the far ones
- * behind the near.
+ * A bear's body and head without its legs, standing on all fours facing right, in meters, its hip
+ * joint at (0, 0.7) and its shoulder joint at (0.8, 0.75): around from its tail over its back, its
+ * modest shoulder rise, its neck, a small ear, its brow and long muzzle, under its jaw and down its
+ * chest, along its belly and back up under its rump. Each point follows the bones by its third
+ * number: 0 the hips, 1 the shoulders, 2 the head, and between them as a blend of the two.
+ */
+const OUTLINE: readonly (readonly [number, number, number])[] = [
+  [-0.37, 0.79, 0],
+  [-0.34, 0.86, 0],
+  [-0.25, 0.93, 0],
+  [-0.1, 0.98, 0],
+  [0.12, 1.0, 0.15],
+  [0.38, 0.99, 0.5],
+  [0.62, 1.02, 0.85],
+  [0.8, 1.05, 1],
+  [0.96, 1.01, 1.3],
+  [1.07, 0.95, 1.8],
+  [1.1, 0.98, 2],
+  [1.12, 1.03, 2],
+  [1.16, 1.05, 2],
+  [1.2, 1.01, 2],
+  [1.27, 0.94, 2],
+  [1.35, 0.87, 2],
+  [1.46, 0.81, 2],
+  [1.54, 0.77, 2],
+  [1.57, 0.735, 2],
+  [1.545, 0.7, 2],
+  [1.47, 0.675, 2],
+  [1.37, 0.64, 2],
+  [1.25, 0.6, 1.8],
+  [1.1, 0.575, 1.4],
+  [0.96, 0.54, 1],
+  [0.86, 0.45, 1],
+  [0.7, 0.41, 0.85],
+  [0.45, 0.39, 0.55],
+  [0.2, 0.42, 0.25],
+  [0.05, 0.49, 0.05],
+  [-0.12, 0.49, 0],
+  [-0.28, 0.57, 0],
+  [-0.36, 0.69, 0],
+];
+
+/** Where the bones the outline follows lie in it: the hips, the shoulders, and the head on its neck. */
+const REST = {
+  hip: { x: 0, y: 0.7 },
+  shoulder: { x: 0.8, y: 0.75 },
+  /** The body's slope from hips to shoulders, and the neck's, in radians from level. */
+  pitch: 0.06,
+  head: -0.18,
+} as const;
+
+/**
+ * Widths of a bear's legs, in meters: the hind leg at the hip, knee and heel, and its foot's height;
+ * the front leg at the shoulder, elbow and wrist, and its paw's.
+ */
+const LEGS = {
+  hind: { hip: 0.32, knee: 0.19, heel: 0.13, foot: 0.11 },
+  front: { shoulder: 0.28, elbow: 0.18, wrist: 0.145, paw: 0.13 },
+} as const;
+
+/**
+ * The silhouette of a bear in `pose`, facing `facing`, in meters: its body and head from a drawn
+ * outline bent with its bones, and its four legs, the far ones behind the near.
  */
 function bearShape(pose: Pose, facing: 1 | -1): Path2D {
   const path = new Path2D();
   const f = facing;
-  const { hip, shoulder, head } = pose;
-  const along = Math.atan2(shoulder.y - hip.y, shoulder.x - hip.x);
-  const ux = Math.cos(along);
-  const uy = Math.sin(along);
-  // Across the body toward its back.
-  const bx = -uy * f;
-  const by = ux * f;
-  const middle = {
-    x: (hip.x + shoulder.x) / 2 - bx * 0.02,
-    y: (hip.y + shoulder.y) / 2 - by * 0.02,
-  };
-  addEllipse(path, middle, BODY.spine / 2 + 0.24, 0.36, along);
-  // The hump over its shoulders, and its rump.
-  addCircle(path, { x: shoulder.x + bx * 0.1, y: shoulder.y + by * 0.1 }, 0.33);
-  addCircle(
-    path,
-    { x: hip.x - ux * 0.1 + bx * 0.04, y: hip.y - uy * 0.1 + by * 0.04 },
-    0.32,
-  );
-  // A stub of a tail.
-  addCircle(
-    path,
-    { x: hip.x - ux * 0.36 + bx * 0.12, y: hip.y - uy * 0.36 + by * 0.12 },
-    0.06,
-  );
-  // Its neck and head.
-  addCapsule(path, shoulder, head, 0.25, 0.17);
-  addCircle(path, head, BODY.head);
-  const hx = Math.cos(pose.headAngle);
-  const hy = Math.sin(pose.headAngle);
-  const snout = { x: head.x + f * hx * 0.23, y: head.y + hy * 0.23 - 0.04 };
-  addCapsule(path, head, snout, 0.1, 0.06);
-  // Small round ears, up and back on its head.
-  addCircle(
-    path,
-    {
-      x: head.x - f * hx * 0.06 - f * hy * 0.14,
-      y: head.y - hy * 0.06 + hx * 0.14,
-    },
-    0.055,
-  );
-  // Its legs: thick and straight-standing, thinning to the paw.
+  addPolygon(path, smooth(skin(pose, f)));
   for (const [i, leg] of pose.legs.entries()) {
-    const hind = i < 2;
-    addCapsule(
-      path,
-      leg.root,
-      leg.knee,
-      hind ? 0.17 : 0.14,
-      hind ? 0.12 : 0.11,
-    );
-    addCapsule(path, leg.knee, leg.ankle, hind ? 0.11 : 0.1, 0.08);
-    addCapsule(path, leg.ankle, leg.toe, 0.08, 0.055);
+    if (i < 2) {
+      const { hip, knee, heel, foot } = LEGS.hind;
+      addCapsule(path, leg.root, leg.knee, hip / 2, knee / 2);
+      addCapsule(path, leg.knee, leg.ankle, knee / 2, heel / 2);
+      // Flat along the ground from its heel to its toes.
+      addCapsule(
+        path,
+        { x: leg.ankle.x - f * 0.02, y: leg.toe.y + foot / 2 - 0.005 },
+        { x: leg.toe.x, y: leg.toe.y + foot * 0.4 },
+        foot / 2,
+        foot * 0.4,
+      );
+    } else {
+      const { shoulder, elbow, wrist, paw } = LEGS.front;
+      addCapsule(path, leg.root, leg.knee, shoulder / 2, elbow / 2);
+      addCapsule(path, leg.knee, leg.ankle, elbow / 2, wrist / 2);
+      addCapsule(path, leg.ankle, leg.toe, paw / 2, paw * 0.42);
+    }
   }
   return path;
+}
+
+/**
+ * The outline of `pose`'s body and head, each point carried by the bones it follows from where it
+ * lies at rest to where those bones are now.
+ */
+function skin(pose: Pose, f: 1 | -1): Point[] {
+  const pitch = Math.atan2(
+    pose.shoulder.y - pose.hip.y,
+    f * (pose.shoulder.x - pose.hip.x),
+  );
+  const bones: { rest: Bone; now: Bone }[] = [
+    {
+      rest: { ...REST.hip, angle: REST.pitch },
+      now: { ...pose.hip, angle: pitch },
+    },
+    {
+      rest: { ...REST.shoulder, angle: REST.pitch },
+      now: { ...pose.shoulder, angle: pitch },
+    },
+    {
+      rest: { ...REST.shoulder, angle: REST.head },
+      now: { ...pose.shoulder, angle: pose.headAngle },
+    },
+  ];
+  return OUTLINE.map(([x, y, follows]) => {
+    const i = Math.min(1, Math.floor(follows));
+    const blend = follows - i;
+    return mix(
+      carry(at(bones, i), { x, y }, f),
+      carry(at(bones, i + 1), { x, y }, f),
+      blend,
+    );
+  });
+}
+
+/** A bone: where it starts, and its angle from level toward the way the bear faces. */
+interface Bone {
+  x: number;
+  y: number;
+  angle: number;
+}
+
+/** Carries `p`, given at rest, along with `bone` from where it lies at rest to where it is now. */
+function carry(bone: { rest: Bone; now: Bone }, p: Point, f: 1 | -1): Point {
+  const dx = p.x - bone.rest.x;
+  const dy = p.y - bone.rest.y;
+  const back = -bone.rest.angle;
+  const lx = dx * Math.cos(back) - dy * Math.sin(back);
+  const ly = dx * Math.sin(back) + dy * Math.cos(back);
+  const turn = bone.now.angle;
+  return {
+    x: bone.now.x + f * (lx * Math.cos(turn) - ly * Math.sin(turn)),
+    y: bone.now.y + lx * Math.sin(turn) + ly * Math.cos(turn),
+  };
+}
+
+/** Points along a smooth closed curve through `points`, four to each span between them. */
+function smooth(points: readonly Point[]): Point[] {
+  const out: Point[] = [];
+  const n = points.length;
+  for (let i = 0; i < n; i += 1) {
+    const p0 = at(points, (i - 1 + n) % n);
+    const p1 = at(points, i);
+    const p2 = at(points, (i + 1) % n);
+    const p3 = at(points, (i + 2) % n);
+    for (let k = 0; k < 4; k += 1) {
+      const t = k / 4;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      // A Catmull-Rom curve, which passes through every point.
+      out.push({
+        x:
+          0.5 *
+          (2 * p1.x +
+            (p2.x - p0.x) * t +
+            (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+            (3 * p1.x - p0.x - 3 * p2.x + p3.x) * t3),
+        y:
+          0.5 *
+          (2 * p1.y +
+            (p2.y - p0.y) * t +
+            (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+            (3 * p1.y - p0.y - 3 * p2.y + p3.y) * t3),
+      });
+    }
+  }
+  return out;
 }
 
 function mix(a: Point, b: Point, t: number): Point {

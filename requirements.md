@@ -288,8 +288,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
       birds there. A bird sitting on a limb weighs on it, so a thin limb sags under it; it sits a
       while and flies off, and flies off at once if its limb is cut or breaks.
 - [x] A hive draws a bear after a while. The bear is an ink silhouette ringed with a thin line of
-      the sky's color so it stands out against the trunk, rigged at its hips, shoulders and
-      knees, and walks in along the ground with its feet stepping in a walk, a stroll or a run.
+      the sky's color so it stands out against the trunk: one drawn outline of a black bear in
+      profile, its back level to a modest rise at the shoulders, its muzzle long, bent with its
+      hips, shoulders and head, on four heavy legs. It walks in along the ground with its feet
+      stepping in a walk, a stroll or a run.
       It goes after the nearest hive: if it can reach the hive reared up on its hind legs, it
       swipes it down; else it rears up under the wood the hive hangs from and swipes at that,
       shaking it; else it sets its forepaws on the trunk and shoves it in time, rocking the whole
