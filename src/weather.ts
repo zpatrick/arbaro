@@ -1,4 +1,4 @@
-import { barnTopAt } from "./barn";
+import { barnTopAt, barnWalls } from "./barn";
 import type { Camera } from "./camera";
 import type { Rgb } from "./sky";
 import { at, clamp, lerp, Rng } from "./util";
@@ -122,6 +122,11 @@ export interface Flake {
   air: { x: number; y: number };
   /** The last thing it fell through that caught some of it, so it is caught once in passing. */
   caughtBy: object | undefined;
+  /**
+   * Seconds it still rolls or tumbles clear of a roof: sheltered from the wind in the still air
+   * along the roof, it moves under gravity alone.
+   */
+  rolling: number;
 }
 
 /** Something on the tree that catches falling snow: a flower. */
@@ -314,16 +319,28 @@ export class Weather {
         flake.air = wind.at(flake.x, Math.max(flake.y, 0), 0);
       }
       flake.phase += dt * (1 + flake.size);
-      const flutter = flake.chunk
-        ? 0
-        : SNOW.flutter * flake.size * Math.sin(flake.phase);
-      const follow =
-        1 - Math.exp(-dt / (flake.chunk ? SNOW.chunkResponse : SNOW.response));
-      flake.vx += (flake.air.x + flutter - flake.vx) * follow;
-      flake.vy += (flake.air.y - flake.speed - flake.vy) * follow;
+      if (flake.rolling > 0) {
+        flake.rolling -= dt;
+        flake.vy = Math.max(flake.vy - GRAVITY * dt, -flake.speed);
+      } else {
+        const flutter = flake.chunk
+          ? 0
+          : SNOW.flutter * flake.size * Math.sin(flake.phase);
+        const follow =
+          1 -
+          Math.exp(-dt / (flake.chunk ? SNOW.chunkResponse : SNOW.response));
+        flake.vx += (flake.air.x + flutter - flake.vx) * follow;
+        flake.vy += (flake.air.y - flake.speed - flake.vy) * follow;
+      }
       const fromX = flake.x;
       flake.x += flake.vx * dt;
       flake.y += flake.vy * dt;
+      // A flake blown against a wall slides down it rather than into it.
+      const footing = this.cover.baseAt(flake.x);
+      if (flake.y < footing && this.cover.baseAt(fromX) < footing) {
+        flake.x = fromX;
+        flake.vx = 0;
+      }
 
       const caught = grid.get(
         cellKey(
@@ -351,11 +368,17 @@ export class Weather {
       }
 
       if (flake.y <= this.cover.surfaceAt(flake.x)) {
-        // A flake blown into a wall settles against it, on the side it came from.
-        const footing = this.cover.baseAt(flake.x);
-        const wall = flake.y < footing && this.cover.baseAt(fromX) < footing;
-        this.cover.deposit(wall ? fromX : flake.x, flake.mass);
-        continue;
+        // Snow cannot lie on a roof steeper than it stands, so a flake landing on one rolls
+        // down it, to fall from its edge.
+        const downhill = this.cover.downhill(flake.x);
+        if (downhill === 0) {
+          this.cover.deposit(flake.x, flake.mass);
+          continue;
+        }
+        flake.y = this.cover.surfaceAt(flake.x) + ROLL.lift;
+        flake.vx = downhill * ROLL.speed;
+        flake.vy = 0;
+        flake.rolling = ROLL.sheltered;
       }
       if (
         flake.x < zone.left ||
@@ -363,6 +386,11 @@ export class Weather {
         flake.y < zone.bottom ||
         flake.y > zone.top + AIR.aboveRoofs
       ) {
+        // A chunk that fell from a roof is snow that was lying there, so it lands below rather
+        // than leave with the air.
+        if (flake.chunk) {
+          this.cover.deposit(flake.x, flake.mass);
+        }
         continue;
       }
       kept.push(flake);
@@ -405,6 +433,7 @@ export class Weather {
       phase: this.rng.next() * Math.PI * 2,
       air,
       caughtBy: undefined,
+      rolling: 0,
     });
   }
 
@@ -439,6 +468,19 @@ export class Weather {
   }
 }
 
+/**
+ * A flake landing where snow cannot lie rolls on down from this far above the surface, in meters,
+ * at this speed, in meters per second, sheltered from the wind for this many seconds after each
+ * bump, long enough to tumble clear of the edge. A chunk falling off a ledge tumbles clear for
+ * `chunk` seconds.
+ */
+const ROLL = { lift: 0.01, speed: 1.2, sheltered: 0.25, chunk: 0.25 } as const;
+/** Pull of gravity on snow tumbling off a roof, in meters per second squared. */
+const GRAVITY = 9.8;
+/** How far past and below a ledge's edge a chunk falling off it starts, in meters. */
+const LEDGE_CLEAR = 0.05;
+/** How fast a chunk leaves a ledge, out from it and down, in meters per second. */
+const CHUNK_THROW = { across: 0.4, down: 0.8 } as const;
 /** Flakes take a fresh reading of the air every this many steps. */
 const AIR_SAMPLING = 3;
 /** Size of the cells flowers are sorted into for catching snow, in meters. */
@@ -498,9 +540,13 @@ export class SnowCover {
   private readonly overhang: number[];
 
   constructor() {
-    this.base = Array.from({ length: this.count }, (_, i) =>
-      barnTopAt(this.middle(i)),
-    );
+    // Snow lies on the roof between the barn's walls. Beyond them it lies on the ground, under
+    // the eaves too, since none would stay on their steep pitch.
+    const walls = barnWalls();
+    this.base = Array.from({ length: this.count }, (_, i) => {
+      const x = this.middle(i);
+      return x > walls.left && x < walls.right ? barnTopAt(x) : 0;
+    });
     this.depth = new Array<number>(this.count).fill(0);
     this.overhang = new Array<number>(this.count).fill(0);
   }
@@ -526,6 +572,28 @@ export class SnowCover {
   surfaceAt(x: number): number {
     const i = this.index(x);
     return i < 0 ? 0 : at(this.base, i) + at(this.depth, i);
+  }
+
+  /**
+   * Which way the footing at `x` falls away more steeply than snow can lie on it: -1 to the left,
+   * 1 to the right, or 0 where snow can lie.
+   */
+  downhill(x: number): -1 | 0 | 1 {
+    const i = this.index(x);
+    if (i <= 0 || i >= this.count - 1) {
+      return 0;
+    }
+    const limit = SNOW.repose * this.step;
+    const base = at(this.base, i);
+    const left = base - at(this.base, i - 1);
+    const right = base - at(this.base, i + 1);
+    if (right > limit && right >= left) {
+      return 1;
+    }
+    if (left > limit) {
+      return -1;
+    }
+    return 0;
   }
 
   /** Height of the highest roof or snow between `left` and `right`. */
@@ -598,33 +666,40 @@ export class SnowCover {
       this.depth[i] = after < before && after < SNOW.traceDepth ? 0 : after;
     }
     for (let i = 0; i < this.count - 1; i += 1) {
-      this.slide(i, i + 1, spill);
+      this.slide(i, i + 1, zone, spill);
     }
     for (let i = this.count - 2; i >= 0; i -= 1) {
-      this.slide(i, i + 1, spill);
+      this.slide(i, i + 1, zone, spill);
     }
   }
 
   /** Lets snow slide between neighboring strips `i` and `j` until it stands no steeper than it can. */
-  private slide(i: number, j: number, spill: (chunk: Flake) => void): void {
+  private slide(
+    i: number,
+    j: number,
+    zone: Zone,
+    spill: (chunk: Flake) => void,
+  ): void {
     const hi = at(this.base, i) + at(this.depth, i);
     const hj = at(this.base, j) + at(this.depth, j);
     const limit = SNOW.repose * this.step;
     if (hi - hj > limit) {
-      this.move(i, j, (hi - hj - limit) / 2, spill);
+      this.move(i, j, (hi - hj - limit) / 2, zone, spill);
     } else if (hj - hi > limit) {
-      this.move(j, i, (hj - hi - limit) / 2, spill);
+      this.move(j, i, (hj - hi - limit) / 2, zone, spill);
     }
   }
 
   /**
    * Moves up to `excess` meters of snow from strip `from` toward strip `to`. Snow sliding over a
-   * ledge gathers at its edge, and drops off as a chunk once there is enough of it.
+   * ledge in the air `zone` gathers at its edge, and drops off as a chunk once there is enough of
+   * it; over a ledge beyond the air, it lands below at once.
    */
   private move(
     from: number,
     to: number,
     excess: number,
+    zone: Zone,
     spill: (chunk: Flake) => void,
   ): void {
     const amount = Math.min(at(this.depth, from), excess);
@@ -632,7 +707,12 @@ export class SnowCover {
       return;
     }
     this.depth[from] = at(this.depth, from) - amount;
-    if (at(this.base, from) - at(this.base, to) < SNOW.ledge) {
+    const away = Math.sign(to - from);
+    const edge = this.middle(from) + away * (this.step / 2 + LEDGE_CLEAR);
+    if (
+      at(this.base, from) - at(this.base, to) < SNOW.ledge ||
+      !inZone(zone, edge, at(this.base, from))
+    ) {
       this.depth[to] = at(this.depth, to) + amount;
       return;
     }
@@ -642,12 +722,13 @@ export class SnowCover {
       return;
     }
     this.overhang[from] = 0;
-    const edge = this.middle(from) + (Math.sign(to - from) * this.step) / 2;
+    // It drops from just past and below the ledge's edge, already falling, so a wind blowing it
+    // back meets the wall below the ledge rather than carrying it back up onto it.
     spill({
       x: edge,
-      y: at(this.base, from) + 0.05,
-      vx: Math.sign(to - from) * 0.4,
-      vy: 0,
+      y: at(this.base, from) - LEDGE_CLEAR,
+      vx: away * CHUNK_THROW.across,
+      vy: -CHUNK_THROW.down,
       mass,
       speed: SNOW.chunkSpeed,
       size: 1,
@@ -655,6 +736,7 @@ export class SnowCover {
       phase: 0,
       air: { x: 0, y: 0 },
       caughtBy: undefined,
+      rolling: ROLL.chunk,
     });
   }
 }

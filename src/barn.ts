@@ -71,6 +71,11 @@ export function barnAhead(x: number, y: number, heading: number): number {
   return crossings % 2 === 1 ? 0 : nearest;
 }
 
+/** Where the barn's walls stand, in meters along the ground. */
+export function barnWalls(): { left: number; right: number } {
+  return { left: BARN.x - BARN.width / 2, right: BARN.x + BARN.width / 2 };
+}
+
 /** Height of the top of the barn above `x`, in meters: its roof, or 0 beside it. */
 export function barnTopAt(x: number): number {
   let top = 0;
