@@ -50,3 +50,18 @@ Branches have stems, and stems have their own nozzles, with the same kind of spl
 A flower is another node type, and it is always a leaf. It gets resources dedicated to it the same way a branch or a stem does, and it needs enough of them. It also brings in light energy, which is a different currency. How that connects, and why you would use it, is still open.
 
 On each valve, a few settings feel right, even if the exact set is not settled: give it everything, hold it where incoming matches decay, or turn the valve off.
+
+## Bees, bears, and birds
+
+Certain flowers attract bees. Bees that stay may build a beehive on a branch. The hive is a load hung on the tree, the same kind of weight as the other things that sit on a limb and pull it down.
+
+A hive eventually draws a bear. The bear walks over, rears onto its hind legs, sets its forelegs on the trunk, and swipes at the hive. If it connects, it knocks the hive to the ground, eats it, and leaves. If it cannot reach, it keeps at it for a while and then gives up. Shaking the tree is one version of that. What else it might go after instead, seeds or leaves, is still open.
+
+Pruning is a way to answer the bear. Cut a limb so the falling wood lands on it. A small branch the bear shrugs off. A larger one drives it off. One big enough can kill it. The wind is part of the aim. A limb already swaying keeps the motion it had when you cut it, so cutting at the right point in the swing can send it flying. Extra weight on that limb, a beehive especially, carries it farther.
+
+A level's goal might be something other than height and flower count. Killing a number of bears, five say, is one example. What those goals actually are is still open.
+
+Birds are lighter and separate from that. They fly in and land on the tree, and their weight is something you can watch: enough to bend a thin twig, or too little to move the wood at all. Sky birds that only drift past are a different, earlier idea.
+
+
+- Snow, weghts down heavy limbs in winter. covers ground. 
