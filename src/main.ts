@@ -106,6 +106,8 @@ let shiftHeld = false;
 let pruneHeld = false;
 /** Whether H is held, which turns a click on a limb into hanging a hive from it there. */
 let hiveHeld = false;
+/** Whether the next click on a limb hangs a hive there, as the debug panel's button asks. */
+let placingHive = false;
 /** Seconds of simulated time so far, which set the stars twinkling. */
 let clock = 0;
 /** What the selected limb last ran into as it was grown, so the news is given only once. */
@@ -425,6 +427,9 @@ camera.snap(tree.bounds());
 showGrowthMode(panel.growth.mode);
 panel.onGrowthMode = showGrowthMode;
 panel.onFinishHives = () => hives.finish();
+panel.onPlaceHive = () => {
+  placingHive = true;
+};
 panel.onSendBear = () => bears.spawn(camera);
 panel.onShowBear = (pose: BearPose) => bears.show(pose, camera, tree);
 panel.onClearBears = () => bears.clear();
@@ -449,6 +454,7 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "Escape") {
     spoutControl.close();
+    placingHive = false;
   }
 });
 window.addEventListener("keyup", (event) => {
@@ -545,13 +551,14 @@ canvas.addEventListener("pointerdown", (event) => {
     }
     return;
   }
-  if (hiveHeld) {
+  if (hiveHeld || placingHive) {
     const pick = pickAt(tree, x, y);
     if (pick === undefined) {
       startPanning(event);
       return;
     }
     hives.place(pick.limb, pick.s);
+    placingHive = false;
     return;
   }
   if (placingFlowers(event)) {
@@ -626,7 +633,7 @@ function frame(now: number): void {
   canvas.style.cursor =
     panning?.dragging === true
       ? "grabbing"
-      : (pruneHeld || hiveHeld) && hover !== undefined
+      : (pruneHeld || hiveHeld || placingHive) && hover !== undefined
         ? "crosshair"
         : pointing
           ? "pointer"

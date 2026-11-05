@@ -359,5 +359,5 @@ _Open._ A button flips into a view of the roots:
       first built to four times larger; a button that finishes building every hive at once;
       how many birds come by each minute, and how many of them land; whether hives draw bears,
       a button that sends a bear in, a list of a bear's animations to show one playing in
-      place, and a button that clears the bears away. Holding H and clicking a limb hangs a hive
-      from it there.
+      place, and a button that clears the bears away. A button, or holding H, makes the next
+      click on a limb hang a hive from it there.

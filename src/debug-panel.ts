@@ -367,6 +367,8 @@ export class DebugPanel {
   onGrowthMode: (mode: GrowthMode) => void = () => {};
   /** Called to finish building every hive at once. */
   onFinishHives: () => void = () => {};
+  /** Called to make the next click on a limb hang a hive there. */
+  onPlaceHive: () => void = () => {};
   /** Called to send a bear in, to show a bear playing an animation, and to clear the bears away. */
   onSendBear: () => void = () => {};
   onShowBear: (pose: BearPose) => void = () => {};
@@ -606,7 +608,7 @@ export class DebugPanel {
       "p",
       "model-description",
       bees,
-      "A tree in flower draws a swarm of bees for every 40 open flowers. They build a hive under low, sturdy wood among the flowers, far from any other hive, over half a day. Hold H and click a limb to hang a hive there.",
+      "A tree in flower draws a swarm of bees for every 40 open flowers. They build a hive under low, sturdy wood among the flowers, far from any other hive, over half a day. To hang one yourself, press Place a hive and click a limb, or hold H and click one.",
     );
     this.swarmsToggle = this.toggleRow(bees, "Swarms come on their own", () =>
       this.setWildlife({ swarms: !this.wildlife.swarms }),
@@ -614,6 +616,8 @@ export class DebugPanel {
     this.hiveSize = new Slider(bees, "Hive size", (value) =>
       this.setWildlife({ size: 1 + value * (LARGEST_HIVE - 1) }),
     );
+    const place = element("div", "debug-reset", bees, "Place a hive");
+    place.addEventListener("click", () => this.onPlaceHive());
     const finish = element("div", "debug-reset", bees, "Finish building");
     finish.addEventListener("click", () => this.onFinishHives());
     const flock = element("section", "debug-section", wildlife);
