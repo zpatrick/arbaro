@@ -244,9 +244,11 @@ switched on in the debug panel beside the original steer-and-grow controls:
       first thing it meets: a flower, which catches its share and whitens; the barn; or the
       ground. The snow belongs to the world rather than the view: there are as many flakes to
       each square meter of air wherever the view pans or zooms, and air coming into view is
-      already snowing. Wood lets it by. Lying snow slides until it stands no steeper than snow can, so it
-      slides off the barn's steep lower roof and drops from the eaves in chunks, and drifts
-      pile against the walls the wind drives it into. The snow on the flowers weighs their
+      already snowing. Wood lets it by. Snow landing on a roof too steep to hold it rolls down and
+      falls from the edge, and snow blown against a wall slides down it. Lying snow slides until
+      it stands no steeper than snow can, so it slides off the barn's roof and drops from the
+      eaves in chunks that fall all the way to the ground, and drifts pile against the walls the
+      wind drives it into. The snow on the flowers weighs their
       limbs down, so a heavy fall bends them. Lying snow melts at a rate the player sets, faster
       in rain.
 - [x] Clouds drift across the sky with the wind: banks of layers like brushstrokes, after the
