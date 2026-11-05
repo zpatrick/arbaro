@@ -266,7 +266,6 @@ switched on in the debug panel beside the original steer-and-grow controls:
       obstacles block them.
 - [ ] Rain showers come and go.
 - [ ] Limits on growth: level edges, solid obstacles, and a sky ceiling that caps height.
-- [ ] Birds drift across the sky as decoration.
 
 ## Wildlife
 
@@ -283,6 +282,11 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] By day, bees fly out from a finished hive to the flowers nearby, dance about them a while
       and fly home; by night they stay in. Bees fly about a hive while they build it.
 - [ ] Hives grow over a couple of days, up to four times the size they are first built.
+- [x] Birds fly across the scene as ink silhouettes like the tree, beating their wings and now
+      and then gliding, as often as the player sets. Some, as many as the player sets, land on
+      wood in view thick enough to take them and level enough to stand on, clear of the other
+      birds there. A bird sitting on a limb weighs on it, so a thin limb sags under it; it sits a
+      while and flies off, and flies off at once if its limb is cut or breaks.
 
 ## Game structure
 
@@ -340,5 +344,6 @@ _Open._ A button flips into a view of the roots:
       hand; one size for all of them, from a fifth to five times the usual, which grows clusters
       into mounds; and how hard their stems hold.
 - [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
-      first built to four times larger; a button that finishes building every hive at once.
-      Holding H and clicking a limb hangs a hive from it there.
+      first built to four times larger; a button that finishes building every hive at once;
+      how many birds come by each minute, and how many of them land. Holding H and clicking a
+      limb hangs a hive from it there.

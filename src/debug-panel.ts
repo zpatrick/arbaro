@@ -1,4 +1,5 @@
 import type { FlowerPlacement, FlowerSettings } from "./flowers";
+import type { BirdSettings } from "./birds";
 import type { HiveSettings } from "./hives";
 import type { Strength } from "./physics";
 import { clockTime, seasonName, type TimeSettings } from "./sky";
@@ -33,6 +34,8 @@ const TABS: readonly { id: Tab; name: string }[] = [
 
 /** The hive size slider runs from a hive as first built to one grown this many times larger. */
 const LARGEST_HIVE = 4;
+/** Most birds the slider brings by each minute. */
+const MOST_BIRDS = 20;
 
 const FLOWER_PLACEMENTS: readonly {
   id: FlowerPlacement;
@@ -186,9 +189,10 @@ interface Settings {
   flowers: FlowerSettings;
   time: TimeSettings;
   wildlife: HiveSettings;
+  birds: BirdSettings;
 }
 
-interface Saved extends Omit<Settings, "weather" | "wildlife"> {
+interface Saved extends Omit<Settings, "weather" | "wildlife" | "birds"> {
   open: boolean;
   tab: Tab;
   /**
@@ -197,6 +201,7 @@ interface Saved extends Omit<Settings, "weather" | "wildlife"> {
    */
   weather?: Partial<WeatherSettings>;
   wildlife?: Partial<HiveSettings>;
+  birds?: Partial<BirdSettings>;
 }
 
 /** Every setting as it starts, and as the reset button puts it back. */
@@ -216,6 +221,7 @@ function defaults(): Settings {
     flowers: { placement: "tree", size: 1 },
     time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
     wildlife: { size: 1, swarms: true },
+    birds: { perMinute: 4, landing: 0.4 },
   };
 }
 
@@ -253,8 +259,14 @@ function isSaved(saved: unknown): saved is Saved {
   if (!isRecord(saved)) {
     return false;
   }
-  const { growth, wind, weather, strength, flowers, time, wildlife } = saved;
+  const { growth, wind, weather, strength, flowers, time, wildlife, birds } =
+    saved;
   return (
+    (birds === undefined ||
+      (isRecord(birds) &&
+        ["perMinute", "landing"].every(
+          (key) => birds[key] === undefined || isNumber(birds[key]),
+        ))) &&
     (wildlife === undefined ||
       (isRecord(wildlife) &&
         (wildlife.size === undefined || isNumber(wildlife.size)) &&
@@ -323,6 +335,8 @@ export class DebugPanel {
   readonly time: TimeSettings;
   /** Live settings for the bees and their hives, read every frame. */
   readonly wildlife: HiveSettings;
+  /** Live settings for how often birds come and land, read every frame. */
+  readonly birds: BirdSettings;
   /**
    * How fast the simulation runs, as a multiple of real time; 0 pauses it. Not saved, so the game
    * never loads paused.
@@ -364,6 +378,8 @@ export class DebugPanel {
   private readonly flowerHold: Slider;
   private readonly hiveSize: Slider;
   private readonly swarmsToggle: HTMLElement;
+  private readonly birdRate: Slider;
+  private readonly birdLanding: Slider;
 
   constructor(host: HTMLElement) {
     const saved = load();
@@ -380,6 +396,7 @@ export class DebugPanel {
     };
     this.time = { ...settings.time };
     this.wildlife = { ...defaults().wildlife, ...settings.wildlife };
+    this.birds = { ...defaults().birds, ...settings.birds };
     this.open = saved?.open ?? false;
     this.tab = saved?.tab ?? "weather";
 
@@ -569,6 +586,20 @@ export class DebugPanel {
     );
     const finish = element("div", "debug-reset", bees, "Finish building");
     finish.addEventListener("click", () => this.onFinishHives());
+    const flock = element("section", "debug-section", wildlife);
+    element("h2", "debug-title", flock, "Birds");
+    element(
+      "p",
+      "model-description",
+      flock,
+      "Birds fly across the scene. Some land on sturdy, level wood in view and sit a while, their weight bending thin limbs, and fly off if their limb is cut or breaks.",
+    );
+    this.birdRate = new Slider(flock, "How often", (value) =>
+      this.setBirds({ perMinute: value * MOST_BIRDS }),
+    );
+    this.birdLanding = new Slider(flock, "Landing", (value) =>
+      this.setBirds({ landing: value }),
+    );
 
     const reset = element("div", "debug-reset", card, "Reset to defaults");
     reset.addEventListener("click", () => this.reset());
@@ -617,6 +648,12 @@ export class DebugPanel {
 
   setWildlife(settings: Partial<HiveSettings>): void {
     Object.assign(this.wildlife, settings);
+    this.render();
+    this.save();
+  }
+
+  setBirds(settings: Partial<BirdSettings>): void {
+    Object.assign(this.birds, settings);
     this.render();
     this.save();
   }
@@ -670,6 +707,7 @@ export class DebugPanel {
     Object.assign(this.strength, fresh.strength);
     Object.assign(this.flowers, fresh.flowers);
     Object.assign(this.wildlife, fresh.wildlife);
+    Object.assign(this.birds, fresh.birds);
     Object.assign(this.time, fresh.time);
     this.showStrain = fresh.showStrain;
     this.simulationSpeed = 1;
@@ -795,6 +833,12 @@ export class DebugPanel {
     const hive = this.wildlife.size;
     this.hiveSize.show((hive - 1) / (LARGEST_HIVE - 1), `×${hive.toFixed(2)}`);
     this.swarmsToggle.classList.toggle("selected", this.wildlife.swarms);
+    const { perMinute, landing } = this.birds;
+    this.birdRate.show(
+      perMinute / MOST_BIRDS,
+      `${perMinute.toFixed(perMinute < 10 ? 1 : 0)} a minute`,
+    );
+    this.birdLanding.show(landing, `${Math.round(landing * 100)}%`);
   }
 
   private save(): void {
@@ -809,6 +853,7 @@ export class DebugPanel {
       flowers: this.flowers,
       time: this.time,
       wildlife: this.wildlife,
+      birds: this.birds,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   }

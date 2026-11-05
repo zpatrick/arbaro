@@ -5,6 +5,7 @@ import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
+import { Birds, type BirdSettings } from "./birds";
 import { Hives, type HiveSettings } from "./hives";
 import {
   advanceDay,
@@ -87,6 +88,7 @@ const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
 const flowers = new Flowers();
 const hives = new Hives();
+const birds = new Birds();
 
 /** Where every tree is planted, along the ground. */
 const PLANTING_X = 0;
@@ -345,7 +347,11 @@ function step(dt: number, controls: Controls): void {
       wind,
       panel.strength,
       growth,
-      [...flowers.loads(standing), ...hives.loads(standing, panel.wildlife)],
+      [
+        ...flowers.loads(standing),
+        ...hives.loads(standing, panel.wildlife),
+        ...birds.loads(standing),
+      ],
     )) {
       if (tree !== standing) {
         break;
@@ -375,6 +381,7 @@ function step(dt: number, controls: Controls): void {
       melt: weather.melt,
     }),
   );
+  birds.update(dt, tree, camera, panel.birds);
   weather.update(dt, wind, camera, [
     ...flowers.catchers(panel.flowers),
     ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
@@ -635,6 +642,7 @@ function frame(now: number): void {
     clouds,
     hives: hives.views(panel.wildlife),
     bees: hives.bees(),
+    birds: birds.views(),
   });
   if (controls.grow || controls.steer !== 0) {
     hint.classList.add("quiet");
@@ -686,6 +694,10 @@ interface DebugHandle {
   hives(): Hives;
   /** Changes the hives, as the debug panel would. */
   wildlife(settings: Partial<HiveSettings>): void;
+  /** The birds about the scene. */
+  birds(): Birds;
+  /** Changes how often birds come and land, as the debug panel would. */
+  birdSettings(settings: Partial<BirdSettings>): void;
   /** Stops time so frames can be captured exactly as simulated. */
   freeze(): void;
 }
@@ -776,6 +788,10 @@ if (import.meta.env.DEV) {
     hives: () => hives,
     wildlife(settings) {
       panel.setWildlife(settings);
+    },
+    birds: () => birds,
+    birdSettings(settings) {
+      panel.setBirds(settings);
     },
     freeze() {
       frozen = true;

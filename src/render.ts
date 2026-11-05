@@ -1,3 +1,4 @@
+import { type BirdView, birdShape } from "./birds";
 import type { Camera } from "./camera";
 import type { Clouds } from "./clouds";
 import type { Debris } from "./debris";
@@ -159,6 +160,8 @@ export interface Scene {
   hives: readonly HiveView[];
   /** The bees flying about, and how strongly each shows. */
   bees: readonly { x: number; y: number; alpha: number }[];
+  /** The birds flying about and sitting on the tree. */
+  birds: readonly BirdView[];
 }
 
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
@@ -304,6 +307,9 @@ export class Renderer {
     }
     for (const hive of scene.hives) {
       ink.addPath(hiveOutline(hive), world);
+    }
+    for (const bird of scene.birds) {
+      ink.addPath(birdShape(bird), world);
     }
     const fading: Debris[] = [];
     for (const piece of scene.debris) {
