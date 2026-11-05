@@ -2,6 +2,7 @@ import type { Camera } from "./camera";
 import type { Limb } from "./limb";
 import type { Load } from "./physics";
 import type { Tree } from "./tree";
+import { addPolygon, curve, type Point } from "./silhouette";
 import { approach, lerp, Rng } from "./util";
 
 /** The birds, as the debug panel sets them. */
@@ -479,48 +480,4 @@ export function birdShape(bird: BirdView): Path2D {
     ...curve(tip, trailing, shoulderBack).slice(1),
   ]);
   return path;
-}
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-/** Points along the quadratic curve from `from` through control `via` to `to`. */
-function curve(from: Point, via: Point, to: Point): Point[] {
-  const steps = 8;
-  const points: Point[] = [];
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    const a = (1 - t) * (1 - t);
-    const b = 2 * (1 - t) * t;
-    const c = t * t;
-    points.push({
-      x: a * from.x + b * via.x + c * to.x,
-      y: a * from.y + b * via.y + c * to.y,
-    });
-  }
-  return points;
-}
-
-/** Adds the polygon through `points` to `path`, wound counterclockwise. */
-function addPolygon(path: Path2D, points: readonly Point[]): void {
-  let area = 0;
-  for (let i = 0; i < points.length; i += 1) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    if (a === undefined || b === undefined) {
-      throw new Error("A polygon's points ran out.");
-    }
-    area += a.x * b.y - b.x * a.y;
-  }
-  const ordered = area >= 0 ? points : [...points].reverse();
-  ordered.forEach((p, i) => {
-    if (i === 0) {
-      path.moveTo(p.x, p.y);
-    } else {
-      path.lineTo(p.x, p.y);
-    }
-  });
-  path.closePath();
 }

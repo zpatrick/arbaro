@@ -69,6 +69,17 @@ export interface Load {
   mass: number;
 }
 
+/** A force pushing on the wood at a point, in newtons, such as a bear shoving or swiping at it. */
+export interface Push {
+  limb: Limb;
+  /** Distance along the limb of the wood pushed on. */
+  s: number;
+  /** Where it pushes, in meters. */
+  x: number;
+  y: number;
+  force: { x: number; y: number };
+}
+
 /** A joint that gave way. */
 export interface Failure {
   limb: Limb;
@@ -251,6 +262,8 @@ export class TreePhysics {
   readonly motion = { x: 0, y: 0 };
   private readonly sways = new Map<Limb, Sway>();
   private bodies: Body[] = [];
+  /** Pushes waiting for the next step. */
+  private pushes: Push[] = [];
   /** Where each limb's bodies start in `bodies`, and how many it has. */
   private ranges = new Map<Limb, { first: number; count: number }>();
   private stale = true;
@@ -350,7 +363,18 @@ export class TreePhysics {
     this.lost = true;
   }
 
-  /** Advances the tree by `dt` seconds with `loads` hung on it, and returns the joints that gave way. */
+  /**
+   * Pushes on the tree through the next step only, as a bear shoving or swiping at it does; push
+   * again each step to keep pushing.
+   */
+  push(push: Push): void {
+    this.pushes.push(push);
+  }
+
+  /**
+   * Advances the tree by `dt` seconds with `loads` hung on it and anything pushing on it, and
+   * returns the joints that gave way.
+   */
   step(
     dt: number,
     limbs: readonly Limb[],
@@ -363,11 +387,12 @@ export class TreePhysics {
       this.stale = false;
     }
     const loaded = this.bear(loads);
-    if (!this.still || !wind.calm || loaded) {
+    const pushed = this.pushedBodies();
+    if (!this.still || !wind.calm || loaded || pushed.size > 0) {
       this.still = false;
       const steps = Math.max(1, Math.ceil(dt / PHYSICS.step - 1e-9));
       for (let i = 0; i < steps; i += 1) {
-        this.integrate(dt / steps, wind);
+        this.integrate(dt / steps, wind, pushed);
       }
     }
     const failures = this.assess(dt, strength);
@@ -379,6 +404,7 @@ export class TreePhysics {
       const settled =
         wind.calm &&
         !loaded &&
+        pushed.size === 0 &&
         this.bodies.every(
           (b) =>
             Math.abs(b.angle) < STILL_ANGLE &&
@@ -403,6 +429,28 @@ export class TreePhysics {
       body.sway.recoil[body.joint] = body.recoil;
     }
     return failures;
+  }
+
+  /** The pushes waiting for this step, by the body each pushes on, and clears them. */
+  private pushedBodies(): Map<Body, Push[]> {
+    const pushed = new Map<Body, Push[]>();
+    for (const push of this.pushes) {
+      const range = this.ranges.get(push.limb);
+      invariant(range !== undefined, "A push lands on a limb not simulated.");
+      const body = at(
+        this.bodies,
+        range.first +
+          Math.min(Math.floor(push.s / PHYSICS.jointSpacing), range.count - 1),
+      );
+      const list = pushed.get(body);
+      if (list === undefined) {
+        pushed.set(body, [push]);
+      } else {
+        list.push(push);
+      }
+    }
+    this.pushes = [];
+    return pushed;
   }
 
   /** Hangs `loads` on the bodies that carry them. Returns whether the tree carries anything. */
@@ -625,7 +673,11 @@ export class TreePhysics {
    * Advances every joint by `h` seconds. The joint springs and dampers are integrated implicitly,
    * folded into each joint's effective inertia, so stiff thick wood stays stable at any step.
    */
-  private integrate(h: number, wind: Wind): void {
+  private integrate(
+    h: number,
+    wind: Wind,
+    pushed: ReadonlyMap<Body, readonly Push[]>,
+  ): void {
     const bodies = this.bodies;
     const g = PHYSICS.gravity;
     // Drag per meter of wood is half the air density, times the drag coefficient, times the
@@ -713,6 +765,11 @@ export class TreePhysics {
       p1 -= mx * fy - my * fx;
       p2 -= fx;
       p3 -= fy;
+      for (const push of pushed.get(b) ?? []) {
+        p1 -= push.x * push.force.y - push.y * push.force.x;
+        p2 -= push.force.x;
+        p3 -= push.force.y;
+      }
       b.p1 = p1;
       b.p2 = p2;
       b.p3 = p3;

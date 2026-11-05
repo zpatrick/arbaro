@@ -287,6 +287,18 @@ switched on in the debug panel beside the original steer-and-grow controls:
       wood in view thick enough to take them and level enough to stand on, clear of the other
       birds there. A bird sitting on a limb weighs on it, so a thin limb sags under it; it sits a
       while and flies off, and flies off at once if its limb is cut or breaks.
+- [x] A hive draws a bear after a while. The bear is an ink silhouette ringed with a thin line of
+      the sky's color so it stands out against the trunk, rigged at its hips, shoulders and
+      knees, and walks in along the ground with its feet stepping in a walk, a stroll or a run.
+      It goes after the nearest hive: if it can reach the hive reared up on its hind legs, it
+      swipes it down; else it rears up under the wood the hive hangs from and swipes at that,
+      shaking it; else it sets its forepaws on the trunk and shoves it in time, rocking the whole
+      tree. It eats a hive it brings down and strolls off, and gives up after a while if it
+      cannot bring it down.
+- [x] Wood falling on a bear strikes it by its weight and speed, and glances off. A light blow
+      angers it: it rears and roars, and goes back at the hive longer and harder. A heavier one
+      drives it off at a run. One heavy and fast enough kills it: it collapses where it stands,
+      lies a while, and fades.
 
 ## Game structure
 
@@ -345,5 +357,7 @@ _Open._ A button flips into a view of the roots:
       into mounds; and how hard their stems hold.
 - [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
       first built to four times larger; a button that finishes building every hive at once;
-      how many birds come by each minute, and how many of them land. Holding H and clicking a
-      limb hangs a hive from it there.
+      how many birds come by each minute, and how many of them land; whether hives draw bears,
+      a button that sends a bear in, a list of a bear's animations to show one playing in
+      place, and a button that clears the bears away. Holding H and clicking a limb hangs a hive
+      from it there.

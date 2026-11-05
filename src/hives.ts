@@ -133,7 +133,19 @@ interface Hive {
   swingRate: number;
   /** Velocity of the point it hangs from at the last step, to tell how hard the wood shakes it. */
   last: { x: number; y: number } | undefined;
+  /** How fast a blow that knocked it loose sends it off, in meters per second, once knocked. */
+  kick: { x: number; y: number } | undefined;
   bees: Bee[];
+}
+
+/** A hive hanging on the tree, as a bear sees it. */
+export interface HiveTarget {
+  view: HiveView;
+  /** The limb it hangs from, and how far along. */
+  limb: Limb;
+  s: number;
+  /** Knocks it loose with a blow that sends it off at `kick`, in meters per second. */
+  knock(kick: { x: number; y: number }): void;
 }
 
 /** A hive where it hangs, for drawing, in meters. */
@@ -171,11 +183,14 @@ export class Hives {
   private readonly rng = new Rng(9091);
   /** Seconds until the next swarm comes, while the tree can draw one. */
   private swarmIn: number | undefined;
+  /** Hives that have fallen, lying where they came down until they fade. */
+  private fallen: Debris[] = [];
 
   /** Clears every hive and bee away, for a new tree. */
   clear(): void {
     this.hives = [];
     this.strays = [];
+    this.fallen = [];
     this.swarmIn = undefined;
   }
 
@@ -191,6 +206,7 @@ export class Hives {
       swing: 0,
       swingRate: 0,
       last: undefined,
+      kick: undefined,
       bees: [],
     });
   }
@@ -204,6 +220,24 @@ export class Hives {
 
   get count(): number {
     return this.hives.length;
+  }
+
+  /** The hives hanging on the tree, as a bear sees them. */
+  targets(settings: HiveSettings): HiveTarget[] {
+    return this.hives.map((hive) => ({
+      view: this.viewOf(hive, settings),
+      limb: hive.limb,
+      s: hive.s,
+      knock: (kick: { x: number; y: number }): void => {
+        hive.damage = 1;
+        hive.kick = kick;
+      },
+    }));
+  }
+
+  /** Hives that have fallen and not yet faded, where they lie. */
+  fallenHives(): readonly Debris[] {
+    return this.fallen;
   }
 
   /** The weight of the hives still hanging on the tree, which their limbs carry. */
@@ -255,11 +289,12 @@ export class Hives {
     const fallen: Debris[] = [];
     const kept: Hive[] = [];
     for (const hive of this.hives) {
-      if (tree === undefined || !attached(tree, hive)) {
-        fallen.push(this.fall(hive, settings));
-        continue;
-      }
-      if (this.hang(dt, tree, hive, settings, conditions)) {
+      if (
+        tree === undefined ||
+        !attached(tree, hive) ||
+        hive.damage >= 1 ||
+        this.hang(dt, tree, hive, settings, conditions)
+      ) {
         fallen.push(this.fall(hive, settings));
         continue;
       }
@@ -267,6 +302,7 @@ export class Hives {
       kept.push(hive);
     }
     this.hives = kept;
+    this.fallen = [...this.fallen.filter((piece) => !piece.done), ...fallen];
     for (const bee of this.strays) {
       bee.timer -= dt;
       bee.x += bee.vx * dt;
@@ -675,9 +711,10 @@ export class Hives {
       hinge: undefined,
     };
     const moving = hive.last ?? { x: 0, y: 0 };
+    const kick = hive.kick ?? { x: 0, y: 0 };
     return new Debris([outline], piece, {
-      x: moving.x,
-      y: moving.y,
+      x: moving.x + kick.x,
+      y: moving.y + kick.y,
       spin: hive.swingRate,
     });
   }

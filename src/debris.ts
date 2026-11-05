@@ -81,6 +81,8 @@ export class Debris {
   private landed: number | undefined;
   /** Whether the piece is still tipping over on the stump it sat on. */
   private hinged: boolean;
+  /** Whether it was told to fade now, as a hive does once a bear has eaten it. */
+  private fading = false;
 
   constructor(
     shapes: readonly Path2D[],
@@ -105,6 +107,58 @@ export class Debris {
 
   get done(): boolean {
     return this.alpha <= 0;
+  }
+
+  /** The piece's mass, in kilograms. */
+  get mass(): number {
+    return this.piece.mass;
+  }
+
+  /** Where the piece's middle is now. */
+  get center(): { x: number; y: number } {
+    return { x: this.x, y: this.y };
+  }
+
+  /** Whether the piece has come to rest on the ground. */
+  get resting(): boolean {
+    return this.landed !== undefined && Math.hypot(this.vx, this.vy) < 0.3;
+  }
+
+  /**
+   * The points the piece can land on something with, where they are now, how thick the wood is
+   * about each, and how fast each moves.
+   */
+  points(): { x: number; y: number; r: number; vx: number; vy: number }[] {
+    const cos = Math.cos(this.angle);
+    const sin = Math.sin(this.angle);
+    return this.piece.contacts.map((contact) => {
+      const ox = contact.x - this.piece.center.x;
+      const oy = contact.y - this.piece.center.y;
+      const armX = cos * ox - sin * oy;
+      const armY = sin * ox + cos * oy;
+      return {
+        x: this.x + armX,
+        y: this.y + armY,
+        r: contact.r,
+        vx: this.vx - this.spin * armY,
+        vy: this.vy + this.spin * armX,
+      };
+    });
+  }
+
+  /** Knocks the piece with `impulse`, in newton seconds, at the point (x, y). */
+  strike(x: number, y: number, impulse: { x: number; y: number }): void {
+    const { mass, inertia } = this.piece;
+    this.hinged = false;
+    this.vx += impulse.x / mass;
+    this.vy += impulse.y / mass;
+    this.spin +=
+      ((x - this.x) * impulse.y - (y - this.y) * impulse.x) / inertia;
+  }
+
+  /** Starts the piece fading away now. */
+  fade(): void {
+    this.fading = true;
   }
 
   /** Where the piece's bounding box is now. */
@@ -149,7 +203,11 @@ export class Debris {
     } else if (touched) {
       this.landed = 0;
     }
-    if ((this.landed ?? 0) >= this.linger || this.age >= LONGEST) {
+    if (
+      this.fading ||
+      (this.landed ?? 0) >= this.linger ||
+      this.age >= LONGEST
+    ) {
       this.alpha = Math.max(0, this.alpha - dt / FADE);
     }
   }

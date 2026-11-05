@@ -1,4 +1,5 @@
 import type { FlowerPlacement, FlowerSettings } from "./flowers";
+import { BEAR_POSES, type BearPose, type BearSettings } from "./bears";
 import type { BirdSettings } from "./birds";
 import type { HiveSettings } from "./hives";
 import type { Strength } from "./physics";
@@ -190,9 +191,13 @@ interface Settings {
   time: TimeSettings;
   wildlife: HiveSettings;
   birds: BirdSettings;
+  bears: BearSettings;
 }
 
-interface Saved extends Omit<Settings, "weather" | "wildlife" | "birds"> {
+interface Saved extends Omit<
+  Settings,
+  "weather" | "wildlife" | "birds" | "bears"
+> {
   open: boolean;
   tab: Tab;
   /**
@@ -202,6 +207,7 @@ interface Saved extends Omit<Settings, "weather" | "wildlife" | "birds"> {
   weather?: Partial<WeatherSettings>;
   wildlife?: Partial<HiveSettings>;
   birds?: Partial<BirdSettings>;
+  bears?: Partial<BearSettings>;
 }
 
 /** Every setting as it starts, and as the reset button puts it back. */
@@ -222,6 +228,7 @@ function defaults(): Settings {
     time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
     wildlife: { size: 1, swarms: true },
     birds: { perMinute: 4, landing: 0.4 },
+    bears: { comes: true },
   };
 }
 
@@ -259,9 +266,21 @@ function isSaved(saved: unknown): saved is Saved {
   if (!isRecord(saved)) {
     return false;
   }
-  const { growth, wind, weather, strength, flowers, time, wildlife, birds } =
-    saved;
+  const {
+    growth,
+    wind,
+    weather,
+    strength,
+    flowers,
+    time,
+    wildlife,
+    birds,
+    bears,
+  } = saved;
   return (
+    (bears === undefined ||
+      (isRecord(bears) &&
+        (bears.comes === undefined || typeof bears.comes === "boolean"))) &&
     (birds === undefined ||
       (isRecord(birds) &&
         ["perMinute", "landing"].every(
@@ -337,6 +356,8 @@ export class DebugPanel {
   readonly wildlife: HiveSettings;
   /** Live settings for how often birds come and land, read every frame. */
   readonly birds: BirdSettings;
+  /** Live settings for whether hives draw bears, read every frame. */
+  readonly bears: BearSettings;
   /**
    * How fast the simulation runs, as a multiple of real time; 0 pauses it. Not saved, so the game
    * never loads paused.
@@ -346,6 +367,10 @@ export class DebugPanel {
   onGrowthMode: (mode: GrowthMode) => void = () => {};
   /** Called to finish building every hive at once. */
   onFinishHives: () => void = () => {};
+  /** Called to send a bear in, to show a bear playing an animation, and to clear the bears away. */
+  onSendBear: () => void = () => {};
+  onShowBear: (pose: BearPose) => void = () => {};
+  onClearBears: () => void = () => {};
   private open: boolean;
   private tab: Tab;
   private readonly root: HTMLElement;
@@ -380,6 +405,10 @@ export class DebugPanel {
   private readonly swarmsToggle: HTMLElement;
   private readonly birdRate: Slider;
   private readonly birdLanding: Slider;
+  private readonly bearsToggle: HTMLElement;
+  private readonly bearPoses = new Map<BearPose, HTMLElement>();
+  /** The animation last shown, marked in the list. */
+  private shownPose: BearPose | undefined;
 
   constructor(host: HTMLElement) {
     const saved = load();
@@ -397,6 +426,7 @@ export class DebugPanel {
     this.time = { ...settings.time };
     this.wildlife = { ...defaults().wildlife, ...settings.wildlife };
     this.birds = { ...defaults().birds, ...settings.birds };
+    this.bears = { ...defaults().bears, ...settings.bears };
     this.open = saved?.open ?? false;
     this.tab = saved?.tab ?? "weather";
 
@@ -600,6 +630,37 @@ export class DebugPanel {
     this.birdLanding = new Slider(flock, "Landing", (value) =>
       this.setBirds({ landing: value }),
     );
+    const sleuth = element("section", "debug-section", wildlife);
+    element("h2", "debug-title", sleuth, "Bears");
+    element(
+      "p",
+      "model-description",
+      sleuth,
+      "A hive draws a bear after a while. It swipes the hive down if it can reach it reared up, else swipes at the wood it hangs from, else shoves the trunk to shake it down; it eats a hive it brings down, and gives up after a while. Wood falling on it angers it, drives it off, or kills it.",
+    );
+    this.bearsToggle = this.toggleRow(sleuth, "Hives draw bears", () =>
+      this.setBears({ comes: !this.bears.comes }),
+    );
+    const send = element("div", "debug-reset", sleuth, "Send in a bear");
+    send.addEventListener("click", () => this.onSendBear());
+    element("div", "debug-label", sleuth, "Show an animation");
+    const poses = element("div", "models", sleuth);
+    for (const pose of BEAR_POSES) {
+      this.bearPoses.set(
+        pose,
+        this.radioRow(poses, pose[0]?.toUpperCase() + pose.slice(1), () => {
+          this.shownPose = pose;
+          this.onShowBear(pose);
+          this.render();
+        }),
+      );
+    }
+    const clear = element("div", "debug-reset", sleuth, "Clear the bears");
+    clear.addEventListener("click", () => {
+      this.shownPose = undefined;
+      this.onClearBears();
+      this.render();
+    });
 
     const reset = element("div", "debug-reset", card, "Reset to defaults");
     reset.addEventListener("click", () => this.reset());
@@ -658,6 +719,12 @@ export class DebugPanel {
     this.save();
   }
 
+  setBears(settings: Partial<BearSettings>): void {
+    Object.assign(this.bears, settings);
+    this.render();
+    this.save();
+  }
+
   setTime(settings: Partial<TimeSettings>): void {
     Object.assign(this.time, settings);
     this.render();
@@ -708,6 +775,7 @@ export class DebugPanel {
     Object.assign(this.flowers, fresh.flowers);
     Object.assign(this.wildlife, fresh.wildlife);
     Object.assign(this.birds, fresh.birds);
+    Object.assign(this.bears, fresh.bears);
     Object.assign(this.time, fresh.time);
     this.showStrain = fresh.showStrain;
     this.simulationSpeed = 1;
@@ -839,6 +907,10 @@ export class DebugPanel {
       `${perMinute.toFixed(perMinute < 10 ? 1 : 0)} a minute`,
     );
     this.birdLanding.show(landing, `${Math.round(landing * 100)}%`);
+    this.bearsToggle.classList.toggle("selected", this.bears.comes);
+    for (const [pose, row] of this.bearPoses) {
+      row.classList.toggle("selected", pose === this.shownPose);
+    }
   }
 
   private save(): void {
@@ -854,6 +926,7 @@ export class DebugPanel {
       time: this.time,
       wildlife: this.wildlife,
       birds: this.birds,
+      bears: this.bears,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   }

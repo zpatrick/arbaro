@@ -1,3 +1,4 @@
+import type { BearView } from "./bears";
 import { type BirdView, birdShape } from "./birds";
 import type { Camera } from "./camera";
 import type { Clouds } from "./clouds";
@@ -115,6 +116,8 @@ const FLAKE = {
   most: 4.5,
   rim: 0.45,
 } as const;
+/** Width of the line of sky ringing a bear, in CSS pixels. */
+const BEAR_RIM_PX = 2.5;
 /** Width of the lines carved into a hive, in meters. */
 const HIVE_LINE = 0.012;
 /** Radius of a bee, in meters, and the fewest and most CSS pixels it is drawn at. */
@@ -162,6 +165,8 @@ export interface Scene {
   bees: readonly { x: number; y: number; alpha: number }[];
   /** The birds flying about and sitting on the tree. */
   birds: readonly BirdView[];
+  /** The bears about the tree. */
+  bears: readonly BearView[];
 }
 
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
@@ -366,6 +371,7 @@ export class Renderer {
       }
     }
     this.drawBees(camera, scene.bees);
+    this.drawBears(camera, world, scene.bears, scene.light);
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
     if (scene.tree !== undefined) {
@@ -628,6 +634,36 @@ export class Renderer {
     ctx.fillStyle = snowColor;
     ctx.fill(snow);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /**
+   * Draws each bear in ink, ringed by a thin line of the sky's color so it stands out against the
+   * trunk and the ground behind it.
+   */
+  private drawBears(
+    camera: Camera,
+    world: DOMMatrix,
+    bears: readonly BearView[],
+    light: SkyLight,
+  ): void {
+    const ctx = this.ctx;
+    for (const bear of bears) {
+      const shape = new Path2D();
+      shape.addPath(bear.shape, world);
+      // The ring shows only above the ground, so where the bear stands it is one with it.
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.beginPath();
+      ctx.rect(0, 0, this.canvas.width, camera.groundRow * camera.dpr);
+      ctx.clip();
+      ctx.globalAlpha = bear.alpha;
+      ctx.strokeStyle = css(light.sky.middle);
+      ctx.lineWidth = BEAR_RIM_PX * camera.dpr;
+      ctx.lineJoin = "round";
+      ctx.stroke(shape);
+      ctx.restore();
+      this.fillInk(shape, bear.alpha);
+    }
   }
 
   /** Draws each bee as a speck of ink. */

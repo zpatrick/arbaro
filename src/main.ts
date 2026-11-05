@@ -5,6 +5,7 @@ import { Debris } from "./debris";
 import { DebugPanel } from "./debug-panel";
 import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
+import { Bears, type BearPose, type BearSettings } from "./bears";
 import { Birds, type BirdSettings } from "./birds";
 import { Hives, type HiveSettings } from "./hives";
 import {
@@ -89,6 +90,7 @@ const dots = new FlowDots();
 const flowers = new Flowers();
 const hives = new Hives();
 const birds = new Birds();
+const bears = new Bears();
 
 /** Where every tree is planted, along the ground. */
 const PLANTING_X = 0;
@@ -149,6 +151,7 @@ function replant(): void {
   dots.clear();
   flowers.clear();
   hives.clear();
+  bears.clear();
   camera.release();
 }
 
@@ -339,8 +342,23 @@ function giveWay(standing: Tree, failure: Failure): void {
 /** Advances everything by `dt` seconds. */
 function step(dt: number, controls: Controls): void {
   const growth: Growth = panel.growth;
+  // Bears act first, so whatever they push on is still on the tree when it moves.
+  const pushes = bears.update(
+    dt,
+    {
+      tree,
+      hives: hives.targets(panel.wildlife),
+      fallenHives: hives.fallenHives(),
+      debris,
+      camera,
+    },
+    panel.bears,
+  );
   if (tree !== undefined) {
     const standing = tree;
+    for (const push of pushes) {
+      standing.physics.push(push);
+    }
     for (const failure of standing.update(
       dt,
       controls,
@@ -407,6 +425,9 @@ camera.snap(tree.bounds());
 showGrowthMode(panel.growth.mode);
 panel.onGrowthMode = showGrowthMode;
 panel.onFinishHives = () => hives.finish();
+panel.onSendBear = () => bears.spawn(camera);
+panel.onShowBear = (pose: BearPose) => bears.show(pose, camera, tree);
+panel.onClearBears = () => bears.clear();
 // The scene resizes with the window, and as the debug panel beside it opens and closes.
 new ResizeObserver(resize).observe(stage);
 window.addEventListener("resize", resize);
@@ -643,6 +664,7 @@ function frame(now: number): void {
     hives: hives.views(panel.wildlife),
     bees: hives.bees(),
     birds: birds.views(),
+    bears: bears.views(),
   });
   if (controls.grow || controls.steer !== 0) {
     hint.classList.add("quiet");
@@ -698,6 +720,14 @@ interface DebugHandle {
   birds(): Birds;
   /** Changes how often birds come and land, as the debug panel would. */
   birdSettings(settings: Partial<BirdSettings>): void;
+  /** The bears about the scene. */
+  bears(): Bears;
+  /** Sends a bear in from the edge of the view. */
+  sendBear(): void;
+  /** Shows a bear playing `pose` in place. */
+  showBear(pose: BearPose): void;
+  /** Changes whether hives draw bears, as the debug panel would. */
+  bearSettings(settings: Partial<BearSettings>): void;
   /** Stops time so frames can be captured exactly as simulated. */
   freeze(): void;
 }
@@ -792,6 +822,16 @@ if (import.meta.env.DEV) {
     birds: () => birds,
     birdSettings(settings) {
       panel.setBirds(settings);
+    },
+    bears: () => bears,
+    sendBear() {
+      bears.spawn(camera);
+    },
+    showBear(pose) {
+      bears.show(pose, camera, tree);
+    },
+    bearSettings(settings) {
+      panel.setBears(settings);
     },
     freeze() {
       frozen = true;
