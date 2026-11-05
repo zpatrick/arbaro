@@ -39,7 +39,7 @@ export const SNOW = {
   /** How fast a flake flutters from side to side, at most, in meters per second. */
   flutter: 0.35,
   /** Most snow a flower holds, in kilograms per square meter of its size squared. */
-  flowerHold: 6,
+  flowerHold: 1.5,
   /** Seconds the weight of the snow a flower catches takes to settle onto its limb. */
   settling: 1,
   /** Deepest snow lies anywhere, in meters. */

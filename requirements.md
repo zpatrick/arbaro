@@ -119,9 +119,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] Every flower is a cluster of cherry blossoms, fitted to the sand drawings.
 - [x] A cherry cluster is a mound of blossoms on fine stalks from one spur, with a bud or two:
       five notched petals each, deep pink at the heart and pale at the rim, ringed with stamens.
-- [x] Flowers are true to life at the usual size: a cluster is about 17 cm across, of blossoms
-      4 cm across.
-- [x] Raising the size past one grows each cluster into a mound of
+- [x] Each cluster is true to life: about 17 cm across, of blossoms 4 cm across. A flower of the
+      usual size is a mound two clusters across, so the blossoms read at the scale of the scene.
+- [x] Raising the size grows each flower into a larger mound of
       clusters of their true size, rather than one larger cluster, and the mounds keep the
       spacing they had, so they run together: a young tree's few sparse clusters become a full,
       clustered crown, like the populated trees in the references. A mound sits around the end

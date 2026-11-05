@@ -20,7 +20,7 @@ export type FlowerPlacement = "hand" | "tree";
 
 export interface FlowerSettings {
   placement: FlowerPlacement;
-  /** Multiplier on the size of every flower. */
+  /** Multiplier on the usual size of every flower. */
   size: number;
 }
 
@@ -43,10 +43,15 @@ export interface Conditions {
  */
 export const FLOWERS = {
   /**
-   * Size of a cluster at a size multiplier of one, in world units: true to life, so a cluster is
-   * about 17 cm across, of blossoms 4 cm across.
+   * Size of one cluster, in world units: true to life, so a cluster is about 17 cm across, of
+   * blossoms 4 cm across.
    */
   size: 0.14,
+  /**
+   * At a size multiplier of one, a flower is this many times the size of one cluster: a mound two
+   * clusters across, which reads at the scale of the scene.
+   */
+  usual: 2,
   /** A flower placed this close to its limb's tip, in world units, crowns the tip instead. */
   tipReach: 0.2,
   /** A limb flowers once it is this long, in world units, when the tree places the flowers. */
@@ -83,10 +88,11 @@ export const FLOWERS = {
   /** Drag coefficient of a flower. */
   drag: 1.2,
   /**
-   * Pull the stem of a flower of the usual size holds against, in newtons. At normal strength a
+   * Pull the stem of one cluster holds against, in newtons. A flower of the usual size, two
+   * clusters across, holds 2.8 times as hard against 4 times the pull, so at normal strength a
    * typical open flower starts to tear loose in a storm, at about 24 m/s.
    */
-  hold: 4.9,
+  hold: 6.9,
   /**
    * A larger flower grows a stouter stem, so its hold grows with its size to this power: a little
    * slower than the pull of the wind, which grows with its area. A flower twice the size holds
@@ -486,7 +492,7 @@ export class Flowers {
       spot.side,
       TYPICAL,
       1,
-      settings.size,
+      clustersOf(settings),
       0,
     );
     return {
@@ -592,7 +598,7 @@ export class Flowers {
       const own = this.flowers.filter(
         (f) => f.placement === "tree" && f.limb === limb,
       );
-      const spacing = spacingOf(settings.size);
+      const spacing = spacingOf(clustersOf(settings));
       invariant(spacing > 0, `Flowers ${settings.size} in size have no room.`);
       let side = this.firstSide(limb);
       for (let slot = 0; ; slot += 1) {
@@ -736,7 +742,7 @@ export class Flowers {
       );
       flower.opened = clamp(flower.opened + dt / flower.traits.opening, 0, 1);
       // The snow it caught melts, and any more than it holds as it shrinks falls away.
-      const size = spanOf(flower.traits, flower.grown, settings.size);
+      const size = spanOf(flower.traits, flower.grown, clustersOf(settings));
       const snow = Math.min(
         snowHeld(size),
         flower.snow * Math.exp(-conditions.melt * dt),
@@ -814,7 +820,10 @@ export class Flowers {
           if (ahead !== undefined) {
             const gap = ahead.s - flower.s;
             const closing = gap < was(ahead) - was(flower) - 1e-6;
-            if (closing && gap < FLOWERS.crowded * spacingOf(settings.size)) {
+            if (
+              closing &&
+              gap < FLOWERS.crowded * spacingOf(clustersOf(settings))
+            ) {
               flower.crowded = true;
               continue;
             }
@@ -930,7 +939,7 @@ export class Flowers {
       flower.side,
       flower.traits,
       flower.grown,
-      settings.size,
+      clustersOf(settings),
       flower.sway,
     );
   }
@@ -1053,6 +1062,11 @@ function moundness(clusters: number): number {
  */
 function spacingOf(size: number): number {
   return HABIT.spacing * FLOWERS.size * Math.min(1, size);
+}
+
+/** The size of every flower, as a multiple of the size of one cluster. */
+function clustersOf(settings: FlowerSettings): number {
+  return settings.size * FLOWERS.usual;
 }
 
 /** Most snow a flower `size` across holds, in kilograms. */
