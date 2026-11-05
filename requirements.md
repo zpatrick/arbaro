@@ -287,7 +287,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       cube of its size. Its comb holds against its weight, the wind, the snow on its shoulders
       and the shaking of the wood, up to a limit that grows more slowly than its weight, so a
       large hive hangs by less. A hurricane or a hard shake tears it loose and it falls; it also
-      falls with any limb cut or snapped under it, and its bees scatter.
+      falls with any limb cut or snapped under it, and its bees scatter. Swinging hard, as a hive
+      on whippy wood does when a bear rocks the tree, works its comb loose within seconds; a
+      steady lean in the wind is no swing and does not.
 - [x] By day, bees fly out from a finished hive to the flowers nearby, dance about them a while
       and fly home; by night they stay in. Bees fly about a hive while they build it. A bee is drawn
       side on, facing the way it flies: a dark head and thorax, a gold abdomen banded in ink, and a
@@ -382,7 +384,7 @@ _Open._ A button flips into a view of the roots:
       hand; one size for all of them, from a fifth to five times the usual, which grows clusters
       into mounds; and how hard their stems hold.
 - [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
-      first built to four times larger; a button that finishes building every hive at once;
+      first built to four times larger; a button that finishes building every hive within a couple of seconds;
       how many birds come by each minute, and how many of them land; whether hives draw bears,
       a button that sends a bear in, a list of a bear's animations to show one playing in
       place, and a button that clears the bears away. A button, or holding H, makes the next

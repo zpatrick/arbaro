@@ -25,8 +25,9 @@ export const HIVE = {
   width: 0.32,
   /** Mass of a hive, comb and honey and bees, which grows with the cube of its size. */
   mass: 2.5,
-  /** Seconds the bees take to build a hive: half a day. */
+  /** Seconds the bees take to build a hive: half a day; or when it is finished by hand. */
   build: 90,
+  rush: 2,
   /** A tree draws a swarm for every this many open flowers it carries. */
   flowersPerHive: 40,
   /** Seconds on average before a swarm comes to a tree that can draw one. */
@@ -57,7 +58,18 @@ export const HIVE = {
   /** Damage per second while the comb is pulled at its limit, and more for each multiple over it. */
   damageAtLimit: 0.6,
   damagePerOverload: 3,
-  /** Damage healed per second while it is pulled under its limit. It tears loose at 1. */
+  /**
+   * The comb holds by its top edge, so a hive swinging hard works itself loose as surely as one
+   * pulled straight down tears off. A swing as violent as `peel` radians strains it to its limit.
+   * Swinging past `fatigue` of that, it wears loose at up to `wear` damage per second; calmer, it
+   * heals. How violently it swings is the swing its speed would carry it to, held `settle` seconds
+   * past each peak, so a steady lean in the wind is no swing at all.
+   */
+  peel: 0.6,
+  fatigue: 0.33,
+  wear: 0.35,
+  settle: 0.8,
+  /** Damage healed per second while it is strained under its fatigue. It tears loose at 1. */
   healing: 0.2,
   /** Drag coefficient, and the area it shows the wind as a fraction of its height times width. */
   drag: 1.1,
@@ -163,8 +175,9 @@ interface Hive {
   s: number;
   /** Where it hangs from, under the wood, as of the last step. */
   anchor: { x: number; y: number };
-  /** How far it is built, from 0 just begun to 1 done. */
+  /** How far it is built, from 0 just begun to 1 done, and whether it is being finished in a rush. */
   built: number;
+  rushed: boolean;
   /** Damage to where the comb holds the wood. It tears loose at 1. */
   damage: number;
   /** Snow lying on its shoulders, in kilograms. */
@@ -172,6 +185,8 @@ interface Hive {
   /** How far it swings from hanging straight down, counterclockwise, in radians, and how fast. */
   swing: number;
   swingRate: number;
+  /** How violently it has been swinging lately, as the swing its speed would carry it to, in radians. */
+  swinging: number;
   /** Velocity of the point it hangs from at the last step, to tell how hard the wood shakes it. */
   last: { x: number; y: number } | undefined;
   /** How fast a blow that knocked it loose sends it off, in meters per second, once knocked. */
@@ -272,10 +287,12 @@ export class Hives {
       s,
       anchor: anchorOn(limb, s),
       built: 0,
+      rushed: false,
       damage: 0,
       snow: 0,
       swing: 0,
       swingRate: 0,
+      swinging: 0,
       last: undefined,
       kick: undefined,
       provoked: 0,
@@ -283,10 +300,13 @@ export class Hives {
     });
   }
 
-  /** Finishes building every hive at once. */
+  /**
+   * Finishes building every hive within a couple of seconds, not in a single step, so a twig takes
+   * the full weight of its hive without being snapped down hard enough to fling it off.
+   */
   finish(): void {
     for (const hive of this.hives) {
-      hive.built = 1;
+      hive.rushed = true;
     }
   }
 
@@ -598,7 +618,10 @@ export class Hives {
     settings: HiveSettings,
     conditions: HiveConditions,
   ): boolean {
-    hive.built = Math.min(1, hive.built + dt / HIVE.build);
+    hive.built = Math.min(
+      1,
+      hive.built + dt / (hive.rushed ? HIVE.rush : HIVE.build),
+    );
     hive.anchor = anchorOn(hive.limb, hive.s);
     const melted = Math.min(
       snowHeld(this.viewOf(hive, settings).width),
@@ -657,9 +680,18 @@ export class Hives {
           reach * hive.swingRate ** 2,
       );
     const hold = holdOf(settings.size, conditions.hold);
-    if (pull > hold) {
+    hive.swinging = Math.max(
+      Math.abs(hive.swingRate) / Math.sqrt(GRAVITY / reach),
+      hive.swinging * Math.exp(-dt / HIVE.settle),
+    );
+    const shaken = hive.swinging / HIVE.peel;
+    const strain = Math.max(pull / hold, shaken);
+    if (strain > 1) {
       hive.damage +=
-        dt * (HIVE.damageAtLimit + HIVE.damagePerOverload * (pull / hold - 1));
+        dt * (HIVE.damageAtLimit + HIVE.damagePerOverload * (strain - 1));
+    } else if (shaken > HIVE.fatigue) {
+      hive.damage +=
+        (dt * HIVE.wear * (shaken - HIVE.fatigue)) / (1 - HIVE.fatigue);
     } else {
       hive.damage = Math.max(0, hive.damage - dt * HIVE.healing);
     }
