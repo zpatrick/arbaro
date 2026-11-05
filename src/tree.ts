@@ -12,23 +12,23 @@ import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import type { Wind } from "./wind";
 
 /**
- * The root flare where the trunk meets the ground. A sapling's is a small fillet; as the tree grows
- * tall it fans out, wider along the ground and higher up the trunk.
+ * The root flare where the trunk meets the ground. A sapling's, and a thick trunk's, is a small
+ * fillet; a tall, slender trunk fans out, a little wider along the ground and higher up the trunk.
  */
 const FLARE = {
-  /** How far the flare reaches along the ground past the trunk, in base radii: young, then grown. */
-  spread: { young: 1.5, grown: 2.6 },
-  /** How high up the trunk the flare blends in, in base radii: young, then grown. */
-  rise: { young: 2.6, grown: 6 },
-  /** Heights of the tree, in meters, over which its flare grows from a sapling's to a grown tree's. */
-  grows: { from: 6, to: 30 },
+  /** How far the flare reaches along the ground past the trunk, in base radii: fillet, then fan. */
+  spread: { fillet: 1.5, fan: 2.2 },
+  /** How high up the trunk the flare blends in, in base radii: fillet, then fan. */
+  rise: { fillet: 2.6, fan: 5 },
+  /** Heights of the tree, in meters, over which its flare turns from a fillet to a fan. */
+  tall: { from: 5, to: 9 },
+  /**
+   * Slenderness of the trunk, its height over its radius at the ground, over which its flare turns
+   * from a fillet to a fan. A trunk already thick for its height needs no more bulk at its foot.
+   */
+  slender: { from: 22, to: 32 },
   /** Highest up the trunk the flare reaches, as a fraction of the trunk's height. */
   highest: 0.3,
-  /**
-   * How much larger the flare is on the side the trunk leans away from, and how much smaller on the
-   * side it leans toward, for each unit of lean: the cosine of its heading off upright.
-   */
-  lean: { away: 0.3, toward: 0.2 },
 } as const;
 
 /** One side of the root flare, in meters. */
@@ -466,37 +466,33 @@ export class Tree {
   }
 
   /**
-   * The root flare on each side of the trunk, for a trunk `baseRadius` thick at the ground: a
-   * sapling's is a small fillet, and a tall tree's fans out wide and high, the more so on the side
-   * its trunk leans away from.
+   * The root flare on each side of the trunk, for a trunk `baseRadius` thick at the ground: a small
+   * fillet, fanning out as a slender trunk grows tall.
    */
   rootFlare(baseRadius = this.root.radiusAt(0)): {
     left: FlareSide;
     right: FlareSide;
   } {
     const trunk = this.root;
-    let height = 0;
-    for (const limb of this.limbs) {
-      height = Math.max(height, limb.restTip.y);
-    }
-    const grown = smoothstep(FLARE.grows.from, FLARE.grows.to, height);
+    const height = trunk.restTip.y;
+    const fan =
+      smoothstep(FLARE.tall.from, FLARE.tall.to, height) *
+      smoothstep(
+        FLARE.slender.from,
+        FLARE.slender.to,
+        height / Math.max(baseRadius, 1e-6),
+      );
     const spread =
-      baseRadius * lerp(FLARE.spread.young, FLARE.spread.grown, grown);
-    const rise = baseRadius * lerp(FLARE.rise.young, FLARE.rise.grown, grown);
-    const highest = FLARE.highest * trunk.restTip.y;
-    // Positive leaning right, negative leaning left.
-    const lean = Math.cos(
-      trunk.restPointAt(Math.min(trunk.length, rise)).heading,
-    );
-    const side = (scale: number, away: number): FlareSide => {
-      const k =
-        scale *
-        (away >= 0 ? 1 + FLARE.lean.away * away : 1 + FLARE.lean.toward * away);
-      return { spread: spread * k, rise: Math.min(rise * k, highest) };
-    };
+      baseRadius * lerp(FLARE.spread.fillet, FLARE.spread.fan, fan);
+    const rise = baseRadius * lerp(FLARE.rise.fillet, FLARE.rise.fan, fan);
+    const highest = FLARE.highest * height;
+    const side = (scale: number): FlareSide => ({
+      spread: spread * scale,
+      rise: Math.min(rise * scale, highest),
+    });
     return {
-      left: side(this.flareScale.left, lean),
-      right: side(this.flareScale.right, -lean),
+      left: side(this.flareScale.left),
+      right: side(this.flareScale.right),
     };
   }
 

@@ -25,8 +25,8 @@ art and tree-of-life drawings.
 - [x] Stark, heavy, dark silhouettes on warm sand-colored paper, with a fine sand grain.
 - [x] Continuous, smooth tapers and organic curves. No kinks, creases or polygonal joints.
 - [x] The trunk flares into the ground with concave root curves that melt into it. A sapling's
-      flare is a small fillet; as the tree grows tall it fans out wide along the ground and high
-      up the trunk, a little more on the side the trunk leans away from.
+      flare is a small fillet, and so is a trunk already thick for its height; a tall, slender
+      trunk fans out, a little wider along the ground and higher up the trunk.
 - [x] The ground and the tree are the same dark ink. That reads well and should stay the default
       view.
 - [x] Mountains drawn with flowing organic lines, as in the references.
@@ -63,8 +63,10 @@ art and tree-of-life drawings.
       limbs above it.
 - [x] Wood is true to life beside the barn and the flowers: a twig is under a centimeter across at
       its tip and about two a meter back, and it thickens ever faster toward the trunk, as real
-      trees do. A 3.6 m sapling's trunk is about 10 cm across, and an 18 m tree's about 80 cm.
-      Cherry clusters grow only on wood up to 7 cm across.
+      trees do, until ten meters from its tip; past that it thickens steadily, so a tall trunk
+      stays in proportion to its height. A 3.6 m sapling's trunk is about 10 cm across, an 18 m
+      tree's about a meter, and a 60 m giant's about four. Cherry clusters grow only on wood up to
+      7 cm across.
 - [x] Forks blend smoothly into their parents, with a rounded crotch above and a softer collar
       below.
 - [x] Wood never shrinks. A limb that loses what it carried keeps its girth, and new growth from a

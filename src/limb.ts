@@ -65,11 +65,14 @@ export const LIMB = {
   /**
    * An unforked limb is `tipRadius` thick at its tip and thickens by `taper` times its distance
    * from the tip to the power `taperExponent`: as real trees do, a twig a meter from its tip is a
-   * couple of centimeters across, and the wood thickens ever faster toward the trunk.
+   * couple of centimeters across, and the wood thickens ever faster toward the trunk. Past
+   * `steadyTaper` meters from the tip it thickens no faster than it does there, so a tall trunk
+   * stays in proportion to its height instead of ballooning at its base.
    */
   tipRadius: 0.004,
   taper: 0.007,
   taperExponent: 1.5,
+  steadyTaper: 10,
   /** Angle between a new offshoot and the limb it forks from. */
   forkAngle: 0.6,
   /**
@@ -119,7 +122,17 @@ interface Segment {
 
 /** Radius of an unforked limb at `fromTip` world units back from its tip. */
 function ownRadius(fromTip: number): number {
-  return LIMB.tipRadius + LIMB.taper * Math.pow(fromTip, LIMB.taperExponent);
+  const { tipRadius, taper, taperExponent, steadyTaper } = LIMB;
+  if (fromTip <= steadyTaper) {
+    return tipRadius + taper * Math.pow(fromTip, taperExponent);
+  }
+  const slope =
+    taperExponent * taper * Math.pow(steadyTaper, taperExponent - 1);
+  return (
+    tipRadius +
+    taper * Math.pow(steadyTaper, taperExponent) +
+    slope * (fromTip - steadyTaper)
+  );
 }
 
 /** Point at distance `s` along a centerline, interpolated between samples. */
