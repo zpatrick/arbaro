@@ -114,17 +114,7 @@ export function drawHills(
     shape.lineTo(at(across, 0).x, bottom + 1);
     shape.closePath();
 
-    const sand = lit(
-      seasoned(
-        mix(
-          SAND.pale,
-          SAND.deep,
-          hills.length > 1 ? n / (hills.length - 1) : 0,
-        ),
-        season,
-      ),
-      light.flowerLight,
-    );
+    const sand = sandOf(hills, n, season, light);
     ctx.save();
     ctx.clip(shape);
     // A hill hides what lies behind it: in its sand, or without colors in the ink.
@@ -151,6 +141,30 @@ export function drawHills(
     ctx.stroke(edge);
   }
   ctx.restore();
+}
+
+/** The sand hill `index` of `hills` is raked in, at `season` under `light`. */
+export function sandOf(
+  hills: readonly Hill[],
+  index: number,
+  season: number,
+  light: SkyLight,
+): Rgb {
+  const share = hills.length > 1 ? index / (hills.length - 1) : 0;
+  return lit(
+    seasoned(mix(SAND.pale, SAND.deep, share), season),
+    light.flowerLight,
+  );
+}
+
+/** Which of `hills` makes the top of the ground at `x`, where the ground stands `ground` high. */
+export function hillAt(
+  hills: readonly Hill[],
+  x: number,
+  ground: number,
+): number | undefined {
+  const index = hills.findIndex((hill) => hillTop(hill, x) >= ground - 1e-6);
+  return index < 0 ? undefined : index;
 }
 
 /** `gap` meters, halved or doubled until it is from `CONTOURS.nearestPx` to twice that on screen. */

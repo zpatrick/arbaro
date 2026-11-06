@@ -48,8 +48,8 @@ art and tree-of-life drawings.
       arch out and over ever further as they lengthen until they weep; they can be steered down
       further than a cherry's, well past level.
 - [ ] Plant the seed by clicking the ground. Roots grow down while the trunk grows up.
-- [x] Growth stops at the ground and at the barn: a tip grows up to just short of either and
-      halts there, with a short message, and grows on once it is steered clear.
+- [x] Growth stops at the ground, the barn and the fence: a tip grows up to just short of any of
+      them and halts there, with a short message, and grows on once it is steered clear.
 - [ ] Growth is blocked by rocks, other solid obstacles and other limbs.
 
 ### Offshoots
@@ -234,6 +234,53 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A dead flower falls off the tree onto the ground and slowly dissolves or fades away.
 - [ ] Flowers have weight, and their weight and the wind they catch load the limbs.
 
+## Ground cover
+
+Grass and meadow flowers grow on the ground of the farm and the cliff. No one plants or cuts them:
+they are part of the world, and they move with the wind, the snow and the weather as the rest of
+the scene does. Reference photos are in `references/grass/`.
+
+Three kinds of grass, each after its photo:
+
+- Wildflower meadow grass: grass with flowers standing among it (`wildflower-meadow.png`).
+- Meadow grass: fine, bright, blade-thin grass in dense tufts (`meadow-grass.png`).
+- Beach/wheat grass: tall, golden grass with seed heads, on the farm after `wheat-grass.jpg`
+      and on the beach after `beach-dune-grass.jpg`.
+
+- [x] The farm has all three kinds: wildflower meadow grass, meadow grass and beach/wheat grass.
+- [x] The cliff, the beach level, has beach/wheat grass on its land, in clumps with bare sand
+      between, their blades fanning out.
+- [x] The meadow has wildflower meadow grass and meadow grass, in long stretches in turn.
+- [x] Grass is drawn in the scene's ink language: fine strokes with tapered tips, in the ground's
+      own ink unless the grass colors toggle is on. Meadow grass flops over in waves; beach/wheat
+      grass carries slender heads of seed.
+- [x] Meadow flowers grow among the grass, the wildflower meadow grass most of all, and bend and
+      spring back with the grass under them: spikes of lupine in purple, rose or white, and
+      daisies. They are in their colors, as the tree's flowers are, and die back through the fall.
+- _Open._ Whether meadow flowers count toward a level's flower goal. They are not the tree's
+  flowers.
+
+### Growth and the seasons
+
+- [x] Grass grows taller through spring and summer, and wilts down through autumn and winter, so it
+      stands tallest in midsummer and lies lowest in midwinter.
+
+### Color
+
+- [x] A grass colors toggle in the debug panel. Off, the grass is the same color as the ground under
+      it. On, the grass is green in summer and changes through autumn and winter, toward straw and
+      then bare earth, as the fields do.
+
+### Wind, snow and weight
+
+- [x] Grass sways in the wind, and gusts travel across a field as they do across the scene.
+- [x] Snow settles on grass as it does on flowers, and its weight bends the blades over. A heavy
+      fall lays a field down; as the snow melts, the grass stands up again.
+- [x] Fallen wood, hives and other pieces that land on grass crush it under their weight: the blades
+      beneath bend flat.
+- [x] Once the weight is gone, the grass slowly springs back to upright, however long it was
+      pressed down.
+
 ## Physics
 
 ### What is simulated
@@ -278,7 +325,11 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 ## World and environment
 
-- [x] A flat world with level ground.
+- [x] The meadow: a few long, gentle swells of land across it, so the tree stands in a shallow
+      dip with a rise to either side. Along the rise to its right stands a split-rail fence in ink
+      silhouette, after the reference photo, as though it kept to a path: three sections of rails
+      between leaning posts, a gap where the path runs through, and a small gate with a brace.
+      No barn stands there.
 - [x] Every level has edges: to either side, a top in the sky and a floor in the ground. The view
       never zooms out wider or taller than the level, nor pans past its edges, so the ground runs
       no deeper than the level's floor: 6 m down on the meadow, 8 m on the farm and 12 m on the
@@ -341,8 +392,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
       most densely, and faces turned toward a low sun glow warm, so the shading swings across the
       range from morning to evening. The moon shades them more softly by night. They darken into
       silhouettes against sunrise, sunset and the night sky, and their lines turn pale by night.
-- [x] A small barn stands on the ground beside the tree, true to size (7 m wide, its ridge at
-      5.8 m), so the tree's height can be judged by it. It is ink like the tree, behind it, with
+- [x] On the farm, a small barn stands on the ground beside the tree, true to size (7 m wide, its
+      ridge at 5.8 m), so the tree's height can be judged by it. It is ink like the tree, behind it, with
       its doors carved through to the sky's color.
 - [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
       by the wind, and stop at the ground.

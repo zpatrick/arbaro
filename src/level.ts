@@ -43,6 +43,30 @@ export function hillTop(hill: Hill, x: number): number {
   return hill.height * (1 - u * u);
 }
 
+/** The kinds of grass that grow on a level's ground, each after its reference photo. */
+export type GrassKind = "meadow" | "wildflower" | "wheat";
+
+/**
+ * A stretch of a level's ground where one kind of grass grows, from `from` to `to` meters along the
+ * land; dune grass grows in clumps, with bare sand between.
+ */
+export interface GrassPatch {
+  kind: GrassKind;
+  from: number;
+  to: number;
+  clumped?: boolean;
+}
+
+/**
+ * A rail fence standing along a level's ground, as though it kept to a path: where each of its posts
+ * stands along the land, from one end to the other, and the two posts of a gate beyond a gap in it,
+ * where the path runs through. All in meters.
+ */
+export interface Fence {
+  posts: readonly number[];
+  gate: readonly [number, number];
+}
+
 /**
  * A place to grow a tree: the lie of its ground, what stands about it, how far it reaches, and what
  * the camera keeps in view. All heights are in meters, from the ground the tree is planted in, at
@@ -57,6 +81,10 @@ export interface Level {
   /** Whether the barn stands beside the tree, and mountains line the horizon. */
   barn: boolean;
   mountains: boolean;
+  /** A rail fence along its ground, if one stands there. */
+  fence: Fence | undefined;
+  /** Where grass grows along its ground, and of what kind, from left to right. */
+  grass: readonly GrassPatch[];
   /** Hills raked in contour lines rising out of its ground, after the sand drawings. */
   hills: readonly Hill[];
   edges: Edges;
@@ -75,15 +103,41 @@ export interface Level {
   shore: Shore | undefined;
 }
 
-/** The meadow: level ground, the barn beside the tree, and mountains along the horizon. */
+/**
+ * The meadow: a few long, gentle swells of land across it, so the tree stands in a shallow dip with
+ * a rise to either side. Each swell has its height, its length and where it starts along the land.
+ * All in meters, from the tree's roots.
+ */
+const MEADOW_SWELLS = [
+  { height: 0.9, length: 46, phase: -1.16 },
+  { height: 0.5, length: 120, phase: 0.52 },
+] as const;
+
+/** The lie of the meadow's land, before it is set so the tree stands at height 0. */
+function meadowRaw(x: number): number {
+  let height = 0;
+  for (const { height: swell, length, phase } of MEADOW_SWELLS) {
+    height += swell * Math.sin((2 * Math.PI * x) / length + phase);
+  }
+  return height;
+}
+
 const MEADOW: Level = {
   id: "meadow",
   name: "Meadow",
   description:
-    "Level ground, with the barn beside the tree and mountains along the horizon. Bears come from either side.",
-  groundAt: () => 0,
-  barn: true,
+    "Long, gentle swells of meadow, a rail fence along the rise to the right of the tree where a path runs through, and mountains along the horizon. Bears come from either side.",
+  groundAt: (x) => meadowRaw(x) - meadowRaw(0),
+  barn: false,
   mountains: true,
+  fence: { posts: [14, 16.6, 19.1, 21.8], gate: [24.6, 25.5] },
+  grass: [
+    { kind: "meadow", from: -50, to: -22 },
+    { kind: "wildflower", from: -22, to: -7 },
+    { kind: "meadow", from: -7, to: 9 },
+    { kind: "wildflower", from: 9, to: 33 },
+    { kind: "meadow", from: 33, to: 50 },
+  ],
   hills: [],
   edges: { left: -50, right: 50, top: 55, bottom: -6 },
   bearsFrom: [-1, 1],
@@ -123,6 +177,13 @@ const FARM_LEVEL: Level = {
   groundAt: farmGround,
   barn: true,
   mountains: true,
+  fence: undefined,
+  grass: [
+    { kind: "wildflower", from: -66, to: -28 },
+    { kind: "meadow", from: -28, to: 11.5 },
+    { kind: "wheat", from: 11.5, to: 38 },
+    { kind: "wildflower", from: 38, to: 76 },
+  ],
   hills: FARM_HILLS,
   edges: { left: -66, right: 76, top: 55, bottom: -8 },
   bearsFrom: [-1, 1],
@@ -234,6 +295,8 @@ const CLIFF_LEVEL: Level = {
   groundAt: (x) => cliffRaw(x + PLANTED) - cliffRaw(PLANTED),
   barn: false,
   mountains: false,
+  fence: undefined,
+  grass: [{ kind: "wheat", from: -50, to: -0.6, clumped: true }],
   hills: [],
   edges: { left: -50, right: 40, top: 55, bottom: -12 },
   bearsFrom: [-1],

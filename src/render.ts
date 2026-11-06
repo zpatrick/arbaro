@@ -3,6 +3,9 @@ import { type BirdView, birdShape } from "./birds";
 import type { Camera } from "./camera";
 import type { Clouds } from "./clouds";
 import type { Debris } from "./debris";
+import { fenceShape } from "./fence";
+import { drawGrass } from "./grass-art";
+import type { Grass } from "./grass";
 import { drawHills } from "./hills";
 import { drawBees, drawHive, hiveLook } from "./hive-art";
 import type { BeeView, HiveView } from "./hives";
@@ -138,6 +141,9 @@ export interface Scene {
   mountains: boolean;
   /** Whether the hills of a level with hills are drawn in their colors. */
   hillColors: boolean;
+  /** The grass and meadow flowers on the ground, and whether the grass is drawn in its colors. */
+  grass: Grass;
+  grassColors: boolean;
   /** The light at this time of day. */
   light: SkyLight;
   /** The time of year, from midsummer at 0 to midwinter at 1. */
@@ -302,6 +308,7 @@ export class Renderer {
   private readonly stars: Star[];
   private readonly mountains = new Mountains();
   private readonly barn = { outline: barnOutline(), lines: barnLines() };
+  private readonly fences = new Map<Level, Path2D>();
   /** Ink of the wood and ground in this frame's light. */
   private inkColor: string = PALETTE.ink;
   /** Ink of the guides drawn over the scene in this frame's light. */
@@ -394,6 +401,10 @@ export class Renderer {
     const ink = new Path2D();
     const skyline = groundLine(camera, scene.level);
     ink.addPath(belowLine(skyline, this.canvas.height));
+    const fence = this.fenceOf(scene.level);
+    if (fence !== undefined) {
+      ink.addPath(fence, world);
+    }
     if (scene.tree !== undefined) {
       for (const shape of treeShapes(scene.tree, minimumRadius(camera))) {
         ink.addPath(shape, world);
@@ -449,6 +460,15 @@ export class Renderer {
 
     const snowColor = css(lit(SNOW_COLOR, scene.light.flowerLight));
     this.drawSnowCover(camera, scene.weather.cover, snowColor);
+    const grassLook = {
+      light: scene.light,
+      season: scene.season,
+      time: scene.clock,
+      colors: scene.grassColors,
+      hillColors: scene.hillColors,
+    };
+    // Most of the grass stands behind what is on the ground, and the rest in front of it.
+    drawGrass(this.ctx, camera, scene.level, scene.grass, grassLook, false);
     if (scene.tree !== undefined) {
       if (scene.strain) {
         this.drawStrain(camera, scene.tree, ink);
@@ -501,6 +521,7 @@ export class Renderer {
     );
     drawBees(this.ctx, camera, scene.bees, scene.light);
     this.drawBears(camera, world, scene.bears, scene.light, sky);
+    drawGrass(this.ctx, camera, scene.level, scene.grass, grassLook, true);
     if (scene.sea.present) {
       drawSpray(this.ctx, camera, scene.sea, scene.light);
     }
@@ -934,6 +955,19 @@ export class Renderer {
     ctx.lineJoin = "round";
     ctx.stroke(this.barn.lines);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /** The fence on `level`, in meters, built once for each level that has one. */
+  private fenceOf(level: Level): Path2D | undefined {
+    if (level.fence === undefined) {
+      return undefined;
+    }
+    let shape = this.fences.get(level);
+    if (shape === undefined) {
+      shape = fenceShape(level, level.fence);
+      this.fences.set(level, shape);
+    }
+    return shape;
   }
 
   /** Fills `path`, given in device pixels, with ink and its grain. */

@@ -250,13 +250,14 @@ const HEADINGS = [
 ];
 
 /**
- * Where the tree grows: the level, whether mountains line its horizon, and whether the hills of a
- * level with hills are drawn in their colors.
+ * Where the tree grows: the level, whether mountains line its horizon, and whether the hills and
+ * the grass of a level with them are drawn in their colors.
  */
 export interface WorldSettings {
   level: LevelId;
   mountains: boolean;
   hillColors: boolean;
+  grassColors: boolean;
 }
 
 /** What is planted: the species of every tree grown afresh. */
@@ -307,6 +308,7 @@ function defaults(): Settings {
       level: "meadow",
       mountains: levelById("meadow").mountains,
       hillColors: true,
+      grassColors: false,
     },
     planting: { species: "cherry" },
     growth: { mode: "steer", flowRate: 1 },
@@ -392,7 +394,9 @@ function isSaved(saved: unknown): saved is Saved {
         (world.mountains === undefined ||
           typeof world.mountains === "boolean") &&
         (world.hillColors === undefined ||
-          typeof world.hillColors === "boolean"))) &&
+          typeof world.hillColors === "boolean") &&
+        (world.grassColors === undefined ||
+          typeof world.grassColors === "boolean"))) &&
     (planting === undefined ||
       (isRecord(planting) &&
         (planting.species === undefined ||
@@ -518,6 +522,7 @@ export class DebugPanel {
   private readonly levelDescription: HTMLElement;
   private readonly mountainsToggle: HTMLElement;
   private readonly hillColorsToggle: HTMLElement;
+  private readonly grassColorsToggle: HTMLElement;
   private readonly timeOfDay: Slider;
   private readonly dayToggle: HTMLElement;
   private readonly season: Slider;
@@ -631,6 +636,9 @@ export class DebugPanel {
     );
     this.hillColorsToggle = this.toggleRow(where, "Colors in the hills", () =>
       this.setWorld({ hillColors: !this.world.hillColors }),
+    );
+    this.grassColorsToggle = this.toggleRow(where, "Colors in the grass", () =>
+      this.setWorld({ grassColors: !this.world.grassColors }),
     );
 
     const weather = this.page("weather", card);
@@ -1123,6 +1131,9 @@ export class DebugPanel {
     this.hillColorsToggle.hidden =
       levelById(this.world.level).hills.length === 0;
     this.hillColorsToggle.classList.toggle("selected", this.world.hillColors);
+    this.grassColorsToggle.hidden =
+      levelById(this.world.level).grass.length === 0;
+    this.grassColorsToggle.classList.toggle("selected", this.world.grassColors);
 
     this.showTimeOfDay();
     this.dayToggle.classList.toggle("selected", this.time.dayRunning);

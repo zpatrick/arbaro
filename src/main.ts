@@ -7,6 +7,7 @@ import { FlowDots } from "./flow";
 import { type FlowerHover, Flowers, type FlowerSettings } from "./flowers";
 import { Bears, type BearPose, type BearSettings } from "./bears";
 import { Birds, type BirdSettings } from "./birds";
+import { Grass } from "./grass";
 import { Hives, type HiveSettings } from "./hives";
 import {
   advanceDay,
@@ -94,6 +95,7 @@ let level: Level = levelById(panel.world.level);
 const weather = new Weather(panel.weather, level);
 const clouds = new Clouds(panel.weather);
 const sea = new Sea(panel.sea, level);
+const grass = new Grass(level);
 sea.settle(wind, panel.time.timeOfDay);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
@@ -133,6 +135,7 @@ let blockedBefore: Obstacle | undefined;
 const BLOCKED: Record<Obstacle, string> = {
   ground: "The ground is in the way",
   barn: "The barn is in the way",
+  fence: "The fence is in the way",
   edge: "The edge of the level is in the way",
 };
 /**
@@ -203,6 +206,7 @@ function useLevel(next: Level): void {
   frameLevel();
   weather.setLevel(level);
   sea.setLevel(level);
+  grass.setLevel(level);
   sea.settle(wind, panel.time.timeOfDay);
   debris.length = 0;
   birds.clear();
@@ -531,6 +535,13 @@ function step(dt: number, controls: Controls): void {
       debris.splice(i, 1);
     }
   }
+  grass.update(
+    dt,
+    wind,
+    weather.cover,
+    [...debris, ...hives.fallenHives()],
+    panel.time.season,
+  );
 }
 
 resize();
@@ -784,6 +795,8 @@ function frame(now: number): void {
     level,
     mountains: panel.world.mountains,
     hillColors: panel.world.hillColors,
+    grass,
+    grassColors: panel.world.grassColors,
     light,
     season: panel.time.season,
     clock,
@@ -843,6 +856,8 @@ interface DebugHandle {
   weather(settings: Partial<WeatherSettings>): void;
   /** The rain and snow falling, and the snow lying on the ground and the barn. */
   weatherState(): Weather;
+  /** The grass and meadow flowers on the ground. */
+  grass(): Grass;
   /** Changes the sea, as the debug panel would. */
   sea(settings: Partial<SeaSettings>): void;
   /** The sea's waves, foam and spray. */
@@ -960,6 +975,7 @@ if (import.meta.env.DEV) {
     weatherState() {
       return weather;
     },
+    grass: () => grass,
     sea(settings) {
       panel.setSea(settings);
     },

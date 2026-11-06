@@ -1,4 +1,5 @@
 import { barnAhead } from "./barn";
+import { fenceAhead } from "./fence";
 import type { Contact, Piece } from "./debris";
 import type { Level } from "./level";
 import { type Controls, LIMB, Limb, UPRIGHT } from "./limb";
@@ -79,7 +80,7 @@ const CLEARANCE = 0.03;
 export type GrowthMode = "steer" | "flow";
 
 /** What a growing tip can run into. */
-export type Obstacle = "ground" | "barn" | "edge";
+export type Obstacle = "ground" | "barn" | "fence" | "edge";
 
 export interface Growth {
   mode: GrowthMode;
@@ -104,12 +105,19 @@ function roomAhead(
   const tip = limb.restTip;
   const ground = groundAhead(level, tip.x, tip.y, tip.heading);
   const barn = level.barn ? barnAhead(tip.x, tip.y, tip.heading) : Infinity;
+  const fence = fenceAhead(level, tip.x, tip.y, tip.heading);
   const edge = edgeAhead(level, tip.x, tip.y, tip.heading);
-  const nearest = Math.min(ground, barn, edge);
+  const nearest = Math.min(ground, barn, fence, edge);
   return {
     room: Math.max(0, nearest - CLEARANCE),
     obstacle:
-      nearest === ground ? "ground" : nearest === barn ? "barn" : "edge",
+      nearest === ground
+        ? "ground"
+        : nearest === barn
+          ? "barn"
+          : nearest === fence
+            ? "fence"
+            : "edge",
   };
 }
 
