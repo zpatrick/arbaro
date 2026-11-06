@@ -135,11 +135,16 @@ switched on in the debug panel beside the original steer-and-grow controls:
       away; the wind tears them loose and the tree grows them back; they fall with wood that is
       cut or breaks, and with the tree; they catch snow, which weighs their limbs down; and their
       catkins draw bees as blossom does.
-- [x] Strands are true to life: from one to three meters long, and from high wood longer, on
-      shoots of years gone by, as much as three quarters of the way to the ground, never into it
-      or into the sea. Each grows its own share of that, so the curtain's hem is ragged. The size
-      setting lengthens them. A strand grows in from a short shoot that sticks out from the wood
-      to its full length over a few seconds, arching over as it lengthens.
+- [x] At the usual size strands are a young willow's, under a meter long. As the size setting
+      grows a cherry's clusters into mounds, it grows a willow's strands into cascades, as a
+      mature willow's are: each lengthens in proportion, and from high wood further still, until
+      at five times the usual size they drape as much as 85% of the way to the ground, never into
+      it or into the sea; its shoot arches out higher and wider, rising more steeply from the
+      wood; and more threads hang from along its arch, a few at the usual size and about
+      fourteen at five times it. The cascades along a limb run together into a dense crown, domed
+      where they arch over. Each strand grows its own share of its length, so the curtain's hem is
+      ragged. A strand grows in from a short shoot that sticks out from the wood to its full
+      length over a few seconds, arching over as it lengthens.
 - [x] Every strand swings as a chain hanging from where it leaves its wood: pulled down by its
       weight, held in its arch where it leaves the wood and limp below, dragged by the air moving
       past it, which gusts and eddies in waves down it, and carried with its wood as the tree
@@ -149,16 +154,17 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] Leaves are true to life, narrow and pointed, 12 cm long, set every 2.6 cm in a spiral, so
       seen from the side they fall to either side of the twig at random, leaning toward its tip.
       Each strand tapers like a tress: its leaves are smaller further down it, and smallest at a
-      growing tip. Past its arch a strand parts into a few threads that fan out a little and end
-      shorter than it, so every strand hangs as a tress tapering to a point, after the
-      references.
+      growing tip. The other threads of its cascade hang from along its arch, each down to about
+      where the strand ends, a little shorter or longer, swinging with it, fanned out a little and
+      waving a little on their own, more in a wind.
 - [x] Leaves stream toward the way the wind blows and flutter in it, and the wind turns them
       over to show their pale, silvery undersides, more of them the harder it blows.
 - [x] Seen from afar, every leaf is a fine flat mark with no outline, like hatching, in a
       shadow, middle or light tone: lighter high on a strand, on strands open to the sky and on
       those hanging in front of the wood. Half the strands hang behind the wood, in its shade.
       Close in, leaves come into detail with soft outlines and midribs, those nearest the middle
-      of the view first. Far off they are painted fewer and wider, so a frame stays quick.
+      of the view first. Far off they are painted fewer, each reaching along its thread to the next,
+      so a thread is one unbroken streak and a frame stays quick.
 - [x] Catkins are silver in the bud, open gold as a strand grows in, and wither brown through
       early autumn before they drop. Close in they are fuzzy with stamens.
 - [x] Through autumn a willow's leaves yellow, then turn gold, then old gold and brown, each a
@@ -469,7 +475,7 @@ _Open._ A button flips into a view of the roots:
       to breaking.
 - [x] Flowers page: whether flowers are grown by the tree, as they are to begin with, or placed by
       hand; one size for all of them, from a fifth to five times the usual, which grows clusters
-      into mounds, or a willow's strands longer; and how hard their stems hold. For a willow the
+      into mounds, or a willow's strands into cascades; and how hard their stems hold. For a willow the
       page speaks of its strands.
 - [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
       first built to four times larger; a button that finishes building every hive within a couple of seconds;

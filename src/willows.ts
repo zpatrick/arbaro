@@ -34,16 +34,15 @@ import type { Vec, Wind } from "./wind";
  */
 export const STRANDS = {
   /**
-   * Length of the longest strands at a size multiplier of one, in meters: true to life, a willow's
-   * hanging shoots grow one to three meters long. From high wood the longest hang further, on
-   * shoots of years gone by, as much as `drape` of the way down to the ground.
+   * Length of the longest strands at a size multiplier of one, in meters: a young willow's hanging
+   * shoots, under a meter long. A larger size lengthens them in proportion, and from high wood
+   * further still, on shoots of years gone by, until at the largest size they drape as much as
+   * `drape` of the way down to the ground.
    */
-  length: 1.9,
-  drape: 0.75,
-  /** Strands lengthen with the size multiplier to this power, so a larger size hangs longer curtains. */
-  lengthGrowth: 0.8,
+  length: 0.9,
+  drape: 0.85,
   /** Each strand grows this share of the full length, from the shortest to the longest, so the hem is ragged. */
-  share: { from: 0.4, to: 1 },
+  share: { from: 0.5, to: 1 },
   /** A strand hangs no lower than this above the ground under where it leaves the wood, in meters. */
   clearance: 0.15,
   /** Shortest a strand grows, in meters, however little room it has. */
@@ -101,6 +100,22 @@ const ARCH = {
   inset: 0.4,
   reach: 0.36,
   step: 0.02,
+} as const;
+
+/**
+ * As a larger size grows a cherry's flower into a mound of clusters, it grows a willow's strand
+ * into a cascade, as a mature willow's are: the shoot that carries it arches out higher and wider,
+ * its arch growing with the size multiplier to the power `arch` and rising more steeply from the
+ * wood, out to `skyward` of the way to upright at the largest size; and more threads hang from
+ * along its arch, from `threads.fewest` at a size of one to `threads.most` at the largest. The
+ * cascades along a limb run together into a dense crown, domed where they arch over. All of this
+ * grows in over the sizes from `sizes.from` to `sizes.to`.
+ */
+export const CASCADE = {
+  arch: 0.7,
+  skyward: { from: 0.4, to: 0.8 },
+  threads: { fewest: 3, most: 14 },
+  sizes: { from: 1, to: 5 },
 } as const;
 
 /**
@@ -310,6 +325,8 @@ interface Strand {
   weight: number;
   /** The time of year it showed at the last update, so the leaves dropping since are let go. */
   age: number;
+  /** How far along it its shoot arches over before it hangs, in meters, at the last update. */
+  arch: number;
   /** Its chain, from where it leaves the wood to its tip; empty until it first swings. */
   nodes: Node[];
   /** The air moving past its middle at the last update, in meters per second. */
@@ -320,6 +337,8 @@ interface Strand {
 interface Fallen {
   readonly traits: Traits;
   readonly full: number;
+  readonly arch: number;
+  readonly threads: number;
   /** The time of year it fell, whose leaves it keeps. */
   readonly age: number;
   readonly openness: number;
@@ -384,6 +403,10 @@ export interface StrandView {
   full: number;
   /** Radius of its twig where it leaves the wood. */
   root: number;
+  /** How far along it its shoot arches over before it hangs, in meters. */
+  arch: number;
+  /** How many threads hang from along its arch, its own among them. */
+  threads: number;
   /** The time of year it shows, from midsummer at 0 to winter at 1. */
   age: number;
   /** From 0, its catkins closed in silver buds, to 1, open. */
@@ -529,6 +552,8 @@ export class Willows {
   private fallen: Fallen[] = [];
   private drifting: Drifting[] = [];
   private time = 0;
+  /** The size multiplier the strands last grew at, which sets the cascades of those that fall. */
+  private size = 1;
   private readonly rng = new Rng(7919);
   /** Side of each limb the tree starts its strands on. */
   private readonly limbSides = new WeakMap<Limb, 1 | -1>();
@@ -541,11 +566,11 @@ export class Willows {
   }
 
   /** The strands on the tree, as catchers of falling snow, each as wide as its arch. */
-  catchers(): Catcher[] {
+  catchers(settings: FlowerSettings): Catcher[] {
     return this.strands
       .filter((strand) => showing(strand) && strand.nodes.length > 0)
       .map((strand) => {
-        const size = catchSize(strand);
+        const size = catchSize(strand, settings.size);
         const top = apexOf(strand);
         return {
           key: strand,
@@ -613,6 +638,7 @@ export class Willows {
     conditions: Conditions,
   ): void {
     this.time += dt;
+    this.size = settings.size;
     if (tree === undefined) {
       for (const strand of this.strands) {
         this.drop(strand, undefined, { x: 0, y: 0 });
@@ -715,21 +741,29 @@ export class Willows {
     if (target !== undefined) {
       return {
         ghost: undefined,
-        target: strandView(target, ageOf(target.traits, season)),
+        target: strandView(target, ageOf(target.traits, season), settings.size),
       };
     }
     const spot = pick === undefined ? undefined : this.spot(pick);
     if (pick === undefined || spot === undefined) {
       return { ghost: undefined, target: undefined };
     }
-    const base = baseOf(pick.limb, spot.s, spot.side, TYPICAL.tilt, false);
+    const base = baseOf(
+      pick.limb,
+      spot.s,
+      spot.side,
+      TYPICAL.tilt,
+      false,
+      settings.size,
+    );
     const length = fullLength(
       TYPICAL,
-      settings,
+      settings.size,
       roomBelow(base, tree.level, water),
     );
     const nodes = chain(length);
-    layRest(base, archOf(base.heading, length), nodes, length);
+    const arch = archOf(base.heading, length, settings.size);
+    layRest(base, arch, nodes, length);
     return {
       ghost: {
         points: nodes.map((node) => ({ x: node.rx, y: node.ry })),
@@ -737,6 +771,8 @@ export class Willows {
         length,
         full: length,
         root: rootOf(pick.limb, spot),
+        arch: arch.reach,
+        threads: threadCount(settings.size, TYPICAL.variant),
         age: season,
         openness: 1,
         alpha: 0.45,
@@ -751,10 +787,12 @@ export class Willows {
   }
 
   /** Every strand to draw, as it looks at this `season`, and every leaf falling. */
-  views(season: number): WillowView {
+  views(settings: FlowerSettings, season: number): WillowView {
     const strands: StrandView[] = this.strands
       .filter((strand) => showing(strand) && strand.nodes.length > 0)
-      .map((strand) => strandView(strand, ageOf(strand.traits, season)));
+      .map((strand) =>
+        strandView(strand, ageOf(strand.traits, season), settings.size),
+      );
     for (const strand of this.fallen) {
       strands.push({
         points: strand.nodes.map((node) => ({ x: node.x, y: node.y })),
@@ -762,6 +800,8 @@ export class Willows {
         length: lastOf(strand.nodes).s,
         full: strand.full,
         root: strand.root,
+        arch: strand.arch,
+        threads: strand.threads,
         age: strand.age,
         openness: strand.openness,
         alpha: strand.alpha,
@@ -818,6 +858,7 @@ export class Willows {
       snow: 0,
       weight: 0,
       age: 0,
+      arch: 0,
       nodes: [],
       air: { x: 0, y: 0 },
     };
@@ -944,12 +985,18 @@ export class Willows {
       strand.opened = clamp(strand.opened + dt / strand.traits.opening, 0, 1);
       const age = ageOf(strand.traits, conditions.season);
       if (strand.nodes.length > 0) {
-        shedding -= this.shed(strand, strand.age, age, shedding);
+        shedding -= this.shed(
+          strand,
+          strand.age,
+          age,
+          shedding,
+          threadCount(settings.size, strand.traits.variant),
+        );
       }
       strand.age = age;
       // The snow it caught melts, and any more than it holds as it withers or sheds falls away.
       const snow = Math.min(
-        snowHeld(catchSize(strand)),
+        snowHeld(catchSize(strand, settings.size)),
         strand.snow * Math.exp(-conditions.melt * dt),
       );
       strand.snow = snow < strand.snow && snow < SNOW.trace ? 0 : snow;
@@ -978,9 +1025,16 @@ export class Willows {
 
   /**
    * Lets go of the leaves of `strand` that drop between the times of year `from` and `to`, as many
-   * as `room` allows, falling from where they hang. The rest simply go. Returns how many fell.
+   * as `room` allows, falling from where they hang, and with each as many again from across its
+   * cascade of `threads` threads. The rest simply go. Returns how many fell.
    */
-  private shed(strand: Strand, from: number, to: number, room: number): number {
+  private shed(
+    strand: Strand,
+    from: number,
+    to: number,
+    room: number,
+    threads: number,
+  ): number {
     if (to <= from) {
       return 0;
     }
@@ -994,11 +1048,21 @@ export class Willows {
       if (drops <= from || drops > to) {
         continue;
       }
-      if (fell >= room || this.drifting.length >= SHED.most) {
-        break;
+      for (let k = 0; k < threads; k += 1) {
+        if (fell >= room || this.drifting.length >= SHED.most) {
+          return fell;
+        }
+        // The strand's own leaf, then its fellows on the other threads, across the cascade.
+        const across =
+          k === 0
+            ? { x: 0, y: 0 }
+            : {
+                x: (this.rng.next() - 0.5) * 1.6 * strand.arch,
+                y: (this.rng.next() - 0.5) * 0.4,
+              };
+        this.let(strand, leaf, length, drops, across);
+        fell += 1;
       }
-      this.let(strand, leaf, length, drops);
-      fell += 1;
     }
     return fell;
   }
@@ -1031,19 +1095,28 @@ export class Willows {
         continue;
       }
       const leaf = at(leaves, Math.floor(this.rng.next() * leaves.length));
-      this.let(strand, leaf, length, strand.age);
+      this.let(strand, leaf, length, strand.age, { x: 0, y: 0 });
       left -= 1;
     }
   }
 
-  /** Lets `leaf` of `strand` go at the time of year `age`, from where it hangs, with the air around it. */
-  private let(strand: Strand, leaf: Leaf, length: number, age: number): void {
+  /**
+   * Lets `leaf` of `strand` go at the time of year `age`, from where it hangs, moved `across` to one
+   * of its fellows on another thread, with the air around it.
+   */
+  private let(
+    strand: Strand,
+    leaf: Leaf,
+    length: number,
+    age: number,
+    across: Vec,
+  ): void {
     const at = pointAlong(strand.nodes, leaf.s);
     const ahead = pointAlong(strand.nodes, Math.min(length, leaf.s + 0.02));
     const heading = Math.atan2(ahead.y - at.y, ahead.x - at.x);
     this.drifting.push({
-      x: at.x,
-      y: at.y,
+      x: at.x + across.x,
+      y: at.y + across.y,
       vx: 0.5 * strand.air.x,
       vy: 0.5 * strand.air.y,
       angle: heading - leaf.side * leaf.angle,
@@ -1154,12 +1227,13 @@ export class Willows {
         strand.side,
         strand.traits.tilt,
         true,
+        settings.size,
       );
       const room = Math.max(
         STRANDS.shortest,
         roomBelow(rest, tree.level, conditions.water),
       );
-      const full = fullLength(strand.traits, settings, room);
+      const full = fullLength(strand.traits, settings.size, room);
       strand.full =
         strand.full === 0
           ? full
@@ -1171,8 +1245,10 @@ export class Willows {
         strand.side,
         strand.traits.tilt,
         false,
+        settings.size,
       );
-      const arch = archOf(base.heading, length);
+      const arch = archOf(base.heading, length, settings.size);
+      strand.arch = arch.reach;
       if (strand.nodes.length === 0) {
         strand.nodes = chain(length);
         layRest(base, arch, strand.nodes, length);
@@ -1189,7 +1265,7 @@ export class Willows {
       for (const node of strand.nodes) {
         node.k =
           node.s < stiff
-            ? SWING.stiffness * (1 - smoothstep(0, stiff, node.s)) ** 2
+            ? SWING.stiffness * (1 - smoothstep(0, stiff, node.s))
             : 0;
       }
       const middle = pointAlong(strand.nodes, 0.5 * length);
@@ -1280,6 +1356,8 @@ export class Willows {
     this.fallen.push({
       traits: strand.traits,
       full: strand.full,
+      arch: strand.arch,
+      threads: threadCount(this.size, strand.traits.variant),
       age: strand.age,
       openness: strand.opened,
       root: rootOf(strand.limb, strand),
@@ -1340,14 +1418,16 @@ function showing(strand: Strand): boolean {
   return !strand.dropped && strand.grown > 0;
 }
 
-/** How a strand on the tree is drawn, at the time of year `age`. */
-function strandView(strand: Strand, age: number): StrandView {
+/** How a strand on the tree is drawn, at the time of year `age` and the size multiplier `size`. */
+function strandView(strand: Strand, age: number, size: number): StrandView {
   return {
     points: strand.nodes.map((node) => ({ x: node.x, y: node.y })),
     along: strand.nodes.map((node) => node.s),
     length: lengthOf(strand),
     full: strand.full,
     root: rootOf(strand.limb, strand),
+    arch: strand.arch,
+    threads: threadCount(size, strand.traits.variant),
     age,
     openness: strand.opened,
     alpha: 1,
@@ -1355,7 +1435,7 @@ function strandView(strand: Strand, age: number): StrandView {
     exposure: strand.exposure,
     snow:
       strand.snow > 0
-        ? Math.min(1, strand.snow / snowHeld(catchSize(strand)))
+        ? Math.min(1, strand.snow / snowHeld(catchSize(strand, size)))
         : 0,
     front: strand.traits.front,
     air: strand.air,
@@ -1368,19 +1448,41 @@ function lengthOf(strand: Strand): number {
 }
 
 /**
- * How long a strand with `traits` grows at the size multiplier in `settings`, hanging from wood with
- * `room` meters below it: the higher it hangs, the further it drapes, and never into the ground.
+ * How long a strand with `traits` grows at the size multiplier `size`, hanging from wood with `room`
+ * meters below it: in proportion to the size, and at larger sizes the further the higher it hangs,
+ * but never into the ground.
  */
-function fullLength(
-  traits: Traits,
-  settings: FlowerSettings,
-  room: number,
-): number {
-  const longest = Math.max(STRANDS.length, STRANDS.drape * room);
+function fullLength(traits: Traits, size: number, room: number): number {
+  const longest = Math.max(
+    STRANDS.length * size,
+    STRANDS.drape * cascading(size) * room,
+  );
   return clamp(
-    longest * settings.size ** STRANDS.lengthGrowth * traits.share,
+    longest * traits.share,
     STRANDS.shortest,
     Math.max(STRANDS.shortest, room),
+  );
+}
+
+/** How far a strand at the size multiplier `size` has grown into a full cascade, from 0 to 1. */
+function cascading(size: number): number {
+  return smoothstep(CASCADE.sizes.from, CASCADE.sizes.to, size);
+}
+
+/**
+ * How many threads hang from the arch of a strand of `variant` at the size multiplier `size`, its
+ * own among them: one on the smallest, a few at a size of one, and a crowd on a full cascade, a
+ * few more or fewer on each strand.
+ */
+function threadCount(size: number, variant: number): number {
+  const { fewest, most } = CASCADE.threads;
+  const typical =
+    size < CASCADE.sizes.from
+      ? lerp(1, fewest, smoothstep(0.2, CASCADE.sizes.from, size))
+      : lerp(fewest, most, cascading(size));
+  return Math.max(
+    1,
+    Math.round(typical * (0.8 + 0.4 * hash(5, variant * 1000))),
   );
 }
 
@@ -1395,12 +1497,14 @@ function rootOf(limb: Limb, spot: { s: number; side: 1 | 0 | -1 }): number {
 }
 
 /**
- * Across a strand where it catches snow, in meters: its arch, and its leaves while it has them,
- * though hanging leaves shed most of what lands on them.
+ * Across a strand where it catches snow, in meters, at the size multiplier `size`: its arch, which
+ * grows with its cascade, and its leaves while it has them, though hanging leaves shed most of what
+ * lands on them.
  */
-function catchSize(strand: Strand): number {
+function catchSize(strand: Strand, size: number): number {
   return (
     STRANDS.reach *
+    size ** CASCADE.arch *
     (0.4 + 0.3 * leafiness(strand.age)) *
     smoothstep(0, 1, strand.grown)
   );
@@ -1446,7 +1550,8 @@ function position(strand: Strand, tree: Tree): number | undefined {
 
 /**
  * Where a strand at `s` along `limb` leaves its wood, turned `tilt` off its usual angle, and the
- * way it heads: posed as the limb is drawn, or as it grew if `rest`.
+ * way it heads at the size multiplier `size`, the steeper the larger its cascade: posed as the limb
+ * is drawn, or as it grew if `rest`.
  */
 function baseOf(
   limb: Limb,
@@ -1454,6 +1559,7 @@ function baseOf(
   side: 1 | 0 | -1,
   tilt: number,
   rest: boolean,
+  size: number,
 ): Base {
   const p = rest ? limb.restPointAt(s) : limb.pointAt(s);
   if (side === 0) {
@@ -1463,7 +1569,12 @@ function baseOf(
   const leave = turnToward(normal, p.heading, ARCH.lean);
   // From the top of a limb it heads up before it arches over; from beneath, it simply hangs.
   const up = 0.5 + 0.5 * Math.sin(normal);
-  const heading = turnToward(leave, UPRIGHT, ARCH.skyward * up) + tilt;
+  const skyward = lerp(
+    CASCADE.skyward.from,
+    CASCADE.skyward.to,
+    cascading(size),
+  );
+  const heading = turnToward(leave, UPRIGHT, skyward * up) + tilt;
   const from = along(p, normal, ARCH.inset * limb.radiusAt(s));
   return { x: from.x, y: from.y, heading };
 }
@@ -1479,19 +1590,19 @@ function roomBelow(base: Vec, level: Level, water: Water): number {
 }
 
 /**
- * How a strand leaving the wood heading `heading` arches over to hang straight down: turning over
- * the way it heads out, and more slowly the further it turns, but within the first part of a strand
- * `length` long, so a short one sticks out before it has grown enough to weep.
+ * How a strand leaving the wood heading `heading` arches over to hang straight down at the size
+ * multiplier `size`: turning over the way it heads out, more slowly the further it turns and the
+ * larger its cascade, but within the first part of a strand `length` long, so a short one sticks
+ * out before it has grown enough to weep.
  */
-function archOf(heading: number, length: number): Arch {
+function archOf(heading: number, length: number, size: number): Arch {
   const h = wrapAngle(heading);
   const turn = h > Math.PI / 2 ? 1.5 * Math.PI - h : -Math.PI / 2 - h;
+  const reach =
+    ((ARCH.reach * Math.abs(turn)) / Math.PI) * size ** CASCADE.arch;
   return {
     turn,
-    reach: Math.max(
-      1e-3,
-      Math.min((ARCH.reach * Math.abs(turn)) / Math.PI, 0.6 * length),
-    ),
+    reach: Math.max(1e-3, Math.min(reach, 0.6 * length)),
   };
 }
 

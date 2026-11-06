@@ -505,7 +505,7 @@ function step(dt: number, controls: Controls): void {
     camera,
     [
       ...flowers.catchers(panel.flowers),
-      ...willows.catchers(),
+      ...willows.catchers(panel.flowers),
       ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
     ],
     sea,
@@ -785,7 +785,7 @@ function frame(now: number): void {
     strain: panel.showStrain,
     flowers: flowers.views(panel.flowers, panel.time.season),
     flowerHover,
-    willow: willows.views(panel.time.season),
+    willow: willows.views(panel.flowers, panel.time.season),
     strandHover,
     flow: flowing
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }

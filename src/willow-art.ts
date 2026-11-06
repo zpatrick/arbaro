@@ -7,6 +7,7 @@ import {
   hasCatkin,
   type Leaf,
   LEAVES,
+  leafiness,
   leafSize,
   leavesOf,
   type LeafView,
@@ -137,25 +138,24 @@ const TWIG_THINNEST_PX = 0.55;
 const TWIG_FAINTEST = 0.4;
 
 /**
- * Every strand hangs as a tress, after the willows of the references: past its arch it parts into
- * a few threads, its own carrying on the longest and the others fanning out a little to either side
- * of it, shorter, so the tress tapers to a point. The fan breathes as the wind flutters it.
+ * Every strand hangs as a cascade, after the willows of the references and of life: its own shoot
+ * arches over and hangs on down, and its other threads hang from along the arch, from `from` of
+ * the way along it to where it hangs, each down to about where the strand ends, `share` of that
+ * at random, so the cascade's hem is ragged. Each hangs as the strand does below its arch, swinging
+ * with it, fanned out by up to `splay` radians to one side or the other, and waving a little on its
+ * own, by up to `wave` meters: `calm` in still air and `wind` in a full wind.
  */
-const TRESS = {
-  /** Threads in a tress, the strand's own among them. */
-  fewest: 2,
-  most: 4,
-  /** Each other thread's length, as a share of the strand's, from shortest to longest. */
-  share: { from: 0.45, to: 0.9 },
-  /** How far each fans out from the strand, in radians, from least to most. */
-  splay: { from: 0.03, to: 0.1 },
-  /** Where the threads part, in meters along the strand, or this share of a short one. */
-  part: 0.3,
-  partShare: 0.3,
+const THREADS = {
+  from: 0.3,
+  share: { from: 0.6, to: 1.05 },
+  splay: 0.06,
+  wave: { calm: 0.015, wind: 0.08 },
   /** The other threads' twigs are this much as stout as the strand's. */
-  thinner: 0.7,
-  /** How much the fan opens and closes as the wind flutters it, as a share of its spread. */
-  breathe: 0.3,
+  thinner: 0.6,
+  /** A thread's twig thinner than this, in CSS pixels, does not show under its leaves. */
+  hiddenPx: 0.7,
+  /** Threads share this many layouts of leaves, so a crowd of them costs no more to keep. */
+  layouts: 32,
 } as const;
 
 /** Catkin colors: silver while closed in the bud, gold open, and brown as they wither. */
@@ -188,9 +188,17 @@ interface Batch {
 interface Paints {
   batches: Map<string, Batch>;
   twigs: Map<number, Path2D>;
+  /** The twigs of the threads hanging from strands' arches, by their width and how faint they are. */
+  threads: Map<string, { path: Path2D; width: number; alpha: number }>;
   outlines: Map<number, Path2D>;
   snow: Map<number, { path: Path2D; width: number }>;
 }
+
+/**
+ * Leaves showing longer than this, in CSS pixels, are laid along the smooth curve of their thread;
+ * shorter, along the straight runs between its nodes, which is quicker and shows no difference.
+ */
+const SMOOTH_PX = 30;
 
 /**
  * Draws the strands of one layer, those hanging behind the wood or those in front of it, and the
@@ -212,6 +220,7 @@ export function drawWillow(
   const paints: Paints = {
     batches: new Map(),
     twigs: new Map(),
+    threads: new Map(),
     outlines: new Map(),
     snow: new Map(),
   };
@@ -227,23 +236,33 @@ export function drawWillow(
         distanceFrom(at(courses, a), focus) -
         distanceFrom(at(courses, b), focus),
     );
-  const tresses = order.map((i) =>
+  const cascades = order.map((i) =>
     threadsOf(camera, at(strands, i), at(courses, i), view.time),
   );
-  const every = thinning(tresses.flat(), camera.scale);
+  const every = thinning(cascades.flat(), camera.scale);
+  const leafy = (strand: StrandView): boolean => leafiness(strand.age) > 0.5;
   for (const [k, i] of order.entries()) {
     const strand = at(strands, i);
-    for (const thread of at(tresses, k)) {
-      addTwig(paints, camera, thread.strand, thread.course);
+    const paths = leafPaths(paints, strand);
+    for (const [n, thread] of at(cascades, k).entries()) {
+      if (n === 0) {
+        addTwig(paints, camera, thread.strand, thread.course);
+      } else if (
+        // Under its leaves, a hanging thread too fine to show is not drawn.
+        !leafy(strand) ||
+        thread.strand.root * camera.scale * 2 >= THREADS.hiddenPx
+      ) {
+        addThreadTwig(paints, camera, thread.strand, thread.course);
+      }
       detailLeft -= addLeaves(
         paints,
         camera,
         thread.strand,
         thread.course,
+        paths,
         view.time,
         every,
         detailLeft,
-        thread.from,
       );
     }
     addSnow(paints, camera, strand, at(courses, i));
@@ -254,9 +273,15 @@ export function drawWillow(
     ctx.globalAlpha = alpha;
     ctx.fill(path);
   }
-  fillBatches(ctx, paints.batches, light);
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
+  ctx.strokeStyle = css(ink);
+  for (const { path, width, alpha } of paints.threads.values()) {
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width;
+    ctx.stroke(path);
+  }
+  fillBatches(ctx, paints.batches, light);
   ctx.strokeStyle = css(ink);
   ctx.lineWidth = DETAIL.line;
   for (const [alpha, path] of paints.outlines) {
@@ -342,10 +367,15 @@ export function drawFallingLeaves(
   ctx.globalAlpha = 1;
 }
 
-/** Whether any of a strand could show in the view, leaves, fanning threads and all. */
+/** Whether any of a strand could show in the view, leaves, hanging threads and all. */
 function inView(camera: Camera, strand: StrandView): boolean {
   const margin =
-    (LEAVES.length + TRESS.splay.to * strand.length) * camera.scale + 2;
+    (LEAVES.length +
+      THREADS.splay * strand.length +
+      THREADS.wave.wind +
+      0.5 * strand.arch) *
+      camera.scale +
+    2;
   let left = Infinity;
   let right = -Infinity;
   let top = Infinity;
@@ -375,8 +405,7 @@ function thinning(threads: readonly Thread[], scale: number): number {
   const close =
     gap >= MARKS.gapPx ? 1 : 2 ** Math.ceil(Math.log2(MARKS.gapPx / gap));
   const total = threads.reduce(
-    (sum, thread) =>
-      sum + (thread.strand.length - thread.from) / LEAVES.spacing,
+    (sum, thread) => sum + thread.strand.length / LEAVES.spacing,
     0,
   );
   const crowded =
@@ -394,20 +423,16 @@ function courseOf(camera: Camera, strand: StrandView): Course {
   );
 }
 
-/**
- * One thread of a tress: drawn as a strand of its own along its course, with leaves from `from`
- * meters along it, past where it parts from the strand.
- */
+/** One thread of a cascade: drawn as a strand of its own along its course. */
 interface Thread {
   strand: StrandView;
   course: Course;
-  from: number;
 }
 
 /**
- * The threads of the tress a strand hangs as: its own, then the others, each following the strand
- * down from where they part, fanned out a little to one side of it, and opening and closing a little
- * as the wind flutters it.
+ * The threads of the cascade a strand hangs as: its own, then the others, each hanging from a
+ * point along its arch and down as the strand hangs below the arch, fanned out a little to one side,
+ * waving a little on its own, and ending at about the depth the strand does.
  */
 function threadsOf(
   camera: Camera,
@@ -415,60 +440,110 @@ function threadsOf(
   course: Course,
   time: number,
 ): Thread[] {
-  const threads: Thread[] = [{ strand, course, from: 0 }];
-  const part = Math.min(TRESS.part, TRESS.partShare * strand.length);
-  const count =
-    TRESS.fewest +
-    Math.floor(
-      hash(1, strand.variant * 1000) * (TRESS.most - TRESS.fewest + 1),
-    );
+  const threads: Thread[] = [{ strand, course }];
+  const arch = Math.min(strand.arch, strand.length);
+  const hang = strand.length - arch;
+  if (strand.threads <= 1 || hang <= LEAVES.spacing) {
+    return threads;
+  }
+  const scale = camera.scale;
+  const end = placeOn(course, arch, 0);
+  // The strand's own course below its arch, as offsets from where the arch ends.
+  const below: { t: number; offset: Vec }[] = [
+    { t: 0, offset: { x: 0, y: 0 } },
+  ];
+  for (const [i, s] of course.along.entries()) {
+    if (s > arch) {
+      const p = at(course.points, i);
+      below.push({
+        t: s - arch,
+        offset: { x: p.x - end.p.x, y: p.y - end.p.y },
+      });
+    }
+  }
+  const tip = at(below, below.length - 1);
+  // Across the way the strand hangs, on screen.
+  const run = Math.hypot(tip.offset.x, tip.offset.y);
+  const across =
+    run > 1e-9
+      ? { x: -tip.offset.y / run, y: tip.offset.x / run }
+      : { x: 1, y: 0 };
   const speed = Math.hypot(strand.air.x, strand.air.y);
-  const flutter = TRESS.breathe * Math.min(1, speed / FLUTTER.full);
-  for (let k = 1; k < count; k += 1) {
+  const wave = lerp(
+    THREADS.wave.calm,
+    THREADS.wave.wind,
+    Math.min(1, speed / FLUTTER.full),
+  );
+  const layout = Math.floor(strand.variant * 977);
+  for (let k = 1; k < strand.threads; k += 1) {
     const h = (n: number): number => hash(k * 13 + n, strand.variant * 1000);
-    const share = lerp(TRESS.share.from, TRESS.share.to, h(2));
-    const length = strand.length * share;
-    if (length <= part + LEAVES.spacing) {
+    const spread = clamp(
+      (k - 0.5 + 0.8 * (h(1) - 0.5)) / (strand.threads - 1),
+      0,
+      1,
+    );
+    const top = placeOn(course, arch * lerp(THREADS.from, 1, spread), 0);
+    // How far above the end of the arch it hangs from, in meters: screen y runs down.
+    const above = Math.max(0, (end.p.y - top.p.y) / scale);
+    const length =
+      (hang + above) * lerp(THREADS.share.from, THREADS.share.to, h(2));
+    if (length <= LEAVES.spacing) {
       continue;
     }
-    const side = k % 2 === 0 ? 1 : -1;
-    const splay = side * lerp(TRESS.splay.from, TRESS.splay.to, h(3));
-    const rate = 1.2 + 1.8 * h(4);
+    const splay = Math.sin((h(3) - 0.5) * 2 * THREADS.splay);
+    const rate = 0.9 + 1.4 * h(4);
+    const phase = h(5) * Math.PI * 2;
     const points: Vec[] = [];
     const along: number[] = [];
-    const out = (s: number, p: Vec, slope: Vec): void => {
-      const d = Math.hypot(slope.x, slope.y);
-      const nx = d > 1e-9 ? -slope.y / d : 1;
-      const ny = d > 1e-9 ? slope.x / d : 0;
-      const open = 1 + flutter * Math.sin(time * rate + h(5) * 6.3 + s);
-      const offset =
-        Math.sin(splay) * Math.max(0, s - part) * open * camera.scale;
-      points.push({ x: p.x + nx * offset, y: p.y + ny * offset });
-      along.push(s);
+    const add = (t: number, offset: Vec): void => {
+      const sway =
+        (splay * t +
+          wave * (t / length) * Math.sin(time * rate + phase - 1.3 * t)) *
+        scale;
+      points.push({
+        x: top.p.x + offset.x + across.x * sway,
+        y: top.p.y + offset.y + across.y * sway,
+      });
+      along.push(t);
     };
-    for (const [i, s] of course.along.entries()) {
-      if (s >= length) {
+    let last = at(below, 0);
+    for (const b of below) {
+      if (b.t >= length) {
         break;
       }
-      out(s, at(course.points, i), at(course.slopes, i));
+      add(b.t, b.offset);
+      last = b;
     }
-    const end = placeOn(course, length, 0);
-    out(length, end.p, { x: end.way.x, y: end.way.y });
+    // On down past the strand's own tip, the way it hangs there, or to where this thread ends.
+    const next = below.find((b) => b.t >= length);
+    if (next === undefined) {
+      const reach = (length - tip.t) * scale;
+      const way =
+        run > 1e-9
+          ? { x: tip.offset.x / run, y: tip.offset.y / run }
+          : { x: 0, y: 1 };
+      add(length, {
+        x: tip.offset.x + way.x * reach,
+        y: tip.offset.y + way.y * reach,
+      });
+    } else {
+      const u = next.t > last.t ? (length - last.t) / (next.t - last.t) : 1;
+      add(length, {
+        x: lerp(last.offset.x, next.offset.x, u),
+        y: lerp(last.offset.y, next.offset.y, u),
+      });
+    }
     if (points.length < 2) {
       continue;
     }
     const thread: StrandView = {
       ...strand,
       length,
-      full: strand.full * share,
-      root: strand.root * TRESS.thinner,
-      variant: (strand.variant + 0.618 * k) % 1,
+      full: length,
+      root: strand.root * THREADS.thinner,
+      variant: (((layout + k) % THREADS.layouts) + 0.5) / THREADS.layouts,
     };
-    threads.push({
-      strand: thread,
-      course: slopesOf(points, along),
-      from: part,
-    });
+    threads.push({ strand: thread, course: slopesOf(points, along) });
   }
   return threads;
 }
@@ -600,71 +675,135 @@ function addTwig(
 }
 
 /**
- * Adds a strand's leaves from `from` meters along it, and the catkins in their axils, to its layer,
- * one in `every` of them, and outlines up to `detail` of them. Returns how many it outlined.
+ * Adds the twig of a thread hanging from a strand's arch to its layer: as fine as it is, or the
+ * thinnest a line shows and fainter, one smooth stroke through its nodes, as it hangs so nearly
+ * straight that a stroke of one width does for its taper.
+ */
+function addThreadTwig(
+  paints: Paints,
+  camera: Camera,
+  thread: StrandView,
+  course: Course,
+): void {
+  const actual = (thread.root + STRANDS.twig.tip) * camera.scale;
+  const width = Math.max(TWIG_THINNEST_PX, Math.round(actual * 10) / 10);
+  const faint = clamp(actual / TWIG_THINNEST_PX, TWIG_FAINTEST, 1);
+  const alpha = Math.round(thread.alpha * faint * 20) / 20;
+  const key = `${width} ${alpha}`;
+  let stroke = paints.threads.get(key);
+  if (stroke === undefined) {
+    stroke = { path: new Path2D(), width, alpha };
+    paints.threads.set(key, stroke);
+  }
+  const { path } = stroke;
+  const first = at(course.points, 0);
+  path.moveTo(first.x, first.y);
+  let previous = first;
+  for (const p of course.points) {
+    path.quadraticCurveTo(
+      previous.x,
+      previous.y,
+      (previous.x + p.x) / 2,
+      (previous.y + p.y) / 2,
+    );
+    previous = p;
+  }
+  path.lineTo(previous.x, previous.y);
+}
+
+/**
+ * The paths a strand's leaves are gathered in, a tone at a time and a step of turning at a time,
+ * shared by every thread of its cascade.
+ */
+function leafPaths(paints: Paints, strand: StrandView): Path2D[][] {
+  const age = Math.round(strand.age * 50) / 50;
+  const snow = Math.round(strand.snow * 10) / 10;
+  const alpha = Math.round(strand.alpha * 20) / 20;
+  const shade = strand.front ? 1 : MARKS.behind;
+  return [...TONES.keys(), SILVER_TONE].map((tone) =>
+    Array.from({ length: TURN_STEPS }, (_, step) =>
+      batchFor(
+        paints.batches,
+        `${tone} ${step} ${age} ${snow} ${alpha} ${strand.front}`,
+        () => {
+          const color = toneColor(leafColors(age + turnOf(step), snow), tone);
+          return {
+            color: [color[0] * shade, color[1] * shade, color[2] * shade],
+            alpha,
+          };
+        },
+      ),
+    ),
+  );
+}
+
+/**
+ * Adds a strand's leaves, and the catkins in their axils, to its layer, in `paths`, one in `every`
+ * of them, and outlines up to `detail` of them. Returns how many it outlined.
  */
 function addLeaves(
   paints: Paints,
   camera: Camera,
   strand: StrandView,
   course: Course,
+  paths: readonly (readonly Path2D[])[],
   time: number,
   every: number,
   detail: number,
-  from: number,
 ): number {
   const length = strand.length;
   const leafPx = LEAVES.length * camera.scale;
-  // Painted one in `every`, each leaf is a little wider to cover for those left out.
+  // Painted one in `every`, each leaf stands for those left out after it: it reaches along its
+  // thread to the next painted, a little wider, so from afar a thread is one unbroken streak.
   const widen = every ** 0.25;
+  const covers = every * LEAVES.spacing * 1.25;
   const speed = Math.hypot(strand.air.x, strand.air.y);
   const strength = Math.min(1, speed / FLUTTER.full);
   // The way the wind blows, on screen.
   const downwind = speed > 0 ? Math.atan2(-strand.air.y, strand.air.x) : 0;
-  const age = Math.round(strand.age * 50) / 50;
-  const snow = Math.round(strand.snow * 10) / 10;
-  const alpha = Math.round(strand.alpha * 20) / 20;
   const catkinsShow = strand.age < CATKINS.drop;
-  // The paths for each tone and each step of turning, found once for the strand.
-  const shade = strand.front ? 1 : MARKS.behind;
-  const paths = [...TONES.keys(), SILVER_TONE].map((tone) =>
-    Array.from({ length: TURN_STEPS }, (_, step) => {
-      const turn = turnOf(step);
-      return batchFor(
-        paints.batches,
-        `${tone} ${step} ${age} ${snow} ${alpha} ${strand.front}`,
-        () => {
-          const color = toneColor(leafColors(age + turn, snow), tone);
-          return {
-            color: [color[0] * shade, color[1] * shade, color[2] * shade],
-            alpha,
-          };
-        },
-      );
-    }),
-  );
+  const smooth = leafPx >= SMOOTH_PX;
+  const { points, along } = course;
+  const last = points.length - 2;
   const strong = smoothstep(DETAIL.from, DETAIL.to, leafPx);
   const outlineKey = Math.round(DETAIL.alpha * strong * strand.alpha * 10) / 10;
   let outlined = 0;
   let index = 0;
-  let count = 0;
-  for (const leaf of leavesOf(strand.variant, length)) {
+  const leaves = leavesOf(strand.variant, length);
+  for (
+    let i = Math.floor(hash(3, strand.variant * 1000) * every);
+    i < leaves.length;
+    i += every
+  ) {
+    const leaf = at(leaves, i);
     if (leaf.s > length) {
       break;
     }
-    count += 1;
-    if (count % every !== 0 || strand.age >= leaf.drops || leaf.s < from) {
+    if (strand.age >= leaf.drops) {
       continue;
     }
-    const placed = placeOn(course, leaf.s, index);
-    index = placed.index;
+    while (index < last && at(along, index + 1) < leaf.s) {
+      index += 1;
+    }
+    const placed = smooth
+      ? placeOn(course, leaf.s, index)
+      : placeStraight(points, along, leaf.s, index);
     const size = leafSize(leaf, length, strand.full);
-    const heading = leafHeading(leaf, placed.way, time, strength, downwind);
+    const stretch = Math.max(1, covers / (LEAVES.length * size));
+    // A stretched mark lies closer along its thread, so the thread keeps its width.
+    const heading = leafHeading(
+      leaf,
+      leaf.angle / stretch,
+      placed.way,
+      time,
+      strength,
+      downwind,
+    );
     const way = { x: Math.cos(heading), y: Math.sin(heading) };
-    const shown = Math.max(MARKS.minPx, size * leafPx);
+    const shown = Math.max(MARKS.minPx, size * leafPx * stretch);
     const width = Math.min(
       MARKS.stoutest * shown,
-      Math.max(MARKS.thinnestPx, LEAVES.width * shown) * widen,
+      Math.max(MARKS.thinnestPx, LEAVES.width * size * leafPx) * widen,
     );
     // A hanging leaf droops: most curl down toward the ground.
     const curl = 0.7 * Math.abs(leaf.curl) * Math.sign(way.x) + 0.3 * leaf.curl;
@@ -674,7 +813,7 @@ function addLeaves(
     const tone = flipped ? SILVER_TONE : toneOf(leaf, strand);
     const path = at(at(paths, tone), turnStep(leaf));
     addLeaf(path, placed.p, way, shown, width, curl, shown >= MARKS.shapedPx);
-    if (outlined < detail && outlineKey > 0) {
+    if (outlined < detail && outlineKey > 0 && stretch === 1) {
       let outline = paints.outlines.get(outlineKey);
       if (outline === undefined) {
         outline = new Path2D();
@@ -703,18 +842,43 @@ function addLeaves(
 }
 
 /**
- * The way a leaf points on screen, in radians: off its twig toward the strand's tip, streaming
- * toward the way the wind blows and fluttering in it, `strength` of the way to as far as a full wind
- * takes them.
+ * Where a course is `s` meters along it, between its nodes `index` and the next, and the way it
+ * runs there: along the straight run between them.
+ */
+function placeStraight(
+  points: readonly Vec[],
+  along: readonly number[],
+  s: number,
+  index: number,
+): { p: Vec; way: Vec } {
+  const a = at(points, index);
+  const b = at(points, index + 1);
+  const s0 = at(along, index);
+  const s1 = at(along, index + 1);
+  const u = s1 > s0 ? clamp((s - s0) / (s1 - s0), 0, 1) : 0;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy);
+  return {
+    p: { x: a.x + dx * u, y: a.y + dy * u },
+    way: d > 1e-9 ? { x: dx / d, y: dy / d } : { x: 0, y: 1 },
+  };
+}
+
+/**
+ * The way a leaf points on screen, in radians: `angle` off its twig toward the strand's tip,
+ * streaming toward the way the wind blows and fluttering in it, `strength` of the way to as far as
+ * a full wind takes them.
  */
 function leafHeading(
   leaf: Leaf,
+  angle: number,
   way: Vec,
   time: number,
   strength: number,
   downwind: number,
 ): number {
-  const along = Math.atan2(way.y, way.x) + leaf.side * leaf.angle;
+  const along = Math.atan2(way.y, way.x) + leaf.side * angle;
   const streamed =
     along + wrapAngle(downwind - along) * FLUTTER.stream * strength * strength;
   const rate = 4 + 6 * leaf.variant + 5 * strength;
