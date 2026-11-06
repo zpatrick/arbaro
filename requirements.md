@@ -43,7 +43,10 @@ art and tree-of-life drawings.
       letting it grow out of the view.
 - [x] Once a tree is several meters tall, growing and steering feel the same on screen at every
       size: bigger trees grow faster and turn more broadly while the camera pulls back.
-- [x] Left alone, a limb drifts back toward upright with a gentle meander.
+- [x] Left alone, a limb drifts back toward upright with a gentle meander. A weeping willow's
+      trunk meanders more and rights itself more weakly, so it grows crooked, and its branches
+      arch out and over ever further as they lengthen until they weep; they can be steered down
+      further than a cherry's, well past level.
 - [ ] Plant the seed by clicking the ground. Roots grow down while the trunk grows up.
 - [x] Growth stops at the ground and at the barn: a tip grows up to just short of either and
       halts there, with a short message, and grows on once it is steered clear.
@@ -118,9 +121,56 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - _Open._ Flowers are always leaf nodes. They are given resources like branches and need enough of
   them, and they bring in light energy, a separate currency whose use is not settled.
 
+## Species
+
+- [x] Two species can be planted: a cherry and a weeping willow. Each grows by the same rules of
+      wood, steering and physics, with its own habit (see Growing and steering) and its own
+      flowers. A planted tree keeps its species; choosing another plants one afresh.
+- [x] A willow's flowers are its strands: fine twigs that leave its thin wood, arch over and hang
+      straight down, dressed in narrow leaves with golden catkins among them, hung close along
+      every thin limb so they make curtains. Strands keep to the rules of a cherry's flowers:
+      the player hangs them by shift-clicking thin wood, or the tree hangs its own, one weeping
+      from the tip of every limb long enough and more along the thin wood behind it on either
+      side; they keep to thin wood as their limb grows, and one riding up into the next withers
+      away; the wind tears them loose and the tree grows them back; they fall with wood that is
+      cut or breaks, and with the tree; they catch snow, which weighs their limbs down; and their
+      catkins draw bees as blossom does.
+- [x] Strands are true to life: from one to three meters long, and from high wood longer, on
+      shoots of years gone by, as much as three quarters of the way to the ground, never into it
+      or into the sea. Each grows its own share of that, so the curtain's hem is ragged. The size
+      setting lengthens them. A strand grows in from a short shoot that sticks out from the wood
+      to its full length over a few seconds, arching over as it lengthens.
+- [x] Every strand swings as a chain hanging from where it leaves its wood: pulled down by its
+      weight, held in its arch where it leaves the wood and limp below, dragged by the air moving
+      past it, which gusts and eddies in waves down it, and carried with its wood as the tree
+      sways or a bear rocks it. It hangs in a gentle curve of its own, leans about 13 degrees in
+      a gentle breeze and 43 in a fresh one, and streams out level in a gale. Leaves catch the
+      wind, so a bare strand swings more freely and holds out longer against a storm.
+- [x] Leaves are true to life, narrow and pointed, 12 cm long, set every 2.6 cm in a spiral, so
+      seen from the side they fall to either side of the twig at random, leaning toward its tip.
+      Each strand tapers like a tress: its leaves are smaller further down it, and smallest at a
+      growing tip. Past its arch a strand parts into a few threads that fan out a little and end
+      shorter than it, so every strand hangs as a tress tapering to a point, after the
+      references.
+- [x] Leaves stream toward the way the wind blows and flutter in it, and the wind turns them
+      over to show their pale, silvery undersides, more of them the harder it blows.
+- [x] Seen from afar, every leaf is a fine flat mark with no outline, like hatching, in a
+      shadow, middle or light tone: lighter high on a strand, on strands open to the sky and on
+      those hanging in front of the wood. Half the strands hang behind the wood, in its shade.
+      Close in, leaves come into detail with soft outlines and midribs, those nearest the middle
+      of the view first. Far off they are painted fewer and wider, so a frame stays quick.
+- [x] Catkins are silver in the bud, open gold as a strand grows in, and wither brown through
+      early autumn before they drop. Close in they are fuzzy with stamens.
+- [x] Through autumn a willow's leaves yellow, then turn gold, then old gold and brown, each a
+      little earlier or later than the rest, and drop one by one, fluttering down to lie on the
+      ground or float on the sea before they fade, until the strands hang bare through winter,
+      fine lines of ink. In a gale leaves blow off the strands.
+- [x] Snow whitens a willow's leaves and lies along its arches; hanging leaves shed most of it.
+
 ## Flowers
 
-- [x] Every flower is a cluster of cherry blossoms, fitted to the sand drawings.
+- [x] Every flower is a cluster of cherry blossoms, fitted to the sand drawings. (A willow's
+      flowers are its strands; see Species.)
 - [x] A cherry cluster is a mound of blossoms on fine stalks from one spur, with a bud or two:
       five notched petals each, deep pink at the heart and pale at the rim, ringed with stamens.
 - [x] Each cluster is true to life: about 17 cm across, of blossoms 4 cm across. A flower of the
@@ -413,12 +463,14 @@ _Open._ A button flips into a view of the roots:
       the sea's momentum, how long it takes to build or calm; the tide, set by hand or rising and
       falling with the day; and whether the inside of the water is drawn with contour lines or
       hatching. A line reads out how high the waves stand now, by the Douglas sea scale.
-- [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
-      how much the wood and the roots can take; and an overlay showing how close each joint is to
-      breaking.
+- [x] Tree page: the species planted, which plants a tree of it afresh, with a description of how
+      each grows; switch between steer-and-grow and flow mode and set the flow rate; multipliers
+      on how much the wood and the roots can take; and an overlay showing how close each joint is
+      to breaking.
 - [x] Flowers page: whether flowers are grown by the tree, as they are to begin with, or placed by
       hand; one size for all of them, from a fifth to five times the usual, which grows clusters
-      into mounds; and how hard their stems hold.
+      into mounds, or a willow's strands longer; and how hard their stems hold. For a willow the
+      page speaks of its strands.
 - [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
       first built to four times larger; a button that finishes building every hive within a couple of seconds;
       how many birds come by each minute, and how many of them land; whether hives draw bears,

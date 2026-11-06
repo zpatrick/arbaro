@@ -1,3 +1,4 @@
+import type { Habit } from "./species";
 import {
   approach,
   at,
@@ -35,18 +36,9 @@ export const LIMB = {
   softLength: 1.4,
   /** How quickly the soft tip bends toward the steering target. */
   bendRate: 4,
-  /** Turn rate per radian of lean, before scaling, that rights the tip while it is not steered. */
-  uprightPull: 0.12,
-  /**
-   * Steering turns a tip freely until it leans this far from vertical, easing off over `leanEase`
-   * before it. Past it a tip still turns, at `slowSteer` of the usual rate, out to `maxLean`.
-   */
-  freeLean: 1.0,
-  /** Past the free lean, steering turns a tip at this fraction of the usual rate. */
+  /** Past its species' free lean, steering turns a tip at this fraction of the usual rate. */
   slowSteer: 0.25,
-  /** Furthest a tip may be steered from vertical: a little past level, so a limb can droop. */
-  maxLean: 1.75,
-  /** Steering eases off over this many radians before each lean limit. */
+  /** Steering, and a weeping branch's droop, ease off over this many radians before each lean limit. */
   leanEase: 0.35,
   /**
    * Wood relaxes any bend tighter than this ratio of its radius to its bend radius. Thickening
@@ -58,8 +50,6 @@ export const LIMB = {
    * over a length comparable to its width instead of reading as a corner.
    */
   bendSmoothing: 2.5,
-  /** Gentle meander, in radians per world unit before scaling, while a tip grows unsteered. */
-  wander: 0.07,
   /** Length of one meander, in world units before scaling. */
   wanderLength: 3,
   /**
@@ -164,6 +154,8 @@ function interpolate(points: readonly LimbPoint[], s: number): LimbPoint {
  */
 export class Limb {
   readonly attachment: Attachment | undefined;
+  /** How the limb grows when it is left to itself, after its species. */
+  readonly habit: Habit;
   readonly children: Limb[] = [];
   /** Length at the base that never bends, so the limb leaves the ground or its parent cleanly. */
   readonly straightBase: number;
@@ -198,10 +190,12 @@ export class Limb {
     attachment: Attachment | undefined,
     straightBase: number,
     seed: number,
+    habit: Habit,
   ) {
     this.attachment = attachment;
     this.straightBase = straightBase;
     this.seed = seed;
+    this.habit = habit;
   }
 
   get length(): number {
@@ -520,8 +514,13 @@ export class Limb {
     return points;
   }
 
-  /** Bends the young wood near the tip toward the steering target, most strongly at the very tip. */
+  /**
+   * Bends the young wood near the tip toward the steering target, most strongly at the very tip.
+   * Left to itself, the tip meanders and rights itself, or on a weeping branch arches ever further
+   * over until it weeps.
+   */
   private bendTip(dt: number, growing: boolean, size: number): void {
+    const { habit } = this;
     const lean = this.restTip.heading - UPRIGHT;
     let target: number;
     if (this.steering !== 0) {
@@ -530,18 +529,25 @@ export class Limb {
         size;
       if (target * lean > 0) {
         const free = clamp(
-          (LIMB.freeLean - Math.abs(lean)) / LIMB.leanEase,
+          (habit.freeLean - Math.abs(lean)) / LIMB.leanEase,
           0,
           1,
         );
         const slow =
           LIMB.slowSteer *
-          clamp((LIMB.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
+          clamp((habit.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
         target *= Math.max(free, slow);
       }
     } else {
-      const meander = LIMB.wander * valueNoise(this.wanderPhase, this.seed);
-      target = (meander - lean * LIMB.uprightPull) / size;
+      const meander = habit.wander * valueNoise(this.wanderPhase, this.seed);
+      const { weep } = habit;
+      if (weep !== undefined && this.attachment !== undefined) {
+        const away = lean >= 0 ? 1 : -1;
+        const room = (weep.most - Math.abs(lean)) / LIMB.leanEase;
+        target = (meander + away * weep.arch * clamp(room, -1, 1)) / size;
+      } else {
+        target = (meander - lean * habit.uprightPull) / size;
+      }
     }
 
     const softLength = LIMB.softLength * size;

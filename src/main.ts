@@ -23,6 +23,7 @@ import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
 import { minimumRadius, pieceShapes, Renderer, treeShapes } from "./render";
 import { Sea, type SeaSettings } from "./sea";
+import type { Species } from "./species";
 import { SpoutControl } from "./spout-control";
 import {
   type Bounds,
@@ -34,6 +35,7 @@ import {
 } from "./tree";
 import { at, clamp, invariant } from "./util";
 import { Weather, type WeatherSettings } from "./weather";
+import { type StrandHover, Willows } from "./willows";
 import { Wind, type WindSettings } from "./wind";
 
 /** Longest frame step the simulation will take, so a stalled tab does not lurch forward. */
@@ -95,7 +97,9 @@ const sea = new Sea(panel.sea, level);
 sea.settle(wind, panel.time.timeOfDay);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
+/** A cherry's blossoms, and a willow's hanging strands: what grows on the thin wood of each. */
 const flowers = new Flowers();
+const willows = new Willows();
 const hives = new Hives();
 const birds = new Birds();
 const bears = new Bears();
@@ -105,7 +109,12 @@ const PLANTING_X = 0;
 
 let seed = 1;
 /** The standing tree. Gone once it falls, until the next one is planted. */
-let tree: Tree | undefined = new Tree(PLANTING_X, seed, level);
+let tree: Tree | undefined = new Tree(
+  PLANTING_X,
+  seed,
+  level,
+  panel.planting.species,
+);
 const debris: Debris[] = [];
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
@@ -163,10 +172,11 @@ function placeHint(): void {
 
 function replant(): void {
   seed += 1;
-  tree = new Tree(PLANTING_X, seed, level);
+  tree = new Tree(PLANTING_X, seed, level, panel.planting.species);
   spoutControl.close();
   dots.clear();
   flowers.clear();
+  willows.clear();
   hives.clear();
   bears.clear();
   camera.release();
@@ -263,27 +273,39 @@ function placingFlowers(event: { shiftKey: boolean }): boolean {
   return event.shiftKey && panel.flowers.placement === "hand";
 }
 
-/** Knocks off the flower under (x, y) in CSS pixels, or grows one on the thin wood there. */
+/**
+ * Knocks off the flower under (x, y) in CSS pixels, or grows one on the thin wood there: a cherry's
+ * blossoms, or a willow's hanging strand.
+ */
 function tendFlowers(standing: Tree, x: number, y: number): void {
   const world = camera.toWorld(x, y);
-  if (
-    flowers.knockOff(
-      standing,
-      world.x,
-      world.y,
-      PICK_TOLERANCE_PX / camera.scale,
-      panel.flowers,
-    )
-  ) {
-    return;
-  }
+  const reach = PICK_TOLERANCE_PX / camera.scale;
   const pick = pickAt(standing, x, y);
-  if (pick !== undefined && !flowers.place(pick)) {
-    announce("Flowers only grow on thin wood");
+  switch (standing.species) {
+    case "cherry":
+      if (flowers.knockOff(standing, world.x, world.y, reach, panel.flowers)) {
+        return;
+      }
+      if (pick !== undefined && !flowers.place(pick)) {
+        announce("Flowers only grow on thin wood");
+      }
+      return;
+    case "willow":
+      if (willows.knockOff(standing, world.x, world.y, reach)) {
+        return;
+      }
+      if (pick !== undefined && !willows.place(pick)) {
+        announce("Strands only hang from thin wood");
+      }
+      return;
+    default: {
+      const unknown: never = standing.species;
+      throw new Error(`Unknown species ${String(unknown)}.`);
+    }
   }
 }
 
-/** What a shift-click at (x, y) in CSS pixels would do to the flowers. */
+/** What a shift-click at (x, y) in CSS pixels would do to a cherry's flowers. */
 function flowerHoverAt(standing: Tree, x: number, y: number): FlowerHover {
   const world = camera.toWorld(x, y);
   return flowers.hover(
@@ -294,6 +316,21 @@ function flowerHoverAt(standing: Tree, x: number, y: number): FlowerHover {
     pickAt(standing, x, y),
     panel.flowers,
     panel.time.season,
+  );
+}
+
+/** What a shift-click at (x, y) in CSS pixels would do to a willow's strands. */
+function strandHoverAt(standing: Tree, x: number, y: number): StrandHover {
+  const world = camera.toWorld(x, y);
+  return willows.hover(
+    standing,
+    world.x,
+    world.y,
+    PICK_TOLERANCE_PX / camera.scale,
+    pickAt(standing, x, y),
+    panel.flowers,
+    panel.time.season,
+    sea,
   );
 }
 
@@ -310,6 +347,7 @@ function breakOff(standing: Tree, limb: Limb, s: number): void {
     new Debris(pieceShapes(limb, s, minimumRadius(camera)), piece, motion),
   );
   flowers.cut(standing, limb, s, panel.flowers);
+  willows.cut(standing, limb, s);
   standing.sever(limb, s);
 }
 
@@ -410,6 +448,7 @@ function step(dt: number, controls: Controls): void {
       growth,
       [
         ...flowers.loads(standing),
+        ...willows.loads(standing),
         ...hives.loads(standing, panel.wildlife),
         ...birds.loads(standing),
       ],
@@ -427,7 +466,7 @@ function step(dt: number, controls: Controls): void {
   advanceDay(panel.time, dt);
   clock += dt;
   sea.update(dt, wind, panel.time.timeOfDay);
-  flowers.update(dt, tree, panel.flowers, {
+  const conditions = {
     season: panel.time.season,
     wind,
     melt: weather.melt,
@@ -435,12 +474,25 @@ function step(dt: number, controls: Controls): void {
     flowing: growth.mode === "flow",
     level,
     water: sea,
-  });
+  };
+  // Each tends only what grows on its own species of tree; the other only lets its last fall.
+  flowers.update(
+    dt,
+    tree?.species === "cherry" ? tree : undefined,
+    panel.flowers,
+    conditions,
+  );
+  willows.update(
+    dt,
+    tree?.species === "willow" ? tree : undefined,
+    panel.flowers,
+    conditions,
+  );
   debris.push(
     ...hives.update(dt, tree, panel.wildlife, {
       wind,
       daylight: skyAt(panel.time.timeOfDay).daylight,
-      blooms: flowers.blooms(panel.flowers),
+      blooms: [...flowers.blooms(panel.flowers), ...willows.blooms()],
       hold: panel.strength.flowers,
       melt: weather.melt,
       threats: bears.threats(),
@@ -453,6 +505,7 @@ function step(dt: number, controls: Controls): void {
     camera,
     [
       ...flowers.catchers(panel.flowers),
+      ...willows.catchers(),
       ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
     ],
     sea,
@@ -483,6 +536,13 @@ panel.onPlaceHive = () => {
   placingHive = true;
 };
 panel.onLevel = (id: LevelId) => useLevel(levelById(id));
+panel.onSpecies = () => {
+  replant();
+  const view = framing();
+  if (view !== undefined) {
+    camera.snap(view);
+  }
+};
 panel.onSendBear = () => bears.spawn(camera, level);
 panel.onShowBear = (pose: BearPose) => bears.show(pose, camera, level, tree);
 panel.onClearBears = () => bears.clear();
@@ -659,31 +719,36 @@ function frame(now: number): void {
   panel.showSea(sea.significantHeight);
   showClock(light);
   const flowing = tree !== undefined && panel.growth.mode === "flow";
-  const flowerHover =
+  const tending =
     tree !== undefined &&
     pointer !== undefined &&
-    placingFlowers({ shiftKey: shiftHeld })
+    placingFlowers({ shiftKey: shiftHeld });
+  const flowerHover =
+    tending && tree?.species === "cherry" && pointer !== undefined
       ? flowerHoverAt(tree, pointer.x, pointer.y)
       : undefined;
+  const strandHover =
+    tending && tree?.species === "willow" && pointer !== undefined
+      ? strandHoverAt(tree, pointer.x, pointer.y)
+      : undefined;
   const hoveredSpout =
-    flowing &&
-    tree !== undefined &&
-    pointer !== undefined &&
-    flowerHover === undefined
+    flowing && tree !== undefined && pointer !== undefined && !tending
       ? spoutAt(tree, pointer.x, pointer.y)
       : undefined;
   const hover =
     tree === undefined ||
     pointer === undefined ||
     hoveredSpout !== undefined ||
-    flowerHover !== undefined
+    tending
       ? undefined
       : pickAt(tree, pointer.x, pointer.y);
   const pointing =
     hover !== undefined ||
     hoveredSpout !== undefined ||
     flowerHover?.ghost !== undefined ||
-    flowerHover?.target !== undefined;
+    flowerHover?.target !== undefined ||
+    strandHover?.ghost !== undefined ||
+    strandHover?.target !== undefined;
   canvas.style.cursor =
     panning?.dragging === true
       ? "grabbing"
@@ -720,6 +785,8 @@ function frame(now: number): void {
     strain: panel.showStrain,
     flowers: flowers.views(panel.flowers, panel.time.season),
     flowerHover,
+    willow: willows.views(panel.time.season),
+    strandHover,
     flow: flowing
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }
       : undefined,
@@ -779,8 +846,13 @@ interface DebugHandle {
    * right), like a shift-click.
    */
   placeFlower(index: number, fraction: number, side: 1 | -1): void;
-  /** How many flowers are on the tree, and how many have come off and not yet faded. */
+  /**
+   * How many flowers are on the tree, and how many have come off and not yet faded: a cherry's
+   * blossoms or a willow's strands.
+   */
   flowerCount(): { onTree: number; falling: number };
+  /** The willow's strands and the leaves falling from them. */
+  willows(): Willows;
   /** Hangs a hive at `fraction` of limb `index`'s length, to be built, like an H-click. */
   placeHive(index: number, fraction: number): void;
   /** The hives and their bees. */
@@ -795,6 +867,8 @@ interface DebugHandle {
   bears(): Bears;
   /** Moves the scene to another level, as the debug panel would, and plants a tree there. */
   level(id: LevelId): void;
+  /** Plants a tree of another species afresh, as the debug panel would. */
+  species(id: Species): void;
   /** Changes where the tree grows, as the debug panel would. */
   world(settings: Partial<WorldSettings>): void;
   /** Sends a bear in from the edge of the view. */
@@ -887,12 +961,17 @@ if (import.meta.env.DEV) {
     },
     placeFlower(index, fraction, side) {
       const limb = at(standing().limbs, index);
+      const pick = { limb, s: limb.length * fraction, side };
       invariant(
-        flowers.place({ limb, s: limb.length * fraction, side }),
+        standing().species === "willow"
+          ? willows.place(pick)
+          : flowers.place(pick),
         `No wood on limb ${index} is thin enough for a flower.`,
       );
     },
-    flowerCount: () => flowers.count(),
+    flowerCount: () =>
+      standing().species === "willow" ? willows.count() : flowers.count(),
+    willows: () => willows,
     placeHive(index, fraction) {
       const limb = at(standing().limbs, index);
       hives.place(limb, limb.length * fraction);
@@ -908,6 +987,9 @@ if (import.meta.env.DEV) {
     bears: () => bears,
     level(id) {
       panel.setWorld({ level: id });
+    },
+    species(id) {
+      panel.setPlanting({ species: id });
     },
     world(settings) {
       panel.setWorld(settings);

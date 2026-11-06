@@ -16,6 +16,7 @@ import {
   swellPeriodFor,
 } from "./sea";
 import { clockTime, seasonName, type TimeSettings } from "./sky";
+import { SPECIES, type Species } from "./species";
 import type { Growth, GrowthMode } from "./tree";
 import { draggable, element, shape, Slider } from "./ui";
 import { invariant } from "./util";
@@ -55,21 +56,46 @@ const MOST_BIRDS = 20;
 const FLOWER_PLACEMENTS: readonly {
   id: FlowerPlacement;
   name: string;
-  description: string;
+  /** What each choice does, for each species: a willow's flowers are its hanging strands. */
+  description: Readonly<Record<Species, string>>;
 }[] = [
   {
     id: "hand",
     name: "By hand",
-    description:
-      "Shift-click thin wood to grow a flower there, or shift-click a flower to knock it off. Flowers only grow on thin wood, and keep to it as their limb grows.",
+    description: {
+      cherry:
+        "Shift-click thin wood to grow a flower there, or shift-click a flower to knock it off. Flowers only grow on thin wood, and keep to it as their limb grows.",
+      willow:
+        "Shift-click thin wood to hang a strand there, or shift-click a strand to knock it off. Strands only hang from thin wood, and keep to it as their limb grows.",
+    },
   },
   {
     id: "tree",
     name: "By the tree",
-    description:
-      "The tree grows its own flowers: one crowning every limb long enough to flower, and more along the thin wood behind it. A flower the wind takes grows back after a while.",
+    description: {
+      cherry:
+        "The tree grows its own flowers: one crowning every limb long enough to flower, and more along the thin wood behind it. A flower the wind takes grows back after a while.",
+      willow:
+        "The tree hangs its own strands: one weeping from the tip of every limb long enough, and more along the thin wood behind it, on either side. A strand the wind takes grows back after a while.",
+    },
   },
 ];
+
+/** What the flowers page calls a species' flowers, and what it says about them. */
+const FLOWER_KINDS: Readonly<
+  Record<Species, { title: string; description: string }>
+> = {
+  cherry: {
+    title: "Flowers",
+    description:
+      "Every flower is a cluster of cherry blossoms. Size grows each into a mound of clusters, so the mounds run together into a canopy.",
+  },
+  willow: {
+    title: "Strands",
+    description:
+      "A weeping willow's flowers are its strands: fine twigs hanging from its thin wood, dressed in narrow leaves, with golden catkins among them. Size sets how long and full they hang.",
+  },
+};
 
 /**
  * Speeds the simulation can run at, as multiples of real time, each shown as an icon: pause, play,
@@ -254,9 +280,15 @@ export interface WorldSettings {
   mountains: boolean;
 }
 
+/** What is planted: the species of every tree grown afresh. */
+export interface PlantingSettings {
+  species: Species;
+}
+
 /** Every setting the panel controls. */
 interface Settings {
   world: WorldSettings;
+  planting: PlantingSettings;
   growth: Growth;
   wind: WindSettings;
   weather: WeatherSettings;
@@ -272,7 +304,7 @@ interface Settings {
 
 interface Saved extends Omit<
   Settings,
-  "world" | "weather" | "sea" | "wildlife" | "birds" | "bears"
+  "world" | "planting" | "weather" | "sea" | "wildlife" | "birds" | "bears"
 > {
   open: boolean;
   tab: Tab;
@@ -281,6 +313,7 @@ interface Saved extends Omit<
    * is missing starts as it does by default.
    */
   world?: Partial<WorldSettings>;
+  planting?: Partial<PlantingSettings>;
   weather?: Partial<WeatherSettings>;
   sea?: Partial<SeaSettings>;
   wildlife?: Partial<HiveSettings>;
@@ -292,6 +325,7 @@ interface Saved extends Omit<
 function defaults(): Settings {
   return {
     world: { level: "meadow", mountains: levelById("meadow").mountains },
+    planting: { species: "cherry" },
     growth: { mode: "steer", flowRate: 1 },
     wind: { direction: 0, strength: 0, model: "steady" },
     weather: {
@@ -356,6 +390,7 @@ function isSaved(saved: unknown): saved is Saved {
   }
   const {
     world,
+    planting,
     growth,
     wind,
     weather,
@@ -374,6 +409,10 @@ function isSaved(saved: unknown): saved is Saved {
           LEVELS.some((level) => level.id === world.level)) &&
         (world.mountains === undefined ||
           typeof world.mountains === "boolean"))) &&
+    (planting === undefined ||
+      (isRecord(planting) &&
+        (planting.species === undefined ||
+          SPECIES.some((species) => species.id === planting.species)))) &&
     (bears === undefined ||
       (isRecord(bears) &&
         (bears.comes === undefined || typeof bears.comes === "boolean"))) &&
@@ -445,6 +484,8 @@ function load(): Saved | undefined {
 export class DebugPanel {
   /** Where the tree grows, read every frame. */
   readonly world: WorldSettings;
+  /** What is planted, read whenever a tree is planted. */
+  readonly planting: PlantingSettings;
   /** Live growth settings, read every frame. */
   readonly growth: Growth;
   /** Live wind settings. The wind reads these directly, so changes apply on the next frame. */
@@ -474,6 +515,8 @@ export class DebugPanel {
   simulationSpeed = 1;
   /** Called whenever the level changes, to grow a tree there afresh. */
   onLevel: (level: LevelId) => void = () => {};
+  /** Called whenever the species changes, to plant one of it afresh. */
+  onSpecies: (species: Species) => void = () => {};
   /** Called whenever the growth mode changes. */
   onGrowthMode: (mode: GrowthMode) => void = () => {};
   /** Called to finish building every hive at once. */
@@ -516,6 +559,8 @@ export class DebugPanel {
   private readonly seaNow: HTMLElement;
   private readonly models = new Map<WindModel, HTMLElement>();
   private readonly description: HTMLElement;
+  private readonly species = new Map<Species, HTMLElement>();
+  private readonly speciesDescription: HTMLElement;
   private readonly modes = new Map<GrowthMode, HTMLElement>();
   private readonly modeDescription: HTMLElement;
   private readonly flowRate: Slider;
@@ -523,6 +568,8 @@ export class DebugPanel {
   private readonly wood: Slider;
   private readonly roots: Slider;
   private readonly strainToggle: HTMLElement;
+  private readonly flowerTitle: HTMLElement;
+  private readonly flowerDescription: HTMLElement;
   private readonly placements = new Map<FlowerPlacement, HTMLElement>();
   private readonly placementDescription: HTMLElement;
   private readonly flowerSize: Slider;
@@ -540,6 +587,7 @@ export class DebugPanel {
     const saved = load();
     const settings = saved ?? defaults();
     this.world = { ...defaults().world, ...settings.world };
+    this.planting = { ...defaults().planting, ...settings.planting };
     this.growth = { ...settings.growth };
     this.wind = { ...settings.wind };
     this.weather = { ...defaults().weather, ...settings.weather };
@@ -743,6 +791,16 @@ export class DebugPanel {
     this.seaLinesDescription = element("p", "model-description", drawn);
 
     const tree = this.page("tree", card);
+    const kind = element("section", "debug-section", tree);
+    element("h2", "debug-title", kind, "Species");
+    const species = element("div", "models", kind);
+    for (const { id, name } of SPECIES) {
+      this.species.set(
+        id,
+        this.radioRow(species, name, () => this.setPlanting({ species: id })),
+      );
+    }
+    this.speciesDescription = element("p", "model-description", kind);
     const growth = element("section", "debug-section", tree);
     element("h2", "debug-title", growth, "Growth");
     const growthModes = element("div", "models", growth);
@@ -775,7 +833,8 @@ export class DebugPanel {
 
     const flowerPage = this.page("flowers", card);
     const flowers = element("section", "debug-section", flowerPage);
-    element("h2", "debug-title", flowers, "Flowers");
+    this.flowerTitle = element("h2", "debug-title", flowers);
+    this.flowerDescription = element("p", "model-description", flowers);
     const placements = element("div", "models", flowers);
     for (const placement of FLOWER_PLACEMENTS) {
       this.placements.set(
@@ -889,6 +948,17 @@ export class DebugPanel {
     this.save();
     if (this.world.level !== before) {
       this.onLevel(this.world.level);
+    }
+  }
+
+  /** Changes what is planted. A new species is planted afresh where the tree stands. */
+  setPlanting(settings: Partial<PlantingSettings>): void {
+    const before = this.planting.species;
+    Object.assign(this.planting, settings);
+    this.render();
+    this.save();
+    if (this.planting.species !== before) {
+      this.onSpecies(this.planting.species);
     }
   }
 
@@ -1006,8 +1076,10 @@ export class DebugPanel {
   private reset(): void {
     const before = this.growth.mode;
     const level = this.world.level;
+    const species = this.planting.species;
     const fresh = defaults();
     Object.assign(this.world, fresh.world);
+    Object.assign(this.planting, fresh.planting);
     Object.assign(this.growth, fresh.growth);
     Object.assign(this.wind, fresh.wind);
     Object.assign(this.weather, fresh.weather);
@@ -1027,6 +1099,8 @@ export class DebugPanel {
     }
     if (this.world.level !== level) {
       this.onLevel(this.world.level);
+    } else if (this.planting.species !== species) {
+      this.onSpecies(this.planting.species);
     }
   }
 
@@ -1140,6 +1214,15 @@ export class DebugPanel {
     invariant(style !== undefined, `Unknown way to draw the sea ${lines}.`);
     this.seaLinesDescription.textContent = style.description;
 
+    for (const [id, row] of this.species) {
+      row.classList.toggle("selected", id === this.planting.species);
+    }
+    const planted = SPECIES.find((s) => s.id === this.planting.species);
+    invariant(
+      planted !== undefined,
+      `Unknown species ${this.planting.species}.`,
+    );
+    this.speciesDescription.textContent = planted.description;
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);
     }
@@ -1167,7 +1250,11 @@ export class DebugPanel {
     }
     const placed = FLOWER_PLACEMENTS.find((p) => p.id === placement);
     invariant(placed !== undefined, `Unknown flower placement ${placement}.`);
-    this.placementDescription.textContent = placed.description;
+    this.placementDescription.textContent =
+      placed.description[this.planting.species];
+    const flowerKind = FLOWER_KINDS[this.planting.species];
+    this.flowerTitle.textContent = flowerKind.title;
+    this.flowerDescription.textContent = flowerKind.description;
     this.flowerSize.show(
       ratioToSlider(size, FLOWER_SIZE_RANGE),
       `×${size.toFixed(2)}`,
@@ -1197,6 +1284,7 @@ export class DebugPanel {
       open: this.open,
       tab: this.tab,
       world: this.world,
+      planting: this.planting,
       growth: this.growth,
       wind: this.wind,
       weather: this.weather,

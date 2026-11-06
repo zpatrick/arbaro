@@ -39,6 +39,8 @@ import { drawFarSea, drawSea, drawSpray } from "./sea-art";
 import type { Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
+import { drawFallingLeaves, drawWillow } from "./willow-art";
+import type { StrandHover, StrandView, WillowView } from "./willows";
 
 /** No limb renders thinner than this many CSS pixels across, so tips survive zooming out. */
 const MIN_WIDTH_PX = 1.1;
@@ -150,6 +152,10 @@ export interface Scene {
   flowers: readonly FlowerView[];
   /** What a shift-click would do to the flowers, while one is being lined up. */
   flowerHover: FlowerHover | undefined;
+  /** A willow's strands on the tree and those that came off it, and the leaves falling from them. */
+  willow: WillowView;
+  /** What a shift-click would do to a willow's strands, while one is being lined up. */
+  strandHover: StrandHover | undefined;
   /** In flow mode: the energy dots riding up the wood, and the spouts to mark. */
   flow:
     | {
@@ -369,6 +375,15 @@ export class Renderer {
       this.drawBarn(camera, world, scene.light);
     }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.far);
+    // Half a willow's strands hang behind its wood.
+    drawWillow(
+      this.ctx,
+      camera,
+      scene.willow,
+      false,
+      scene.light.flowerLight,
+      scene.light.ink,
+    );
 
     // Every ink shape is wound the same way and filled in one pass, so overlapping limbs read as
     // one silhouette and the grain lands on each pixel of ink exactly once. Fallen pieces join
@@ -454,6 +469,22 @@ export class Renderer {
         drawFlower(this.ctx, camera.dpr, look);
       }
     }
+    // The rest of a willow's strands hang in front of its wood and its hives.
+    drawWillow(
+      this.ctx,
+      camera,
+      scene.willow,
+      true,
+      scene.light.flowerLight,
+      scene.light.ink,
+    );
+    drawFallingLeaves(
+      this.ctx,
+      camera,
+      scene.willow.leaves,
+      scene.light.flowerLight,
+      scene.light.ink,
+    );
     drawBees(this.ctx, camera, scene.bees, scene.light);
     this.drawBears(camera, world, scene.bears, scene.light, sky);
     if (scene.sea.present) {
@@ -492,6 +523,46 @@ export class Renderer {
       this.ctx.lineWidth = 1.25;
       this.ring(middle, 0.55, 0.62 * target.size * camera.scale + 3);
     }
+    if (scene.strandHover?.ghost !== undefined) {
+      drawWillow(
+        this.ctx,
+        camera,
+        {
+          strands: [scene.strandHover.ghost],
+          leaves: [],
+          time: scene.willow.time,
+        },
+        true,
+        scene.light.flowerLight,
+        scene.light.ink,
+      );
+    }
+    if (scene.strandHover?.target !== undefined) {
+      this.ringStrand(camera, scene.strandHover.target);
+    }
+  }
+
+  /** Rings the upper part of a strand, where it hangs from its wood, to show it would be knocked off. */
+  private ringStrand(camera: Camera, strand: StrandView): void {
+    const points = strand.points.map((p) => camera.toScreen(p.x, p.y));
+    const first = at(points, 0);
+    let left = first.x;
+    let right = first.x;
+    let top = first.y;
+    let bottom = first.y;
+    for (const p of points) {
+      left = Math.min(left, p.x);
+      right = Math.max(right, p.x);
+      top = Math.min(top, p.y);
+      bottom = Math.max(bottom, p.y);
+    }
+    this.ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    this.ctx.lineWidth = 1.25;
+    this.ring(
+      { x: (left + right) / 2, y: (top + bottom) / 2 },
+      0.55,
+      0.5 * Math.hypot(right - left, bottom - top) + 4,
+    );
   }
 
   /**

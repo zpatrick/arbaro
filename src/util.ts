@@ -61,6 +61,12 @@ export function valueNoise2(x: number, y: number, seed: number): number {
   return lerp(bottom, top, uy) * 2 - 1;
 }
 
+/** A number from 0 to 1 that looks random, fixed for each `i` and `seed`. */
+export function hash(i: number, seed: number): number {
+  const x = Math.sin(i * 12.9898 + seed * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 /** Wraps an angle into (-PI, PI]. */
 export function wrapAngle(angle: number): number {
   return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));

@@ -9,6 +9,7 @@ import {
   type Strength,
   TreePhysics,
 } from "./physics";
+import { type Habit, HABITS, type Species } from "./species";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import type { Wind } from "./wind";
 
@@ -173,6 +174,9 @@ export class Tree {
   readonly baseX: number;
   /** Where the tree grows, whose ground and barn its tips stop short of. */
   readonly level: Level;
+  /** What kind of tree it is, which sets how its limbs grow and what grows on its thin wood. */
+  readonly species: Species;
+  private readonly habit: Habit;
   /** Per-side scale on the root flare, so no two trees meet the ground identically. */
   private readonly flareScale: { left: number; right: number };
   readonly root: Limb;
@@ -184,16 +188,18 @@ export class Tree {
   blocked: Obstacle | undefined;
   private readonly seed: number;
 
-  constructor(baseX: number, seed: number, level: Level) {
+  constructor(baseX: number, seed: number, level: Level, species: Species) {
     this.baseX = baseX;
     this.seed = seed;
     this.level = level;
+    this.species = species;
+    this.habit = HABITS[species];
     const rng = new Rng(seed);
     this.flareScale = {
       left: rng.range(0.85, 1.2),
       right: rng.range(0.85, 1.2),
     };
-    this.root = new Limb(undefined, 0.3, seed);
+    this.root = new Limb(undefined, 0.3, seed, this.habit);
     this.root.sprout(LIMB.sproutLength);
     this.limbs = [this.root];
     this.active = this.root;
@@ -466,6 +472,7 @@ export class Tree {
       { parent, s: forkS, angle: heading - parentHeading },
       parentRadius * FORK_STRAIGHT,
       this.seed * 31 + this.limbs.length,
+      this.habit,
     );
     child.sprout(parentRadius * FORK_SPROUT.radii + FORK_SPROUT.stem * size);
     parent.children.push(child);
@@ -488,8 +495,8 @@ export class Tree {
   forkHeading(limb: Limb, s: number, side: 1 | -1): number {
     const heading = limb.restPointAt(s).heading;
     const lean = Math.min(
-      LIMB.maxLean,
-      Math.max(LIMB.freeLean, Math.abs(heading - UPRIGHT)),
+      this.habit.maxLean,
+      Math.max(this.habit.freeLean, Math.abs(heading - UPRIGHT)),
     );
     const limit = lean + FORK_LEAN_ALLOWANCE;
     return clamp(

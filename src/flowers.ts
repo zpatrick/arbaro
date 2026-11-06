@@ -1266,7 +1266,7 @@ function bend(
  * The innermost point along `limb` where its wood is no thicker than `girth`, or nothing if none
  * is. A limb thins steadily toward its tip, so everything beyond that point is thinner still.
  */
-function thinFrom(limb: Limb, girth: number): number | undefined {
+export function thinFrom(limb: Limb, girth: number): number | undefined {
   if (limb.radiusAt(limb.length) > girth) {
     return undefined;
   }
@@ -1381,11 +1381,12 @@ function ageOf(traits: Traits, season: number): number {
 }
 
 /** Turns `from` a fraction `t` of the way toward `to`, the short way around. */
-function turnToward(from: number, to: number, t: number): number {
+export function turnToward(from: number, to: number, t: number): number {
   return from + wrapAngle(to - from) * t;
 }
 
-function along(p: Vec, angle: number, distance: number): Vec {
+/** The point `distance` from `p` the way `angle` heads. */
+export function along(p: Vec, angle: number, distance: number): Vec {
   return {
     x: p.x + Math.cos(angle) * distance,
     y: p.y + Math.sin(angle) * distance,

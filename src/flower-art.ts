@@ -1,6 +1,6 @@
 import { middleReach } from "./flowers";
 import { lit, mix, type Rgb } from "./sky";
-import { at, clamp, lerp, smoothstep } from "./util";
+import { at, clamp, hash, lerp, smoothstep } from "./util";
 import { SNOW_COLOR } from "./weather";
 
 /** Snow lying on a flower as deep as it holds hides this much of its color. */
@@ -754,12 +754,6 @@ function oval(
 ): void {
   path.moveTo(x + rx * Math.cos(turn), y + rx * Math.sin(turn));
   path.ellipse(x, y, rx, ry, turn, 0, Math.PI * 2);
-}
-
-/** A number from 0 to 1 that looks random, fixed for each `i` and `seed`. */
-function hash(i: number, seed: number): number {
-  const x = Math.sin(i * 12.9898 + seed * 78.233) * 43758.5453;
-  return x - Math.floor(x);
 }
 
 /** A cherry blossom of a cluster, in the cluster's units. */
