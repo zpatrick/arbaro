@@ -141,9 +141,13 @@ export interface Scene {
   mountains: boolean;
   /** Whether the hills of a level with hills are drawn in their colors. */
   hillColors: boolean;
-  /** The grass and meadow flowers on the ground, and whether the grass is drawn in its colors. */
+  /**
+   * The grass and meadow flowers on the ground, whether the grass is drawn in its colors, and how
+   * tall it grows, as a multiple of its usual height.
+   */
   grass: Grass;
   grassColors: boolean;
+  grassHeight: number;
   /** The light at this time of day. */
   light: SkyLight;
   /** The time of year, from midsummer at 0 to midwinter at 1. */
@@ -466,6 +470,7 @@ export class Renderer {
       time: scene.clock,
       colors: scene.grassColors,
       hillColors: scene.hillColors,
+      height: scene.grassHeight,
     };
     // Most of the grass stands behind what is on the ground, and the rest in front of it.
     drawGrass(

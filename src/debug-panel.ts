@@ -26,6 +26,8 @@ import {
 const STORAGE_KEY = "arbaro.debug.v7";
 /** Strength sliders run from a quarter to four times normal, evenly in ratio. */
 const STRENGTH_RANGE = 4;
+/** The grass height slider runs from a third to three times the usual height, evenly in ratio. */
+const GRASS_HEIGHT_RANGE = 3;
 /** The flower size slider runs from a fifth to five times the usual size, evenly in ratio. */
 const FLOWER_SIZE_RANGE = 5;
 /** Fastest flow the slider allows, as a multiple of the usual flow. */
@@ -250,14 +252,16 @@ const HEADINGS = [
 ];
 
 /**
- * Where the tree grows: the level, whether mountains line its horizon, and whether the hills and
- * the grass of a level with them are drawn in their colors.
+ * Where the tree grows: the level, whether mountains line its horizon, whether the hills and the
+ * grass of a level with them are drawn in their colors, and how tall the grass grows, as a
+ * multiple of its usual height.
  */
 export interface WorldSettings {
   level: LevelId;
   mountains: boolean;
   hillColors: boolean;
   grassColors: boolean;
+  grassHeight: number;
 }
 
 /** What is planted: the species of every tree grown afresh. */
@@ -309,6 +313,7 @@ function defaults(): Settings {
       mountains: levelById("meadow").mountains,
       hillColors: true,
       grassColors: false,
+      grassHeight: 1,
     },
     planting: { species: "cherry" },
     growth: { mode: "steer", flowRate: 1 },
@@ -396,7 +401,8 @@ function isSaved(saved: unknown): saved is Saved {
         (world.hillColors === undefined ||
           typeof world.hillColors === "boolean") &&
         (world.grassColors === undefined ||
-          typeof world.grassColors === "boolean"))) &&
+          typeof world.grassColors === "boolean") &&
+        (world.grassHeight === undefined || isNumber(world.grassHeight)))) &&
     (planting === undefined ||
       (isRecord(planting) &&
         (planting.species === undefined ||
@@ -522,7 +528,9 @@ export class DebugPanel {
   private readonly levelDescription: HTMLElement;
   private readonly mountainsToggle: HTMLElement;
   private readonly hillColorsToggle: HTMLElement;
+  private readonly grassSection: HTMLElement;
   private readonly grassColorsToggle: HTMLElement;
+  private readonly grassHeight: Slider;
   private readonly timeOfDay: Slider;
   private readonly dayToggle: HTMLElement;
   private readonly season: Slider;
@@ -637,8 +645,15 @@ export class DebugPanel {
     this.hillColorsToggle = this.toggleRow(where, "Colors in the hills", () =>
       this.setWorld({ hillColors: !this.world.hillColors }),
     );
-    this.grassColorsToggle = this.toggleRow(where, "Colors in the grass", () =>
-      this.setWorld({ grassColors: !this.world.grassColors }),
+    this.grassSection = element("section", "debug-section", levelPage);
+    element("h2", "debug-title", this.grassSection, "Grass");
+    this.grassColorsToggle = this.toggleRow(
+      this.grassSection,
+      "Colors in the grass",
+      () => this.setWorld({ grassColors: !this.world.grassColors }),
+    );
+    this.grassHeight = new Slider(this.grassSection, "Height", (value) =>
+      this.setWorld({ grassHeight: sliderToRatio(value, GRASS_HEIGHT_RANGE) }),
     );
 
     const weather = this.page("weather", card);
@@ -1131,9 +1146,12 @@ export class DebugPanel {
     this.hillColorsToggle.hidden =
       levelById(this.world.level).hills.length === 0;
     this.hillColorsToggle.classList.toggle("selected", this.world.hillColors);
-    this.grassColorsToggle.hidden =
-      levelById(this.world.level).grass.length === 0;
+    this.grassSection.hidden = levelById(this.world.level).grass.length === 0;
     this.grassColorsToggle.classList.toggle("selected", this.world.grassColors);
+    this.grassHeight.show(
+      ratioToSlider(this.world.grassHeight, GRASS_HEIGHT_RANGE),
+      `×${this.world.grassHeight.toFixed(2)}`,
+    );
 
     this.showTimeOfDay();
     this.dayToggle.classList.toggle("selected", this.time.dayRunning);

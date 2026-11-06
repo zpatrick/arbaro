@@ -108,9 +108,9 @@ const SHORTEST_PX = 1.5;
 type Batches = Map<string, { color: Rgb; path: Path2D }>;
 
 /**
- * Draws the grass and meadow flowers on `level`'s ground, within `above`, everything above the
- * ground in device pixels: the blades behind everything standing on the ground, or if `front`,
- * those in front of it. Each blade is a fine stroke tapering to its tip,
+ * Draws the grass and meadow flowers on `level`'s ground, `look.height` times as tall as usual,
+ * within `above`, everything above the ground in device pixels: the blades behind everything
+ * standing on the ground, or if `front`, those in front of it. Each blade is a fine stroke tapering to its tip,
  * in the ground's own ink, or the sand of a hill drawn in its colors, unless `colors`, when it is
  * green at midsummer, turning to straw and bare earth through the fall and winter. Meadow flowers
  * are always in their colors, as the tree's are.
@@ -127,13 +127,14 @@ export function drawGrass(
     time: number;
     colors: boolean;
     hillColors: boolean;
+    height: number;
   },
   front: boolean,
 ): void {
   const { season, time } = look;
   const left = camera.toWorld(0, 0).x - 1.5;
   const right = camera.toWorld(camera.width, 0).x + 1.5;
-  const tall = growthAt(season);
+  const tall = growthAt(season) * look.height;
   const wilt = wiltAt(season);
   const bloom = 1 - smoothstep(0.35, 0.7, season);
   const blades: Batches = new Map();

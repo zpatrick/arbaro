@@ -270,6 +270,8 @@ Three kinds of grass, each after its photo:
 - [x] A grass colors toggle in the debug panel. Off, the grass is the same color as the ground under
       it. On, the grass is green in summer and changes through autumn and winter, toward straw and
       then bare earth, as the fields do.
+- [x] A grass height slider in the debug panel, beside the colors toggle, grows every kind of grass
+      and its flowers from a third to three times their usual height.
 
 ### Wind, snow and weight
 

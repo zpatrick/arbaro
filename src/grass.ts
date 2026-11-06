@@ -157,9 +157,9 @@ export class Grass {
   }
 
   /**
-   * Moves the grass on by `dt` seconds at `season`: each strip leans with the air moving across it
-   * and sways back, and lies down under the snow over it and under `pieces` resting on it, springing
-   * back slowly once they are gone.
+   * Moves the grass on by `dt` seconds at `season`, growing `height` times as tall as usual: each
+   * strip leans with the air moving across it and sways back, and lies down under the snow over it
+   * and under `pieces` resting on it, springing back slowly once they are gone.
    */
   update(
     dt: number,
@@ -167,13 +167,17 @@ export class Grass {
     cover: SnowCover,
     pieces: readonly Debris[],
     season: number,
+    height: number,
   ): void {
-    const tall = growthAt(season);
+    const tall = growthAt(season) * height;
     const weighed = this.weighed(pieces, tall);
     for (const [i, strip] of this.strips.entries()) {
       const kind = KINDS[strip.kind];
-      const height = kind.height.to * tall;
-      const air = wind.at(strip.x, strip.ground + height / 2, i);
+      const air = wind.at(
+        strip.x,
+        strip.ground + (kind.height.to * tall) / 2,
+        i,
+      );
       const target = clamp(kind.bend * air.x * Math.abs(air.x), -FLAT, FLAT);
       const omega = 2 * Math.PI * kind.sway;
       strip.rate +=

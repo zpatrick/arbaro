@@ -541,6 +541,7 @@ function step(dt: number, controls: Controls): void {
     weather.cover,
     [...debris, ...hives.fallenHives()],
     panel.time.season,
+    panel.world.grassHeight,
   );
 }
 
@@ -797,6 +798,7 @@ function frame(now: number): void {
     hillColors: panel.world.hillColors,
     grass,
     grassColors: panel.world.grassColors,
+    grassHeight: panel.world.grassHeight,
     light,
     season: panel.time.season,
     clock,
