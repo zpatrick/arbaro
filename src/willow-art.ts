@@ -29,8 +29,11 @@ const LIVING: { base: Rgb; tip: Rgb } = {
   tip: [204, 214, 116],
 };
 
-/** The pale, silvery underside a leaf shows when the wind turns it over. */
-const SILVER: Rgb = [200, 207, 188];
+/**
+ * The pale underside a leaf shows when the wind turns it over: its middle tone, cooled and paled
+ * `toward` of the way to `sage`, so a turned leaf glints and the tree stays green.
+ */
+const UNDERSIDE = { sage: [208, 222, 196] as Rgb, toward: 0.45 };
 
 /** A color leaves turn late in the year, blending in over its span of the year. */
 interface Stage {
@@ -54,14 +57,20 @@ const AUTUMN: readonly Stage[] = [
 /**
  * The shadow, middle and light tones leaves are painted in: so far from a leaf's color where it
  * leaves the twig toward the color at its tip, then darkened to `shade`. The fourth is the
- * silvered underside of a leaf the wind has turned over.
+ * underside of a leaf the wind has turned over.
  */
 const TONES: readonly { toTip: number; shade: number }[] = [
   { toTip: 0.12, shade: 0.88 },
   { toTip: 0.5, shade: 1 },
   { toTip: 0.9, shade: 1 },
 ];
-const SILVER_TONE = TONES.length;
+const UNDERSIDE_TONE = TONES.length;
+
+/**
+ * The order the tones are painted in: a turned leaf under the light ones, so it glints through
+ * them rather than covering them.
+ */
+const PAINT_ORDER = [0, 1, UNDERSIDE_TONE, 2] as const;
 
 /**
  * Leaves turn a little earlier or later than their strand, by up to `LEAVES.turns`. They are
@@ -129,9 +138,10 @@ const DETAIL = {
 /**
  * How leaves move in the wind: each streams toward the way it blows by up to `stream`, and flutters
  * by up to `angle` radians, both at full strength in a wind of `full` meters per second; and the
- * wind turns over up to `flip` of them at a time to show their silver undersides.
+ * wind turns each over now and then for a moment to show its pale underside, as many as `flip` of
+ * them at a time in a full wind and few in a breeze.
  */
-const FLUTTER = { stream: 0.55, angle: 0.42, full: 14, flip: 0.85 } as const;
+const FLUTTER = { stream: 0.55, angle: 0.42, full: 14, flip: 0.25 } as const;
 
 /** A twig is never drawn thinner than this, in CSS pixels, nor fainter than `TWIG_FAINTEST`. */
 const TWIG_THINNEST_PX = 0.55;
@@ -720,8 +730,9 @@ function leafPaths(paints: Paints, strand: StrandView): Path2D[][] {
   const snow = Math.round(strand.snow * 10) / 10;
   const alpha = Math.round(strand.alpha * 20) / 20;
   const shade = strand.front ? 1 : MARKS.behind;
-  return [...TONES.keys(), SILVER_TONE].map((tone) =>
-    Array.from({ length: TURN_STEPS }, (_, step) =>
+  const paths: Path2D[][] = [];
+  for (const tone of PAINT_ORDER) {
+    paths[tone] = Array.from({ length: TURN_STEPS }, (_, step) =>
       batchFor(
         paints.batches,
         `${tone} ${step} ${age} ${snow} ${alpha} ${strand.front}`,
@@ -733,8 +744,9 @@ function leafPaths(paints: Paints, strand: StrandView): Path2D[][] {
           };
         },
       ),
-    ),
-  );
+    );
+  }
+  return paths;
 }
 
 /**
@@ -759,6 +771,7 @@ function addLeaves(
   const covers = every * LEAVES.spacing * 1.25;
   const speed = Math.hypot(strand.air.x, strand.air.y);
   const strength = Math.min(1, speed / FLUTTER.full);
+  const turned = FLUTTER.flip * strength * strength;
   // The way the wind blows, on screen.
   const downwind = speed > 0 ? Math.atan2(-strand.air.y, strand.air.x) : 0;
   const catkinsShow = strand.age < CATKINS.drop;
@@ -807,10 +820,10 @@ function addLeaves(
     );
     // A hanging leaf droops: most curl down toward the ground.
     const curl = 0.7 * Math.abs(leaf.curl) * Math.sign(way.x) + 0.3 * leaf.curl;
+    // Each leaf turns over once a second or two, for `turned` of the time.
     const flipped =
-      Math.sin(time * (2.2 + 3 * leaf.variant) + leaf.variant * 41) >
-      1 - FLUTTER.flip * strength;
-    const tone = flipped ? SILVER_TONE : toneOf(leaf, strand);
+      (time * (0.5 + 0.6 * leaf.variant) + leaf.variant * 7.3) % 1 < turned;
+    const tone = flipped ? UNDERSIDE_TONE : toneOf(leaf, strand);
     const path = at(at(paths, tone), turnStep(leaf));
     addLeaf(path, placed.p, way, shown, width, curl, shown >= MARKS.shapedPx);
     if (outlined < detail && outlineKey > 0 && stretch === 1) {
@@ -1144,9 +1157,8 @@ function fillBatches(
 function leafColors(
   age: number,
   snow: number,
-): { base: Rgb; tip: Rgb; silver: Rgb } {
+): { base: Rgb; tip: Rgb; underside: Rgb } {
   let { base, tip } = LIVING;
-  let silver = SILVER;
   for (const stage of AUTUMN) {
     const t = smoothstep(stage.from, stage.to, age);
     if (t <= 0) {
@@ -1154,23 +1166,23 @@ function leafColors(
     }
     base = mix(base, stage.base, t);
     tip = mix(tip, stage.tip, t);
-    silver = mix(silver, stage.tip, t);
   }
+  const underside = mix(mix(base, tip, 0.5), UNDERSIDE.sage, UNDERSIDE.toward);
   const cover = SNOW_COVER * snow;
   return {
     base: mix(base, SNOW_COLOR, cover),
     tip: mix(tip, SNOW_COLOR, cover),
-    silver: mix(silver, SNOW_COLOR, cover),
+    underside: mix(underside, SNOW_COLOR, cover),
   };
 }
 
 /** The color of `tone` among a leaf's `colors`. */
 function toneColor(
-  colors: { base: Rgb; tip: Rgb; silver: Rgb },
+  colors: { base: Rgb; tip: Rgb; underside: Rgb },
   tone: number,
 ): Rgb {
-  if (tone === SILVER_TONE) {
-    return colors.silver;
+  if (tone === UNDERSIDE_TONE) {
+    return colors.underside;
   }
   const { toTip, shade } = at(TONES, tone);
   const color = mix(colors.base, colors.tip, toTip);

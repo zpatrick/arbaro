@@ -157,8 +157,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       growing tip. The other threads of its cascade hang from along its arch, each down to about
       where the strand ends, a little shorter or longer, swinging with it, fanned out a little and
       waving a little on their own, more in a wind.
-- [x] Leaves stream toward the way the wind blows and flutter in it, and the wind turns them
-      over to show their pale, silvery undersides, more of them the harder it blows.
+- [x] Leaves stream toward the way the wind blows and flutter in it, and now and then the wind
+      turns one over for a moment to show its pale, sage underside: hardly any in a breeze, more
+      the harder it blows, and never so many the tree stops looking green.
 - [x] Seen from afar, every leaf is a fine flat mark with no outline, like hatching, in a
       shadow, middle or light tone: lighter high on a strand, on strands open to the sky and on
       those hanging in front of the wood. Half the strands hang behind the wood, in its shade.
