@@ -9,22 +9,17 @@ import type { Wind } from "./wind";
 
 /** The hives, as the debug panel sets them. */
 export interface HiveSettings {
-  /** Size of every hive, from 1 as it is first built to 4 fully grown. */
-  size: number;
   /** Whether bees come to a tree in flower on their own. */
   swarms: boolean;
 }
 
-/**
- * Hives the bees build, hanging under a limb like a bell. All sizes are in meters and kilograms, at
- * a hive size of one.
- */
+/** Hives the bees build, hanging under a limb like a bell. All sizes are in meters and kilograms. */
 export const HIVE = {
-  /** Height and widest width of a hive. */
-  height: 0.42,
-  width: 0.32,
-  /** Mass of a hive, comb and honey and bees, which grows with the cube of its size. */
-  mass: 2.5,
+  /** Height and widest width of a finished hive. */
+  height: 0.36,
+  width: 0.27,
+  /** Mass of a finished hive, comb and honey and bees. */
+  mass: 1.5,
   /** Seconds the bees take to build a hive: half a day; or when it is finished by hand. */
   build: 90,
   rush: 2,
@@ -38,23 +33,20 @@ export const HIVE = {
   minRadius: 0.03,
   /** Steepest wood bees hang a hive from, in radians from level. */
   steepest: 0.9,
-  /** A hive grown to full size still hangs this far clear of the ground. */
+  /** A finished hive still hangs this far clear of the ground. */
   clearance: 0.5,
   /** Bees build no nearer than this to where a limb starts or to its tip, in meters. */
   clearOfEnds: 0.6,
-  /** A hive grown to full size hangs at least this far clear of any other wood. */
+  /** A finished hive hangs at least this far clear of any other wood. */
   clearOfWood: 0.12,
   /** Bees settle where at least this many flowers grow within `forage` meters. */
   nearFlowers: 6,
   forage: 4,
   /**
-   * Pull the comb holds against where it hangs from the wood, in newtons, and the power of the
-   * hive's size it grows with: slower than its weight, which grows with the cube, so a hive as
-   * first built holds three times its weight and gives way only in a hurricane, and one grown to
-   * full size holds barely half again its weight and comes down when the wood is shaken hard.
+   * Pull the comb holds against where it hangs from the wood, in newtons: three times a finished
+   * hive's weight, so the wind alone tears it loose only in a hurricane.
    */
-  hold: 70,
-  holdGrowth: 2.55,
+  hold: 46,
   /** Damage per second while the comb is pulled at its limit, and more for each multiple over it. */
   damageAtLimit: 0.6,
   damagePerOverload: 3,
@@ -81,7 +73,7 @@ export const HIVE = {
   /** Bees flying about a finished hive, and about one being built. */
   bees: 8,
   builders: 5,
-  /** Bees that pour out of a provoked hive at size one, all of them stinging. */
+  /** Bees that pour out of a provoked hive, all of them stinging. */
   guards: 16,
   /** Seconds a provoked hive's bees keep at whatever provoked them, after it last did. */
   anger: 12,
@@ -137,13 +129,7 @@ const BEE = {
 } as const;
 
 type Doing =
-  | "inside"
-  | "out"
-  | "visiting"
-  | "home"
-  | "building"
-  | "diving"
-  | "regrouping";
+  "inside" | "out" | "visiting" | "home" | "building" | "diving" | "regrouping";
 
 interface Bee {
   x: number;
@@ -315,15 +301,15 @@ export class Hives {
   }
 
   /** The hives hanging on the tree, as a bear sees them. */
-  targets(settings: HiveSettings): HiveTarget[] {
+  targets(): HiveTarget[] {
     return this.hives.map((hive) => {
-      const view = this.viewOf(hive, settings);
+      const view = this.viewOf(hive);
       return {
         view,
         limb: hive.limb,
         s: hive.s,
         contains: (point, margin) => inside(view, point, margin),
-        strike: (velocity, mass) => this.strike(hive, settings, velocity, mass),
+        strike: (velocity, mass) => this.strike(hive, velocity, mass),
         provoke: () => {
           hive.provoked = HIVE.anger;
         },
@@ -339,21 +325,20 @@ export class Hives {
    */
   private strike(
     hive: Hive,
-    settings: HiveSettings,
     velocity: { x: number; y: number },
     mass: number,
   ): void {
-    const hiveMass = massOf(hive, settings.size);
+    const hiveMass = massOf(hive);
     const shared = (mass * hiveMass) / (mass + hiveMass);
     const impulse = {
       x: shared * (1 + BLOW.bounce) * velocity.x,
       y: shared * (1 + BLOW.bounce) * velocity.y,
     };
     const pull = Math.hypot(impulse.x, impulse.y) / BLOW.contact;
-    const hold = holdOf(settings.size, this.holding);
+    const hold = HIVE.hold * this.holding;
     hive.damage += (pull / hold) ** 2;
     // Struck below where it hangs, it swings away from the blow.
-    const reach = this.viewOf(hive, settings).height / 2;
+    const reach = this.viewOf(hive).height / 2;
     const across =
       impulse.x * Math.cos(hive.swing) + impulse.y * Math.sin(hive.swing);
     hive.swingRate += across / (hiveMass * reach);
@@ -373,22 +358,22 @@ export class Hives {
   }
 
   /** The weight of the hives still hanging on the tree, which their limbs carry. */
-  loads(tree: Tree, settings: HiveSettings): Load[] {
+  loads(tree: Tree): Load[] {
     return this.hives
       .filter((hive) => attached(tree, hive))
       .map((hive) => ({
         limb: hive.limb,
         s: hive.s,
-        mass: massOf(hive, settings.size),
+        mass: massOf(hive),
       }));
   }
 
   /** The hives still hanging on the tree, as catchers of falling snow, on their shoulders. */
-  catchers(tree: Tree, settings: HiveSettings): Catcher[] {
+  catchers(tree: Tree): Catcher[] {
     return this.hives
       .filter((hive) => attached(tree, hive))
       .map((hive) => {
-        const view = this.viewOf(hive, settings);
+        const view = this.viewOf(hive);
         const shoulders = along(view, 0.45);
         const width = view.width;
         return {
@@ -427,12 +412,12 @@ export class Hives {
         tree === undefined ||
         !attached(tree, hive) ||
         hive.damage >= 1 ||
-        this.hang(dt, tree, hive, settings, conditions)
+        this.hang(dt, tree, hive, conditions)
       ) {
-        fallen.push(this.fall(hive, settings));
+        fallen.push(this.fall(hive));
         continue;
       }
-      this.fly(dt, hive, settings, conditions);
+      this.fly(dt, hive, conditions);
       kept.push(hive);
     }
     this.hives = kept;
@@ -448,7 +433,7 @@ export class Hives {
     }
     this.strays = this.strays.filter((bee) => bee.timer > 0);
     if (tree !== undefined && settings.swarms) {
-      this.swarm(dt, tree, settings, conditions.blooms);
+      this.swarm(dt, tree, conditions.blooms);
     } else {
       this.swarmIn = undefined;
     }
@@ -456,9 +441,9 @@ export class Hives {
   }
 
   /** The hives where they hang, then those that fell where they lie, for drawing. */
-  views(settings: HiveSettings): HiveView[] {
+  views(): HiveView[] {
     return [
-      ...this.hives.map((hive) => this.viewOf(hive, settings)),
+      ...this.hives.map((hive) => this.viewOf(hive)),
       ...this.fallen.map(({ piece, view }) => {
         // Carried as the piece is from where it fell to where it lies.
         const placed = piece.transform;
@@ -505,7 +490,6 @@ export class Hives {
   private swarm(
     dt: number,
     tree: Tree,
-    settings: HiveSettings,
     blooms: readonly { x: number; y: number }[],
   ): void {
     const drawn = Math.floor(blooms.length / HIVE.flowersPerHive);
@@ -519,7 +503,7 @@ export class Hives {
       return;
     }
     this.swarmIn = undefined;
-    const site = this.site(tree, settings, blooms);
+    const site = this.site(tree, blooms);
     if (site !== undefined) {
       this.place(site.limb, site.s);
     }
@@ -528,11 +512,9 @@ export class Hives {
   /** The best place on `tree` to build a hive, if there is one. */
   private site(
     tree: Tree,
-    settings: HiveSettings,
     blooms: readonly { x: number; y: number }[],
   ): { limb: Limb; s: number } | undefined {
     const anchors = this.hives.map((hive) => hive.anchor);
-    const tallest = HIVE.height * settings.size;
     let best: { limb: Limb; s: number; score: number } | undefined;
     for (const limb of tree.limbs) {
       for (
@@ -544,7 +526,7 @@ export class Hives {
         const above = p.y - tree.level.groundAt(p.x);
         const sturdy = limb.radiusAt(s) >= HIVE.minRadius;
         const level = Math.abs(Math.cos(p.heading)) >= Math.cos(HIVE.steepest);
-        const clear = above - limb.radiusAt(s) - tallest >= HIVE.clearance;
+        const clear = above - limb.radiusAt(s) - HIVE.height >= HIVE.clearance;
         const apart = anchors.every(
           (a) => Math.hypot(a.x - p.x, a.y - p.y) >= HIVE.spacing,
         );
@@ -557,7 +539,7 @@ export class Hives {
           !clear ||
           !apart ||
           near < HIVE.nearFlowers ||
-          !this.open(tree, limb, s, settings)
+          !this.open(tree, limb, s)
         ) {
           continue;
         }
@@ -572,23 +554,18 @@ export class Hives {
   }
 
   /**
-   * Whether a hive grown to full size, hanging `s` along `limb`, would hang in open air: clear of
-   * any other wood, the ground, and the barn if there is one.
+   * Whether a finished hive, hanging `s` along `limb`, would hang in open air: clear of any other
+   * wood, the ground, and the barn if there is one.
    */
-  private open(
-    tree: Tree,
-    limb: Limb,
-    s: number,
-    settings: HiveSettings,
-  ): boolean {
+  private open(tree: Tree, limb: Limb, s: number): boolean {
     const anchor = anchorOn(limb, s);
     const view: HiveView = {
       x: anchor.x,
       y: anchor.y,
       grip: 0,
       swing: 0,
-      height: HIVE.height * settings.size,
-      width: HIVE.width * settings.size,
+      height: HIVE.height,
+      width: HIVE.width,
       snow: 0,
       alpha: 1,
     };
@@ -619,7 +596,6 @@ export class Hives {
     dt: number,
     tree: Tree,
     hive: Hive,
-    settings: HiveSettings,
     conditions: HiveConditions,
   ): boolean {
     hive.built = Math.min(
@@ -628,12 +604,12 @@ export class Hives {
     );
     hive.anchor = anchorOn(hive.limb, hive.s);
     const melted = Math.min(
-      snowHeld(this.viewOf(hive, settings).width),
+      snowHeld(this.viewOf(hive).width),
       hive.snow * Math.exp(-conditions.melt * dt),
     );
     hive.snow = melted < hive.snow && melted < SNOW_TRACE ? 0 : melted;
 
-    const view = this.viewOf(hive, settings);
+    const view = this.viewOf(hive);
     const { anchor } = hive;
     const moving = tree.physics.velocityAt(
       hive.limb,
@@ -650,7 +626,7 @@ export class Hives {
           };
     hive.last = { x: moving.x, y: moving.y };
 
-    const mass = massOf(hive, settings.size);
+    const mass = massOf(hive);
     const middle = along(view, 0.5);
     const air = conditions.wind.at(middle.x, middle.y, 0);
     const rx = air.x - moving.x;
@@ -683,7 +659,7 @@ export class Hives {
           gy * Math.cos(swing) +
           reach * hive.swingRate ** 2,
       );
-    const hold = holdOf(settings.size, conditions.hold);
+    const hold = HIVE.hold * conditions.hold;
     hive.swinging = Math.max(
       Math.abs(hive.swingRate) / Math.sqrt(GRAVITY / reach),
       hive.swinging * Math.exp(-dt / HIVE.settle),
@@ -708,13 +684,8 @@ export class Hives {
    * provoked, every bee pours out with guards behind them and dives at whatever provoked it while
    * it stays near, stings it, hangs back a moment and dives again, until the hive calms down.
    */
-  private fly(
-    dt: number,
-    hive: Hive,
-    settings: HiveSettings,
-    conditions: HiveConditions,
-  ): void {
-    const view = this.viewOf(hive, settings);
+  private fly(dt: number, hive: Hive, conditions: HiveConditions): void {
+    const view = this.viewOf(hive);
     const door = along(view, 0.82);
     const finished = hive.built >= 1;
     const threat =
@@ -723,9 +694,9 @@ export class Hives {
         : undefined;
     const wanted = !finished
       ? Math.round(HIVE.builders * smoothstep(0, 0.1, hive.built))
-      : Math.round(
-          (threat === undefined ? HIVE.bees : HIVE.guards) * settings.size,
-        );
+      : threat === undefined
+        ? HIVE.bees
+        : HIVE.guards;
     while (hive.bees.length < wanted) {
       hive.bees.push({
         x: door.x,
@@ -932,11 +903,8 @@ export class Hives {
    * as it fell. The piece carries no ink of its own; the hive is drawn in its colors wherever the
    * piece takes it.
    */
-  private fall(
-    hive: Hive,
-    settings: HiveSettings,
-  ): { piece: Debris; view: HiveView } {
-    const view = this.viewOf(hive, settings);
+  private fall(hive: Hive): { piece: Debris; view: HiveView } {
+    const view = this.viewOf(hive);
     for (const bee of hive.bees) {
       const angle = this.rng.next() * Math.PI * 2;
       this.strays.push({
@@ -948,7 +916,7 @@ export class Hives {
         timer: BEE.scatter * (0.5 + 0.5 * this.rng.next()),
       });
     }
-    const mass = massOf(hive, settings.size);
+    const mass = massOf(hive);
     const points = outlinePoints(view);
     const xs = points.map((p) => p.x);
     const ys = points.map((p) => p.y);
@@ -985,16 +953,16 @@ export class Hives {
     };
   }
 
-  private viewOf(hive: Hive, settings: HiveSettings): HiveView {
+  private viewOf(hive: Hive): HiveView {
     const { anchor } = hive;
     const grown = smoothstep(0, 1, hive.built);
-    const width = HIVE.width * settings.size * lerp(0.25, 1, grown);
+    const width = HIVE.width * lerp(0.25, 1, grown);
     return {
       x: anchor.x,
       y: anchor.y,
       grip: GRIP * hive.limb.radiusAt(Math.min(hive.s, hive.limb.length)),
       swing: hive.swing,
-      height: HIVE.height * settings.size * lerp(0.15, 1, grown),
+      height: HIVE.height * lerp(0.15, 1, grown),
       width,
       snow: hive.snow > 0 ? Math.min(1, hive.snow / snowHeld(width)) : 0,
       alpha: 1,
@@ -1013,14 +981,11 @@ function attached(tree: Tree, hive: Hive): boolean {
 }
 
 /**
- * Mass of `hive` at size `size`, as far as it is built, from the first comb at `begun` of its mass,
- * with the snow on it.
+ * Mass of `hive` as far as it is built, from the first comb at `begun` of its mass, with the snow on
+ * it.
  */
-function massOf(hive: Hive, size: number): number {
-  return (
-    HIVE.mass * size ** 3 * lerp(BEGUN, 1, smoothstep(0, 1, hive.built)) +
-    hive.snow
-  );
+function massOf(hive: Hive): number {
+  return HIVE.mass * lerp(BEGUN, 1, smoothstep(0, 1, hive.built)) + hive.snow;
 }
 
 /** A hive just begun already weighs this fraction of what it will. */
@@ -1044,11 +1009,6 @@ function nearest(
     }
   }
   return best?.threat;
-}
-
-/** Pull the comb of a hive at size `size` holds against, with `multiplier` on how hard combs hold. */
-function holdOf(size: number, multiplier: number): number {
-  return HIVE.hold * size ** HIVE.holdGrowth * multiplier;
 }
 
 /** Whether `point` lies within the hive in `view`, or within `margin` meters of it. */

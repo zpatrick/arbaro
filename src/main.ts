@@ -428,7 +428,7 @@ function step(dt: number, controls: Controls): void {
     {
       level,
       tree,
-      hives: hives.targets(panel.wildlife),
+      hives: hives.targets(),
       fallenHives: hives.fallenHives(),
       debris,
       camera,
@@ -449,7 +449,7 @@ function step(dt: number, controls: Controls): void {
       [
         ...flowers.loads(standing),
         ...willows.loads(standing),
-        ...hives.loads(standing, panel.wildlife),
+        ...hives.loads(standing),
         ...birds.loads(standing),
       ],
     )) {
@@ -506,7 +506,7 @@ function step(dt: number, controls: Controls): void {
     [
       ...flowers.catchers(panel.flowers),
       ...willows.catchers(panel.flowers),
-      ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
+      ...(tree === undefined ? [] : hives.catchers(tree)),
     ],
     sea,
   );
@@ -793,7 +793,7 @@ function frame(now: number): void {
     weather,
     sea,
     clouds,
-    hives: hives.views(panel.wildlife),
+    hives: hives.views(),
     bees: hives.bees(),
     birds: birds.views(),
     bears: bears.views(),

@@ -365,15 +365,14 @@ switched on in the debug panel beside the original steer-and-grow controls:
       other wood and the barn, and never within 8 m of another hive. Low wood leaves the hive in
       reach of a bear.
 - [x] A hive is a golden bell ringed with bands of comb, with a door near its bottom and a rounded
-      cap that wraps up over its wood. It hangs in front of the wood and behind the flowers. Its side
+      cap that wraps up over its wood, 36 cm tall and 27 cm across once finished. It hangs in front of the wood and behind the flowers. Its side
       turned from the sun, or the moon by night, is toned and hatched like the mountains, so the
       shading swings around it through the day and evens out under thick cloud. Its gold is lit
       like the flowers through the day and night, deepens to amber through the fall and weathers to
       pale straw by winter. A fallen hive keeps its colors where it lies. It
-      swings from its wood with the wood's motion and the wind, and weighs on its limb with the
-      cube of its size. Its comb holds against its weight, the wind, the snow on its shoulders
-      and the shaking of the wood, up to a limit that grows more slowly than its weight, so a
-      large hive hangs by less. A hurricane or a hard shake tears it loose and it falls; it also
+      swings from its wood with the wood's motion and the wind, and weighs on its limb, 1.5 kg
+      once finished. Its comb holds against its weight, the wind, the snow on its shoulders and
+      the shaking of the wood, up to three times a finished hive's weight. A hurricane or a hard shake tears it loose and it falls; it also
       falls with any limb cut or snapped under it, and its bees scatter. Swinging hard, as a hive
       on whippy wood does when a bear rocks the tree, works its comb loose within seconds; a
       steady lean in the wind is no swing and does not.
@@ -381,7 +380,6 @@ switched on in the debug panel beside the original steer-and-grow controls:
       and fly home; by night they stay in. Bees fly about a hive while they build it. A bee is drawn
       side on, facing the way it flies: a dark head and thorax, a gold abdomen banded in ink, and a
       grey blur of wings.
-- [ ] Hives grow over a couple of days, up to four times the size they are first built.
 - [x] Birds fly across the scene as ink silhouettes like the tree, beating their wings and now
       and then gliding, as often as the player sets. Some, as many as the player sets, land on
       wood in view thick enough to take them and level enough to stand on, clear of the other
@@ -406,10 +404,10 @@ switched on in the debug panel beside the original steer-and-grow controls:
       than the roots can bear. It eats a hive it brings down and walks off, and gives up and
       walks off after 18 seconds at the tree.
 - [x] A bear swiping at a hive, or shoving its tree, provokes it: every bee pours out over a couple
-      of seconds with guards behind them, sixteen at the usual size and more for a larger hive,
-      dives at the bear, sometimes stings it, hangs back a moment and dives again, and chases it a
-      way when it leaves. Thirty stings drive it off at a run, so the more bees, the sooner it
-      gives up. The bees calm down a while after the bear stops.
+      of seconds with sixteen guards behind them, dives at the bear, sometimes stings it, hangs
+      back a moment and dives again, and chases it a way when it leaves. Thirty stings drive it
+      off at a run, so the more bees, the sooner it gives up. The bees calm down a while after
+      the bear stops.
 - [x] Wood falling on a bear strikes it by its weight and speed, and glances off. A light blow
       angers it: it rears and roars, and goes back at the hive longer and harder. A heavier one
       drives it off at a run. One heavy and fast enough kills it: it collapses where it stands,
@@ -478,9 +476,8 @@ _Open._ A button flips into a view of the roots:
       hand; one size for all of them, from a fifth to five times the usual, which grows clusters
       into mounds, or a willow's strands into cascades; and how hard their stems hold. For a willow the
       page speaks of its strands.
-- [x] Wildlife page: whether swarms of bees come on their own; one size for every hive, from as
-      first built to four times larger; a button that finishes building every hive within a couple of seconds;
-      how many birds come by each minute, and how many of them land; whether hives draw bears,
-      a button that sends a bear in, a list of a bear's animations to show one playing in
-      place, and a button that clears the bears away. A button, or holding H, makes the next
-      click on a limb hang a hive from it there.
+- [x] Wildlife page: whether swarms of bees come on their own; a button that finishes building
+      every hive within a couple of seconds; how many birds come by each minute, and how many of
+      them land; whether hives draw bears, a button that sends a bear in, a list of a bear's
+      animations to show one playing in place, and a button that clears the bears away. A
+      button, or holding H, makes the next click on a limb hang a hive from it there.

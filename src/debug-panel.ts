@@ -48,8 +48,6 @@ const TABS: readonly { id: Tab; name: string }[] = [
   { id: "wildlife", name: "Wildlife" },
 ];
 
-/** The hive size slider runs from a hive as first built to one grown this many times larger. */
-const LARGEST_HIVE = 4;
 /** Most birds the slider brings by each minute. */
 const MOST_BIRDS = 20;
 
@@ -348,7 +346,7 @@ function defaults(): Settings {
     showStrain: false,
     flowers: { placement: "tree", size: 1 },
     time: { timeOfDay: 0.375, dayRunning: true, season: 0 },
-    wildlife: { size: 1, swarms: true },
+    wildlife: { swarms: true },
     birds: { perMinute: 4, landing: 0.4 },
     bears: { comes: true },
   };
@@ -423,7 +421,6 @@ function isSaved(saved: unknown): saved is Saved {
         ))) &&
     (wildlife === undefined ||
       (isRecord(wildlife) &&
-        (wildlife.size === undefined || isNumber(wildlife.size)) &&
         (wildlife.swarms === undefined ||
           typeof wildlife.swarms === "boolean"))) &&
     (weather === undefined ||
@@ -574,7 +571,6 @@ export class DebugPanel {
   private readonly placementDescription: HTMLElement;
   private readonly flowerSize: Slider;
   private readonly flowerHold: Slider;
-  private readonly hiveSize: Slider;
   private readonly swarmsToggle: HTMLElement;
   private readonly birdRate: Slider;
   private readonly birdLanding: Slider;
@@ -863,9 +859,6 @@ export class DebugPanel {
     );
     this.swarmsToggle = this.toggleRow(bees, "Swarms come on their own", () =>
       this.setWildlife({ swarms: !this.wildlife.swarms }),
-    );
-    this.hiveSize = new Slider(bees, "Hive size", (value) =>
-      this.setWildlife({ size: 1 + value * (LARGEST_HIVE - 1) }),
     );
     const place = element("div", "debug-reset", bees, "Place a hive");
     place.addEventListener("click", () => this.onPlaceHive());
@@ -1264,8 +1257,6 @@ export class DebugPanel {
       `×${this.strength.flowers.toFixed(2)}`,
     );
 
-    const hive = this.wildlife.size;
-    this.hiveSize.show((hive - 1) / (LARGEST_HIVE - 1), `×${hive.toFixed(2)}`);
     this.swarmsToggle.classList.toggle("selected", this.wildlife.swarms);
     const { perMinute, landing } = this.birds;
     this.birdRate.show(
