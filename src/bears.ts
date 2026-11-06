@@ -122,8 +122,11 @@ const LEGS: { hind: LegShape; front: LegShape } = {
   },
 };
 
-/** A forepaw's claws: how far they reach past its toes, and how thick they are where they start. */
-const CLAWS = { length: 0.045, base: 0.018 } as const;
+/**
+ * A forepaw's claws: how far they reach past its toes, and how thick they are where they start;
+ * and how large a hind foot's are beside them.
+ */
+const CLAWS = { length: 0.045, base: 0.018, hind: 0.7 } as const;
 
 /**
  * Highest a bear reaches with its claws, comfortably, in meters: on all fours, lifting one
@@ -336,7 +339,7 @@ interface Bear {
   landed: boolean;
   /** Where its hind feet stand while it shoves, and the bark its forepaws push on. */
   feet: [number, number] | undefined;
-  bark: { near: Point; far: Point } | undefined;
+  bark: Bark | undefined;
   /** Seconds it keeps at the hive before it gives up, and how many times it has been angered. */
   patience: number;
   anger: number;
@@ -417,10 +420,9 @@ export class Bears {
   ): void {
     this.bears = this.bears.filter((bear) => bear.doing !== "posing");
     const view = viewOf(camera);
-    const trunk = tree === undefined ? undefined : trunkAt(tree);
     const x =
-      showing === "shove" && trunk !== undefined
-        ? trunk.x - (trunk.radius + SHOVE.stand)
+      showing === "shove" && tree !== undefined
+        ? shoveFrom(tree, level, 1)
         : lerp(view.left, view.right, 0.3);
     const bear = makeBear(x, 1, "posing", level);
     bear.showing = showing;
@@ -768,7 +770,7 @@ export class Bears {
     bear.headDown = Math.max(0, bear.headDown - dt / 0.4);
     bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
     bear.feet ??= plantedFeet(bear);
-    bear.bark = barkOf(tree, bear.facing);
+    bear.bark = barkOf(tree, world.level, bear.x, bear.facing);
     if (bear.rear < 1) {
       return;
     }
@@ -817,11 +819,16 @@ export class Bears {
     if (drive <= 0 || drive >= 1) {
       return;
     }
-    const s = Math.min(trunk.length, SHOVE.height);
+    invariant(
+      bear.bark !== undefined,
+      "A bear shoves with its paws on no bark.",
+    );
+    const s = bear.bark.s;
     const at = trunk.pointAt(s);
     const strongest = Math.min(
       HUNT.shoveForce * (1 + HUNT.angerForce * bear.anger),
-      (HUNT.rootShare * FAILURE.rootHold * trunk.radiusAt(0) ** 3) / s,
+      (HUNT.rootShare * FAILURE.rootHold * trunk.radiusAt(0) ** 3) /
+        Math.max(s, 0.1),
     );
     pushes.push({
       limb: trunk,
@@ -871,7 +878,7 @@ export class Bears {
         bear.rear = Math.min(1, bear.rear + dt / HUNT.rear);
         bear.feet ??= plantedFeet(bear);
         if (world.tree !== undefined) {
-          bear.bark = barkOf(world.tree, bear.facing);
+          bear.bark = barkOf(world.tree, world.level, bear.x, bear.facing);
           if (bear.rear >= 1) {
             this.push(dt, bear, world.tree, pushes);
           }
@@ -1049,15 +1056,64 @@ function trunkAt(tree: Tree): { x: number; radius: number } {
   return { x: tree.root.pointAt(s).x, radius: tree.root.radiusAt(s) };
 }
 
-/** Where a bear facing `f` sets its forepaws on the bark of `tree`'s trunk, near paw then far. */
-function barkOf(tree: Tree, f: 1 | -1): { near: Point; far: Point } {
+/**
+ * Where a bear facing `f`, standing at `standX` on `level`, sets its forepaws on the bark of `tree`'s
+ * trunk, near paw then far, and how far up the trunk the near paw is: where the trunk stands
+ * `SHOVE.height` above the bear's own feet, or at its top if it is not that tall, on the side facing
+ * the bear, measured across the trunk level with the paw, so a leaning trunk is met where it is.
+ */
+function barkOf(tree: Tree, level: Level, standX: number, f: 1 | -1): Bark {
   const trunk = tree.root;
-  const bark = (height: number): Point => {
-    const s = Math.min(trunk.length, height);
-    const p = trunk.pointAt(s);
-    return { x: p.x - f * trunk.radiusAt(s), y: p.y };
+  const feet = level.groundAt(standX);
+  const along = (height: number): number => {
+    const target = feet + height;
+    if (trunk.pointAt(trunk.length).y <= target) {
+      return trunk.length;
+    }
+    let low = 0;
+    let high = trunk.length;
+    for (let i = 0; i < 30; i += 1) {
+      const middle = (low + high) / 2;
+      if (trunk.pointAt(middle).y < target) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return (low + high) / 2;
   };
-  return { near: bark(SHOVE.height), far: bark(SHOVE.height - 0.24) };
+  const bark = (s: number): Point => {
+    const p = trunk.pointAt(s);
+    const across =
+      trunk.radiusAt(s) / Math.max(Math.abs(Math.sin(p.heading)), 0.4);
+    return { x: p.x - f * across, y: p.y };
+  };
+  const s = along(SHOVE.height);
+  return { near: bark(s), far: bark(along(SHOVE.height - 0.24)), s };
+}
+
+/**
+ * Where a bear coming from side `side` of `tree` stands on `level` to shove it: `SHOVE.stand` back
+ * from the bark its forepaws meet from there.
+ */
+function shoveFrom(tree: Tree, level: Level, side: 1 | -1): number {
+  const trunk = trunkAt(tree);
+  let standAt = trunk.x - side * (trunk.radius + SHOVE.stand);
+  // Where it stands sets how high it meets the trunk, and so where the bark it meets is.
+  for (let i = 0; i < 4; i += 1) {
+    standAt = barkOf(tree, level, standAt, side).near.x - side * SHOVE.stand;
+  }
+  return standAt;
+}
+
+/**
+ * The bark a shoving bear's forepaws push on, near paw then far, and how far up the trunk the near
+ * paw is.
+ */
+interface Bark {
+  near: Point;
+  far: Point;
+  s: number;
 }
 
 /** Where `bear` plants its hind feet to shove from, near then far. */
@@ -1087,7 +1143,7 @@ function planFor(bear: Bear, world: BearWorld): Plan | undefined {
   const side = bear.x <= trunk.x ? 1 : -1;
   const shove: Plan = {
     kind: "shove",
-    standAt: trunk.x - side * (trunk.radius + SHOVE.stand),
+    standAt: shoveFrom(tree, world.level, side),
     facing: side,
   };
   const hive = [...world.hives].sort(
@@ -1757,7 +1813,7 @@ const REST = {
 /**
  * The silhouette of a bear in `pose`, facing `facing`, in meters: its body and head from a drawn
  * outline bent with its bones, and its four legs, each one smooth outline down to its foot, with
- * claws on its forepaws.
+ * claws on every foot, shorter on the hind feet.
  */
 function bearShape(pose: Pose, facing: 1 | -1): Path2D {
   const path = new Path2D();
@@ -1766,9 +1822,7 @@ function bearShape(pose: Pose, facing: 1 | -1): Path2D {
   for (const [i, leg] of pose.legs.entries()) {
     const hind = i < 2;
     addPolygon(path, smooth(legOutline(leg, hind ? LEGS.hind : LEGS.front, f)));
-    if (!hind) {
-      addClaws(path, leg, f);
-    }
+    addClaws(path, leg, f, hind ? CLAWS.hind : 1);
   }
   return path;
 }
@@ -1876,21 +1930,26 @@ function legOutline(leg: Leg, shape: LegShape, f: 1 | -1): Point[] {
   ];
 }
 
-/** Adds the claws of the forepaw on `leg` to `path`: two hooked points past its toes. */
-function addClaws(path: Path2D, leg: Leg, f: 1 | -1): void {
+/**
+ * Adds the claws of the foot on `leg` to `path`, `scale` the size of a forepaw's: two hooked points
+ * past its toes.
+ */
+function addClaws(path: Path2D, leg: Leg, f: 1 | -1, scale: number): void {
   const way = unit(leg.heel, leg.toe);
   const up = frontOf(way, f);
   const point = (along: number, rise: number): Point => ({
     x: leg.toe.x + way.x * along + up.x * rise,
     y: leg.toe.y + way.y * along + up.y * rise,
   });
+  const length = CLAWS.length * scale;
+  const base = CLAWS.base * scale;
   for (const rise of [0.012, 0.03]) {
     addPolygon(path, [
-      point(-0.01, rise + CLAWS.base / 2),
-      point(CLAWS.length * 0.55, rise + CLAWS.base * 0.2),
-      point(CLAWS.length, rise - CLAWS.base * 0.5),
-      point(CLAWS.length * 0.5, rise - CLAWS.base * 0.35),
-      point(-0.01, rise - CLAWS.base / 2),
+      point(-0.01, rise * scale + base / 2),
+      point(length * 0.55, rise * scale + base * 0.2),
+      point(length, rise * scale - base * 0.5),
+      point(length * 0.5, rise * scale - base * 0.35),
+      point(-0.01, rise * scale - base / 2),
     ]);
   }
 }
