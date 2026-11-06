@@ -483,6 +483,36 @@ export class Flowers {
     return true;
   }
 
+  /**
+   * Takes off every flower on what `tree` is about to lose when `limb` is cut at `s`: the limb
+   * beyond the cut, and every offshoot forked from it past there. Each falls from where it grew,
+   * carrying the motion of its wood, before the cut takes that wood away.
+   */
+  cut(tree: Tree, limb: Limb, s: number, settings: FlowerSettings): void {
+    const gone = new Set<Limb>();
+    const collect = (part: Limb): void => {
+      gone.add(part);
+      part.children.forEach(collect);
+    };
+    if (s === 0) {
+      collect(limb);
+    } else {
+      for (const child of limb.children) {
+        if ((child.attachment?.s ?? 0) >= s) {
+          collect(child);
+        }
+      }
+    }
+    const lost = this.flowers.filter(
+      (flower) =>
+        gone.has(flower.limb) || (flower.limb === limb && flower.s > s),
+    );
+    for (const flower of lost) {
+      this.drop(flower, tree, settings, { x: 0, y: 0 });
+    }
+    this.flowers = this.flowers.filter((flower) => !lost.includes(flower));
+  }
+
   /** Knocks off the hand-placed flower drawn over (x, y), if any. Returns whether there was one. */
   knockOff(
     tree: Tree,

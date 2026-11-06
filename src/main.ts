@@ -309,6 +309,7 @@ function breakOff(standing: Tree, limb: Limb, s: number): void {
   debris.push(
     new Debris(pieceShapes(limb, s, minimumRadius(camera)), piece, motion),
   );
+  flowers.cut(standing, limb, s, panel.flowers);
   standing.sever(limb, s);
 }
 
