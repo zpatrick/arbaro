@@ -283,8 +283,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A second level, the cliff: a hill rolling down gently to the left that rolls off over a
       rounded brink and falls steeply into the sea. The tree stands on the brink, where the land
       falls away at 45 degrees, leaning out over the water. A ledge of rock at its foot
-      bares at low water, and beyond it the seabed shelves away into deep water. Bears come only
-      from the left. No barn stands there, and no mountains unless the debug panel puts them back.
+      bares at low water, and beyond it the seabed shelves away into deep water. High water all
+      but reaches the top of the cliff, a meter below the tree, and the horizon lies above it, as
+      seen from the hill. Bears come only from the left. No barn stands there, and no mountains unless the debug panel puts them back.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,

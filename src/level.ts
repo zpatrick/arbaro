@@ -88,17 +88,19 @@ const CLIFF = {
    */
   seabed: { ledge: 1.2, deep: 8, falls: 13 },
   /**
-   * The sea: its height at mid tide, below the hilltop, how far the tide carries it, and how high
-   * above it the horizon lies, as seen from the hill.
+   * The sea: how far below the hilltop it stands at low water, baring the ledge at the cliff's
+   * foot; how far below the top of the cliff, where the tree stands, it rises to at high water,
+   * all but reaching it; and how far above high water the horizon lies, as seen from the hill,
+   * so the sea far off always shows between them.
    */
-  sea: { midTide: -6.2, tide: 0.75, horizon: 3 },
+  sea: { low: 6.95, high: 1, horizon: 1.5 },
   /** The tree is planted on the brink where the land falls away this steeply, as rise over run. */
   plant: 1,
   /**
-   * How far below the sea at mid tide the camera keeps in view, how far back over the land behind
+   * How far below the sea at low water the camera keeps in view, how far back over the land behind
    * the tree, and how far out to sea.
    */
-  view: { below: 3.6, lead: 6, reach: 18 },
+  view: { below: 2.85, lead: 6, reach: 18 },
 } as const;
 
 /** The raw lie of the cliff level's ground, before it is set so the tree stands at height 0. */
@@ -144,8 +146,11 @@ function plantedAt(): number {
 }
 
 const PLANTED = plantedAt();
-/** Height of the hilltop above the tree, which the sea's heights are given from. */
+/** Height of the hilltop above the tree. */
 const HILLTOP = cliffRaw(0) - cliffRaw(PLANTED);
+/** Heights of the sea at low and high water, from the ground the tree stands on. */
+const LOW_WATER = HILLTOP - CLIFF.sea.low;
+const HIGH_WATER = -CLIFF.sea.high;
 
 const CLIFF_LEVEL: Level = {
   id: "cliff",
@@ -156,14 +161,15 @@ const CLIFF_LEVEL: Level = {
   barn: false,
   mountains: false,
   bearsFrom: [-1],
-  horizon: HILLTOP + CLIFF.sea.midTide + CLIFF.sea.horizon,
-  depth: HILLTOP + CLIFF.sea.midTide - CLIFF.view.below,
+  horizon: HIGH_WATER + CLIFF.sea.horizon,
+  depth: LOW_WATER - CLIFF.view.below,
   lead: CLIFF.view.lead,
   reach: CLIFF.view.reach,
   shore: {
-    midTide: HILLTOP + CLIFF.sea.midTide,
-    tide: CLIFF.sea.tide,
-    from: CLIFF.brink - PLANTED,
+    midTide: (LOW_WATER + HIGH_WATER) / 2,
+    tide: (HIGH_WATER - LOW_WATER) / 2,
+    // From the tree, which stands above even high water.
+    from: 0,
   },
 };
 
