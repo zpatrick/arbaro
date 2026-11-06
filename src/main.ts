@@ -776,6 +776,7 @@ function frame(now: number): void {
   renderer.draw(camera, {
     level,
     mountains: panel.world.mountains,
+    fieldColors: panel.world.fieldColors,
     light,
     season: panel.time.season,
     clock,

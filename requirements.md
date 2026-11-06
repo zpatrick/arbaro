@@ -285,7 +285,18 @@ switched on in the debug panel beside the original steer-and-grow controls:
       falls away at 45 degrees, leaning out over the water. A ledge of rock at its foot
       bares at low water, and beyond it the seabed shelves away into deep water. High water all
       but reaches the top of the cliff, a meter below the tree, and the horizon lies above it, as
-      seen from the hill. Bears come only from the left. No barn stands there, and no mountains unless the debug panel puts them back.
+      seen from the hill. Bears come only from the left. No barn stands there, and no mountains
+      unless the debug panel puts them back.
+- [x] A third level, the farm: rolling farmland, with the tree and the barn in a level yard and
+      hills rising and falling beyond it either way. Its ground is laid out in fields after the
+      sand drawings of hills (reference 14): under a thin rim of ink along the surface lie bands
+      one under another, a hedgerow of close-packed pebbles, fields plowed in rows, and pasture,
+      over furrowed land running on down. Each band swells and thins along the land, so its edges
+      roll as hills do of their own, and is split by leaning dividers into fields, each of its
+      own color, those in rows plowed one way or the other in turn. In their colors the fields
+      are green, gold and terracotta, lit like the flowers through the day and night, turning
+      toward straw through the fall and bare earth through the winter. Without them, their
+      patterns are carved into the ink as the barn's lines are. Bears come from either side.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
@@ -462,8 +473,9 @@ _Open._ A button flips into a view of the roots:
       strength slider, and a choice of wind model with a description of each; how hard it rains
       and snows, and how fast lying snow melts; and how much of the sky the clouds cover and how
       high they hang.
-- [x] Level page: which level the tree grows in, which plants a tree there afresh, and whether
-      mountains line its horizon.
+- [x] Level page: which level the tree grows in, which plants a tree there afresh; whether
+      mountains line its horizon; and, on a level laid out in fields, whether they are drawn in
+      their colors.
 - [x] Sea page: how high and how long the swell is; how strongly the wind raises waves of its own;
       the sea's momentum, how long it takes to build or calm; the tide, set by hand or rising and
       falling with the day. A line reads out how high the waves stand now, by the Douglas sea scale.

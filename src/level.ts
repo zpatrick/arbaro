@@ -1,7 +1,7 @@
 import { invariant, smoothstep } from "./util";
 
 /** The levels a tree can be grown in. */
-export type LevelId = "meadow" | "cliff";
+export type LevelId = "meadow" | "farm" | "cliff";
 
 /**
  * The sea a level's land runs down into, off to its right: how high it stands at mid tide, how far
@@ -27,6 +27,8 @@ export interface Level {
   /** Whether the barn stands beside the tree, and mountains line the horizon. */
   barn: boolean;
   mountains: boolean;
+  /** Whether its ground is laid out in fields, after the sand drawings of hills. */
+  fields: boolean;
   /** The sides bears come in from: -1 the left, 1 the right. */
   bearsFrom: readonly (1 | -1)[];
   /** Height of the horizon, where the land or the sea far off meets the sky. */
@@ -51,6 +53,53 @@ const MEADOW: Level = {
   groundAt: () => 0,
   barn: true,
   mountains: true,
+  fields: false,
+  bearsFrom: [-1, 1],
+  horizon: 0,
+  depth: 0,
+  lead: 0,
+  reach: 0,
+  shore: undefined,
+};
+
+/**
+ * The farm: a level yard where the tree and the barn stand, from `yard.from` to `yard.to`, and
+ * rolling farmland beyond it either way, its hills easing in over `rise` meters past the yard. Each
+ * swell of the land has its height, its length and where it starts along the land. All in meters,
+ * from the tree's roots.
+ */
+const FARM = {
+  yard: { from: -3, to: 12.5 },
+  rise: 9,
+  swells: [
+    { height: 1.3, length: 36, phase: 4.36 },
+    { height: 0.7, length: 71, phase: 1 },
+    { height: 0.25, length: 11, phase: 2 },
+  ],
+} as const;
+
+/** Height of the farm's ground at `x`: level in the yard, rolling beyond it. */
+function farmGround(x: number): number {
+  const away = Math.max(0, FARM.yard.from - x, x - FARM.yard.to);
+  if (away === 0) {
+    return 0;
+  }
+  let swell = 0;
+  for (const { height, length, phase } of FARM.swells) {
+    swell += height * Math.sin((2 * Math.PI * x) / length + phase);
+  }
+  return swell * smoothstep(0, FARM.rise, away);
+}
+
+const FARM_LEVEL: Level = {
+  id: "farm",
+  name: "Farm",
+  description:
+    "Rolling farmland, with the tree and the barn in a level yard. Its ground is laid out in fields, after the sand drawings of hills: hedgerows of pebbles, plowed rows, pasture and furrows. Bears come from either side.",
+  groundAt: farmGround,
+  barn: true,
+  mountains: true,
+  fields: true,
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
@@ -160,6 +209,7 @@ const CLIFF_LEVEL: Level = {
   groundAt: (x) => cliffRaw(x + PLANTED) - cliffRaw(PLANTED),
   barn: false,
   mountains: false,
+  fields: false,
   bearsFrom: [-1],
   horizon: HIGH_WATER + CLIFF.sea.horizon,
   depth: LOW_WATER - CLIFF.view.below,
@@ -173,7 +223,7 @@ const CLIFF_LEVEL: Level = {
   },
 };
 
-export const LEVELS: readonly Level[] = [MEADOW, CLIFF_LEVEL];
+export const LEVELS: readonly Level[] = [MEADOW, FARM_LEVEL, CLIFF_LEVEL];
 
 export function levelById(id: LevelId): Level {
   const level = LEVELS.find((candidate) => candidate.id === id);
