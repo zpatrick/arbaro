@@ -79,7 +79,7 @@ const CLEARANCE = 0.03;
 export type GrowthMode = "steer" | "flow";
 
 /** What a growing tip can run into. */
-export type Obstacle = "ground" | "barn";
+export type Obstacle = "ground" | "barn" | "edge";
 
 export interface Growth {
   mode: GrowthMode;
@@ -104,10 +104,41 @@ function roomAhead(
   const tip = limb.restTip;
   const ground = groundAhead(level, tip.x, tip.y, tip.heading);
   const barn = level.barn ? barnAhead(tip.x, tip.y, tip.heading) : Infinity;
+  const edge = edgeAhead(level, tip.x, tip.y, tip.heading);
+  const nearest = Math.min(ground, barn, edge);
   return {
-    room: Math.max(0, Math.min(ground, barn) - CLEARANCE),
-    obstacle: ground <= barn ? "ground" : "barn",
+    room: Math.max(0, nearest - CLEARANCE),
+    obstacle:
+      nearest === ground ? "ground" : nearest === barn ? "barn" : "edge",
   };
+}
+
+/** How far inside a level's edges a growing tip keeps, in meters: from its sides, and its top. */
+const EDGE_MARGIN = { side: 3, top: 5 } as const;
+
+/**
+ * How far a line from (x, y), heading `heading` radians counterclockwise from +x, runs before it
+ * comes within `EDGE_MARGIN` of `level`'s sides or its top.
+ */
+function edgeAhead(
+  level: Level,
+  x: number,
+  y: number,
+  heading: number,
+): number {
+  const { left, right, top } = level.edges;
+  const dx = Math.cos(heading);
+  const dy = Math.sin(heading);
+  let room = Infinity;
+  if (dx > 0) {
+    room = Math.min(room, (right - EDGE_MARGIN.side - x) / dx);
+  } else if (dx < 0) {
+    room = Math.min(room, (left + EDGE_MARGIN.side - x) / dx);
+  }
+  if (dy > 0) {
+    room = Math.min(room, (top - EDGE_MARGIN.top - y) / dy);
+  }
+  return Math.max(0, room);
 }
 
 /** How far ahead a growing tip looks for the ground, and in what steps, in meters. */

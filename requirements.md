@@ -279,6 +279,11 @@ switched on in the debug panel beside the original steer-and-grow controls:
 ## World and environment
 
 - [x] A flat world with level ground.
+- [x] Every level has edges: to either side, a top in the sky and a floor in the ground. The view
+      never zooms out wider or taller than the level, nor pans past its edges, so the ground runs
+      no deeper than the level's floor: 6 m down on the meadow, 8 m on the farm and 12 m on the
+      cliff. The tree grows no closer than 3 m to the level's sides or 5 m to its top; held up
+      there, it says the edge of the level is in the way.
 - [ ] Levels with shaped terrain: hills, slopes, rocks underground and solid obstacles above.
 - [x] A second level, the cliff: a hill rolling down gently to the left that rolls off over a
       rounded brink and falls steeply into the sea. The tree stands on the brink, where the land
@@ -287,15 +292,15 @@ switched on in the debug panel beside the original steer-and-grow controls:
       but reaches the top of the cliff, a meter below the tree, and the horizon lies above it, as
       seen from the hill. Bears come only from the left. No barn stands there, and no mountains
       unless the debug panel puts them back.
-- [x] A third level, the farm: rolling farmland, with the tree and the barn in a level yard and
-      hills rising and falling beyond it either way. Its ground is drawn after the sand drawing of
-      a tree on hills (reference 14): a few hills raked in contour lines rise to just under the
-      surface and arch away again, lower on one side than the other, their lines following their
-      tops down into the ground like the ridges of a fingerprint, as close on screen however near
-      the view. Hills stand one in front of another, and between them the ground is plain ink. In
-      their colors the hills are warm sand, lit like the flowers through the day and night,
-      turning toward russet through the fall and grey-brown through the winter; without them,
-      their lines are carved into the ink as the barn's lines are. Bears come from either side.
+- [x] A third level, the farm: a level plain of dirt with the tree and the barn on it, and hills
+      rising out of it either way, with a good stretch of plain between each, after the sand
+      drawing of a tree on hills (reference 14). Where a hill rises out of the plain its top is
+      the top of the ground, and past its feet its top runs on down into the ground, so it stands
+      in front of the plain dirt around it. It is raked in contour lines that follow its top down,
+      nested like the ridges of a fingerprint, as close on screen however near the view. In their
+      colors the hills are warm sand, lit like the flowers through the day and night, turning
+      toward russet through the fall and grey-brown through the winter; without them, their lines
+      are carved into the ink as the barn's lines are. Bears come from either side.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
@@ -366,7 +371,7 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
 - [ ] Rain showers come and go.
-- [ ] Limits on growth: level edges, solid obstacles, and a sky ceiling that caps height.
+- [x] Limits on growth: level edges, solid obstacles, and a sky ceiling that caps height.
 
 ## Wildlife
 

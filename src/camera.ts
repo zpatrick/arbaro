@@ -1,3 +1,4 @@
+import type { Edges } from "./level";
 import type { Bounds } from "./tree";
 import { approach, clamp } from "./util";
 
@@ -49,6 +50,13 @@ export class Camera {
   depth = 0;
   lead = 0;
   reach = 0;
+  /** The level's edges, which the view never shows past. */
+  edges: Edges = {
+    left: -Infinity,
+    right: Infinity,
+    top: Infinity,
+    bottom: -Infinity,
+  };
   /** Whether the player has moved the camera, so it stays put instead of following the tree. */
   held = false;
   /** Whether the player has dragged the view since the camera last framed the tree. */
@@ -90,6 +98,7 @@ export class Camera {
     );
     this.centerX = approach(this.centerX, target.centerX, SETTLE, dt);
     this.floor = approach(this.floor, target.floor, SETTLE, dt);
+    this.keepWithin();
   }
 
   snap(bounds: Bounds): void {
@@ -99,6 +108,7 @@ export class Camera {
     this.scale = target.scale;
     this.centerX = target.centerX;
     this.floor = target.floor;
+    this.keepWithin();
   }
 
   /** Moves the view by (dx, dy) CSS pixels, as when dragged, and stops following the tree. */
@@ -107,6 +117,7 @@ export class Camera {
     this.panned = true;
     this.centerX -= dx / this.scale;
     this.floor += dy / this.scale;
+    this.keepWithin();
   }
 
   /**
@@ -119,6 +130,24 @@ export class Camera {
     this.scale = clamp(this.scale * factor, ZOOM.min, ZOOM.max);
     this.centerX = anchor.x - (x - this.width / 2) / this.scale;
     this.floor = anchor.y - (this.groundY - y) / this.scale;
+    this.keepWithin();
+  }
+
+  /** Keeps the view within the level's edges: never wider or taller than the level, nor past it. */
+  private keepWithin(): void {
+    const { left, right, top, bottom } = this.edges;
+    this.scale = Math.max(
+      this.scale,
+      this.width / (right - left),
+      this.height / (top - bottom),
+    );
+    const half = this.width / 2 / this.scale;
+    this.centerX = clamp(this.centerX, left + half, right - half);
+    this.floor = clamp(
+      this.floor,
+      bottom + (this.height - this.groundY) / this.scale,
+      top - this.groundY / this.scale,
+    );
   }
 
   /** Goes back to framing the tree, easing over from wherever the player left the view. */

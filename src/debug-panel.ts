@@ -250,13 +250,13 @@ const HEADINGS = [
 ];
 
 /**
- * Where the tree grows: the level, whether mountains line its horizon, and whether the fields of a
- * level laid out in them are drawn in their colors.
+ * Where the tree grows: the level, whether mountains line its horizon, and whether the hills of a
+ * level with hills are drawn in their colors.
  */
 export interface WorldSettings {
   level: LevelId;
   mountains: boolean;
-  fieldColors: boolean;
+  hillColors: boolean;
 }
 
 /** What is planted: the species of every tree grown afresh. */
@@ -306,7 +306,7 @@ function defaults(): Settings {
     world: {
       level: "meadow",
       mountains: levelById("meadow").mountains,
-      fieldColors: true,
+      hillColors: true,
     },
     planting: { species: "cherry" },
     growth: { mode: "steer", flowRate: 1 },
@@ -391,8 +391,8 @@ function isSaved(saved: unknown): saved is Saved {
           LEVELS.some((level) => level.id === world.level)) &&
         (world.mountains === undefined ||
           typeof world.mountains === "boolean") &&
-        (world.fieldColors === undefined ||
-          typeof world.fieldColors === "boolean"))) &&
+        (world.hillColors === undefined ||
+          typeof world.hillColors === "boolean"))) &&
     (planting === undefined ||
       (isRecord(planting) &&
         (planting.species === undefined ||
@@ -517,7 +517,7 @@ export class DebugPanel {
   private readonly levels = new Map<LevelId, HTMLElement>();
   private readonly levelDescription: HTMLElement;
   private readonly mountainsToggle: HTMLElement;
-  private readonly fieldColorsToggle: HTMLElement;
+  private readonly hillColorsToggle: HTMLElement;
   private readonly timeOfDay: Slider;
   private readonly dayToggle: HTMLElement;
   private readonly season: Slider;
@@ -629,8 +629,8 @@ export class DebugPanel {
       "Mountains on the horizon",
       () => this.setWorld({ mountains: !this.world.mountains }),
     );
-    this.fieldColorsToggle = this.toggleRow(where, "Colors in the hills", () =>
-      this.setWorld({ fieldColors: !this.world.fieldColors }),
+    this.hillColorsToggle = this.toggleRow(where, "Colors in the hills", () =>
+      this.setWorld({ hillColors: !this.world.hillColors }),
     );
 
     const weather = this.page("weather", card);
@@ -1120,8 +1120,9 @@ export class DebugPanel {
     }
     this.levelDescription.textContent = levelById(this.world.level).description;
     this.mountainsToggle.classList.toggle("selected", this.world.mountains);
-    this.fieldColorsToggle.hidden = !levelById(this.world.level).fields;
-    this.fieldColorsToggle.classList.toggle("selected", this.world.fieldColors);
+    this.hillColorsToggle.hidden =
+      levelById(this.world.level).hills.length === 0;
+    this.hillColorsToggle.classList.toggle("selected", this.world.hillColors);
 
     this.showTimeOfDay();
     this.dayToggle.classList.toggle("selected", this.time.dayRunning);

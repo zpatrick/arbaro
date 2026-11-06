@@ -129,6 +129,12 @@ let placingHive = false;
 let clock = 0;
 /** What the selected limb last ran into as it was grown, so the news is given only once. */
 let blockedBefore: Obstacle | undefined;
+/** What is said when a growing tip is held up by each thing in its way. */
+const BLOCKED: Record<Obstacle, string> = {
+  ground: "The ground is in the way",
+  barn: "The barn is in the way",
+  edge: "The edge of the level is in the way",
+};
 /**
  * A press that pans the view as it drags: where the pointer was last, and whether it has moved
  * far enough to count as a drag yet.
@@ -185,6 +191,7 @@ function replant(): void {
 /** Points the camera at what `level` keeps in view: its horizon, and any ground below the tree. */
 function frameLevel(): void {
   camera.horizon = level.horizon;
+  camera.edges = level.edges;
   camera.depth = level.depth;
   camera.lead = level.lead;
   camera.reach = level.reach;
@@ -459,7 +466,7 @@ function step(dt: number, controls: Controls): void {
       giveWay(standing, failure);
     }
     if (standing.blocked !== undefined && standing.blocked !== blockedBefore) {
-      announce(`The ${standing.blocked} is in the way`);
+      announce(BLOCKED[standing.blocked]);
     }
     blockedBefore = standing.blocked;
   }
@@ -776,7 +783,7 @@ function frame(now: number): void {
   renderer.draw(camera, {
     level,
     mountains: panel.world.mountains,
-    fieldColors: panel.world.fieldColors,
+    hillColors: panel.world.hillColors,
     light,
     season: panel.time.season,
     clock,

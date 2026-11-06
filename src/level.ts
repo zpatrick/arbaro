@@ -15,8 +15,38 @@ export interface Shore {
 }
 
 /**
- * A place to grow a tree: the lie of its ground, what stands about it, and what the camera keeps in
- * view. All heights are in meters, from the ground the tree is planted in, at x = 0.
+ * A level's edges, in meters from the tree's roots: to either side, up in the sky and down in the
+ * ground. The view never shows past them, and the tree grows no further.
+ */
+export interface Edges {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * A hill rising out of a level's ground, raked in contour lines after the sand drawings: where its
+ * crest stands along the land, how high it rises above the land around it, and how wide it is where
+ * it meets that land, in meters. Its top arches over and runs on down into the ground past its
+ * feet, so it stands in front of the land around it.
+ */
+export interface Hill {
+  x: number;
+  height: number;
+  width: number;
+}
+
+/** Height of the top of `hill` at `x`, which runs on down into the ground past its feet. */
+export function hillTop(hill: Hill, x: number): number {
+  const u = (2 * (x - hill.x)) / hill.width;
+  return hill.height * (1 - u * u);
+}
+
+/**
+ * A place to grow a tree: the lie of its ground, what stands about it, how far it reaches, and what
+ * the camera keeps in view. All heights are in meters, from the ground the tree is planted in, at
+ * x = 0.
  */
 export interface Level {
   id: LevelId;
@@ -27,8 +57,9 @@ export interface Level {
   /** Whether the barn stands beside the tree, and mountains line the horizon. */
   barn: boolean;
   mountains: boolean;
-  /** Whether hills raked in contour lines are drawn in its ground, after the sand drawings. */
-  fields: boolean;
+  /** Hills raked in contour lines rising out of its ground, after the sand drawings. */
+  hills: readonly Hill[];
+  edges: Edges;
   /** The sides bears come in from: -1 the left, 1 the right. */
   bearsFrom: readonly (1 | -1)[];
   /** Height of the horizon, where the land or the sea far off meets the sky. */
@@ -53,7 +84,8 @@ const MEADOW: Level = {
   groundAt: () => 0,
   barn: true,
   mountains: true,
-  fields: false,
+  hills: [],
+  edges: { left: -50, right: 50, top: 55, bottom: -6 },
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
@@ -63,43 +95,36 @@ const MEADOW: Level = {
 };
 
 /**
- * The farm: a level yard where the tree and the barn stand, from `yard.from` to `yard.to`, and
- * rolling farmland beyond it either way, its hills easing in over `rise` meters past the yard. Each
- * swell of the land has its height, its length and where it starts along the land. All in meters,
- * from the tree's roots.
+ * The farm: a level plain where the tree and the barn stand, and a few hills rising out of it either
+ * way, with a good stretch of plain between each. The plain reaches 8 m down. All in meters, from
+ * the tree's roots.
  */
-const FARM = {
-  yard: { from: -3, to: 12.5 },
-  rise: 9,
-  swells: [
-    { height: 1.3, length: 36, phase: 4.36 },
-    { height: 0.7, length: 71, phase: 1 },
-    { height: 0.25, length: 11, phase: 2 },
-  ],
-} as const;
+const FARM_HILLS: readonly Hill[] = [
+  { x: -13, height: 1.4, width: 12 },
+  { x: -40, height: 2.2, width: 16 },
+  { x: 22, height: 1.6, width: 13 },
+  { x: 48, height: 2.4, width: 18 },
+];
 
-/** Height of the farm's ground at `x`: level in the yard, rolling beyond it. */
+/** Height of the farm's ground at `x`: the plain, or the top of a hill where one rises out of it. */
 function farmGround(x: number): number {
-  const away = Math.max(0, FARM.yard.from - x, x - FARM.yard.to);
-  if (away === 0) {
-    return 0;
+  let ground = 0;
+  for (const hill of FARM_HILLS) {
+    ground = Math.max(ground, hillTop(hill, x));
   }
-  let swell = 0;
-  for (const { height, length, phase } of FARM.swells) {
-    swell += height * Math.sin((2 * Math.PI * x) / length + phase);
-  }
-  return swell * smoothstep(0, FARM.rise, away);
+  return ground;
 }
 
 const FARM_LEVEL: Level = {
   id: "farm",
   name: "Farm",
   description:
-    "Rolling farmland, with the tree and the barn in a level yard. Its ground is drawn after the sand drawings of hills: hills raked in contour lines rise under its surface, with plain ground between them. Bears come from either side.",
+    "A level plain with the tree and the barn on it, and hills rising out of it either way, raked in contour lines after the sand drawings, with a good stretch of plain between them. Bears come from either side.",
   groundAt: farmGround,
   barn: true,
   mountains: true,
-  fields: true,
+  hills: FARM_HILLS,
+  edges: { left: -66, right: 76, top: 55, bottom: -8 },
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
@@ -209,7 +234,8 @@ const CLIFF_LEVEL: Level = {
   groundAt: (x) => cliffRaw(x + PLANTED) - cliffRaw(PLANTED),
   barn: false,
   mountains: false,
-  fields: false,
+  hills: [],
+  edges: { left: -50, right: 40, top: 55, bottom: -12 },
   bearsFrom: [-1],
   horizon: HIGH_WATER + CLIFF.sea.horizon,
   depth: LOW_WATER - CLIFF.view.below,

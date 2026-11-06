@@ -3,7 +3,7 @@ import { type BirdView, birdShape } from "./birds";
 import type { Camera } from "./camera";
 import type { Clouds } from "./clouds";
 import type { Debris } from "./debris";
-import { drawFields } from "./fields";
+import { drawHills } from "./hills";
 import { drawBees, drawHive, hiveLook } from "./hive-art";
 import type { BeeView, HiveView } from "./hives";
 import type { Dot } from "./flow";
@@ -136,8 +136,8 @@ export interface Scene {
   level: Level;
   /** Whether mountains line the horizon. */
   mountains: boolean;
-  /** Whether the fields of a level laid out in them are drawn in their colors. */
-  fieldColors: boolean;
+  /** Whether the hills of a level with hills are drawn in their colors. */
+  hillColors: boolean;
   /** The light at this time of day. */
   light: SkyLight;
   /** The time of year, from midsummer at 0 to midwinter at 1. */
@@ -423,14 +423,15 @@ export class Renderer {
       }
       this.fillInk(path, piece.alpha);
     }
-    if (scene.level.fields) {
-      drawFields(
+    if (scene.level.hills.length > 0) {
+      drawHills(
         this.ctx,
         camera,
+        scene.level.hills,
         skyline,
         scene.light,
         scene.season,
-        scene.fieldColors,
+        scene.hillColors,
       );
     }
     const sky = aboveLine(skyline);
