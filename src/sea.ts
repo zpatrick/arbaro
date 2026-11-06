@@ -3,9 +3,6 @@ import { PHYSICS } from "./physics";
 import { approach, at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import type { Wind } from "./wind";
 
-/** How the inside of the water is drawn. */
-export type SeaLines = "contours" | "hatching";
-
 /** What the debug panel sets about the sea. */
 export interface SeaSettings {
   /** Height of the swell rolling in from far out at sea, from none at 0 to huge at 1. */
@@ -20,8 +17,6 @@ export interface SeaSettings {
   tide: number;
   /** Whether the tide rises and falls with the day, twice a day. */
   tideRunning: boolean;
-  /** How the inside of the water is drawn. */
-  lines: SeaLines;
 }
 
 /** Where a wave comes from: the swell from far off, the wind's own waves, or its ripples. */

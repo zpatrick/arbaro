@@ -290,9 +290,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
       in a wind, by little whitecaps. Near, it is a cross-section: its water in the sea's own
-      color, taking on a share of the sky's, with lines raked through it that swing with the
-      water at their depth and still as they go down, or, as the panel chooses, its faces turned
-      from the light hatched like the mountains'.
+      color, taking on a share of the sky's, with contour lines raked through it that swing with
+      the water at their depth and still as they go down.
 - [x] The waves are swell rolling in from far off and waves of the wind's own, which run the way
       it blows and grow with the open water behind them, so an offshore wind leaves the water
       by the cliff calm. Both build and calm with the sea's momentum rather than at once, while
@@ -467,8 +466,7 @@ _Open._ A button flips into a view of the roots:
       mountains line its horizon.
 - [x] Sea page: how high and how long the swell is; how strongly the wind raises waves of its own;
       the sea's momentum, how long it takes to build or calm; the tide, set by hand or rising and
-      falling with the day; and whether the inside of the water is drawn with contour lines or
-      hatching. A line reads out how high the waves stand now, by the Douglas sea scale.
+      falling with the day. A line reads out how high the waves stand now, by the Douglas sea scale.
 - [x] Tree page: the species planted, which plants a tree of it afresh, with a description of how
       each grows; switch between steer-and-grow and flow mode and set the flow rate; multipliers
       on how much the wood and the roots can take; and an overlay showing how close each joint is

@@ -63,27 +63,6 @@ const LIFT_DEPTH = 0.9;
 /** How far, in meters, the rise of a shaped wave is eased across in the water under it, beyond its depth. */
 const LIFT_SOFT = 0.25;
 /**
- * Hatching the water's shaded faces: the gap between lines in CSS pixels; how far each reaches into
- * the water at most, in meters, and at least, in CSS pixels; how wide each is, in CSS pixels; how
- * far it leans off square, in radians; how far light
- * wraps past a face's edge; the shade over which every other line comes in and then the lines
- * between; how shaded every face is under thick cloud; how strongly it shows, and how deep the
- * still lines below the hatching start, in meters.
- */
-const HATCHING = {
-  gap: 3,
-  depth: 0.4,
-  least: 9,
-  width: 0.9,
-  lean: 0.5,
-  wrap: 0.35,
-  sparse: [0.3, 0.6],
-  dense: [0.58, 0.9],
-  overcast: 0.36,
-  strength: 1.1,
-  still: 1.2,
-} as const;
-/**
  * A breaker's life, in fractions of the way through breaking: as its crest pitches over, as its lip
  * is thrown out, as the lip falls onto the water ahead, as its tube fills with foam, and as it
  * rolls into a front of foam; and how deep into its curl its foam lies before the tube fills, as a
@@ -460,20 +439,7 @@ export function drawSea(
   ctx.globalAlpha = 1;
 
   ctx.clip(water);
-  const lines = sea.settings.lines;
-  switch (lines) {
-    case "contours":
-      drawContours(ctx, camera, sea, near, waters, 0);
-      break;
-    case "hatching":
-      drawContours(ctx, camera, sea, near, waters, HATCHING.still);
-      drawHatching(ctx, camera, outline, light, waters);
-      break;
-    default: {
-      const unknown: never = lines;
-      throw new Error(`Unknown way to draw the sea ${String(unknown)}.`);
-    }
-  }
+  drawContours(ctx, camera, sea, near, waters);
   drawFoam(ctx, camera, sea, near, waters, shaped);
   for (const cap of whitecapsOf(camera, sea, near, shaped)) {
     drawCap(ctx, cap, waters, dpr);
@@ -1463,83 +1429,6 @@ function drawWaveFoam(
   }
 }
 
-/**
- * Hatching just under the surface wherever it is turned from the light, like the mountains' shaded
- * faces: every other line as it falls into half shade, the lines between in full shade, and the
- * hollow under a curling lip shaded deepest. A few faint lines lie still far down.
- */
-function drawHatching(
-  ctx: CanvasRenderingContext2D,
-  camera: Camera,
-  outline: readonly Edge[],
-  light: SkyLight,
-  waters: Waters,
-): void {
-  const dpr = camera.dpr;
-  const sunUp = smoothstep(-0.04, 0.1, light.sun.height);
-  const moonUp = smoothstep(-0.04, 0.1, light.moon.height);
-  const gap = HATCHING.gap * dpr;
-  const sparse = new Path2D();
-  const dense = new Path2D();
-  let travelled = 0;
-  let line = 0;
-  for (let i = 0; i + 1 < outline.length; i += 1) {
-    const a = at(outline, i);
-    const b = at(outline, i + 1);
-    const length = distance(a, b);
-    if (length < 1e-6) {
-      continue;
-    }
-    // Out of the water, square to the surface.
-    const nx = (b.y - a.y) / length;
-    const ny = -(b.x - a.x) / length;
-    const facing = (body: { along: number; height: number }): number => {
-      const angle = Math.PI * (1 - clamp(body.along, 0, 1));
-      const lit = nx * Math.cos(angle) - ny * Math.sin(angle);
-      return 1 - clamp((lit + HATCHING.wrap) / (1 + HATCHING.wrap), 0, 1);
-    };
-    const byLight = lerp(
-      lerp(0.5, facing(light.moon), moonUp),
-      facing(light.sun),
-      sunUp,
-    );
-    const shade = Math.max(
-      lerp(HATCHING.overcast, byLight, light.direct),
-      a.hollow * 0.95,
-    );
-    travelled += length;
-    while (travelled >= gap) {
-      travelled -= gap;
-      line += 1;
-      const thin = smoothstep(...HATCHING.sparse, shade);
-      if (thin <= 0.02) {
-        continue;
-      }
-      const full = smoothstep(...HATCHING.dense, shade);
-      const path = line % 2 === 0 ? sparse : dense;
-      if (path === dense && full <= 0.02) {
-        continue;
-      }
-      const t = 1 - travelled / length;
-      const x = lerp(a.x, b.x, t);
-      const y = lerp(a.y, b.y, t);
-      // Into the water, leaning off square toward where the surface runs.
-      const into = Math.atan2(-ny, -nx) + HATCHING.lean;
-      const reach =
-        Math.max(HATCHING.least, HATCHING.depth * camera.scale) *
-        dpr *
-        (0.55 + 0.45 * shade);
-      path.moveTo(x - nx * 1.5 * dpr, y - ny * 1.5 * dpr);
-      path.lineTo(x + Math.cos(into) * reach, y + Math.sin(into) * reach);
-    }
-  }
-  ctx.lineCap = "butt";
-  ctx.lineWidth = HATCHING.width * dpr;
-  ctx.strokeStyle = css(waters.line, waters.lineAlpha * HATCHING.strength);
-  ctx.stroke(sparse);
-  ctx.stroke(dense);
-}
-
 /** The surface's line along `outline`, drawn as strongly through each point as it asks. */
 function strokeSurface(
   ctx: CanvasRenderingContext2D,
@@ -1577,8 +1466,7 @@ function polyline(points: readonly Point[]): Path2D {
 
 /**
  * Lines raked through the water under the surface, each swinging with the water at its depth, so
- * the waves' motion fades into stillness the deeper they lie. Only those deeper than `from` meters,
- * and fainter, when hatching shades the water above them.
+ * the waves' motion fades into stillness the deeper they lie.
  */
 function drawContours(
   ctx: CanvasRenderingContext2D,
@@ -1586,15 +1474,10 @@ function drawContours(
   sea: Sea,
   near: Near,
   waters: Waters,
-  from: number,
 ): void {
   const dpr = camera.dpr;
   const drift = sea.clock * 0.04 * sea.wind;
-  const faint = from > 0 ? 0.5 : 1;
   for (const [k, { depth, index }] of near.lines.entries()) {
-    if (depth < from) {
-      continue;
-    }
     const heights = at(near.profile.heights, index);
     const shifts = at(near.profile.shifts, index);
     const fade = 1 - 0.7 * smoothstep(0.2, 5, depth);
@@ -1621,7 +1504,7 @@ function drawContours(
       const pen = valueNoise(along, 17 + k * 3.1);
       pens.push(smoothstep(-0.55, -0.2, pen));
     }
-    ctx.fillStyle = css(waters.line, waters.lineAlpha * fade * faint);
+    ctx.fillStyle = css(waters.line, waters.lineAlpha * fade);
     ctx.fill(ribbons(points, pens, width));
   }
 }

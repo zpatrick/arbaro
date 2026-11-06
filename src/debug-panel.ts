@@ -9,12 +9,7 @@ import type { BirdSettings } from "./birds";
 import type { HiveSettings } from "./hives";
 import { LEVELS, levelById, type LevelId } from "./level";
 import type { Strength } from "./physics";
-import {
-  type SeaLines,
-  type SeaSettings,
-  swellHeightFor,
-  swellPeriodFor,
-} from "./sea";
+import { type SeaSettings, swellHeightFor, swellPeriodFor } from "./sea";
 import { clockTime, seasonName, type TimeSettings } from "./sky";
 import { SPECIES, type Species } from "./species";
 import type { Growth, GrowthMode } from "./tree";
@@ -241,24 +236,6 @@ const TIDES: readonly (readonly [number, string])[] = [
   [0.62, "High"],
   [0.88, "High water"],
 ];
-const SEA_LINES: readonly {
-  id: SeaLines;
-  name: string;
-  description: string;
-}[] = [
-  {
-    id: "contours",
-    name: "Contour lines",
-    description:
-      "Lines raked through the water follow the waves, swinging with the water at their depth, so the motion fades into stillness further down.",
-  },
-  {
-    id: "hatching",
-    name: "Hatching",
-    description:
-      "The faces of the waves turned from the light are hatched like the mountains, densest in the hollow under a curling crest.",
-  },
-];
 
 /** Where the wind blows toward, in eighths of a turn counterclockwise from the right. */
 const HEADINGS = [
@@ -340,7 +317,6 @@ function defaults(): Settings {
       momentum: 8,
       tide: 0.5,
       tideRunning: true,
-      lines: "contours",
     },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
@@ -434,9 +410,7 @@ function isSaved(saved: unknown): saved is Saved {
           (key) => sea[key] === undefined || isNumber(sea[key]),
         ) &&
         (sea.tideRunning === undefined ||
-          typeof sea.tideRunning === "boolean") &&
-        (sea.lines === undefined ||
-          SEA_LINES.some((style) => style.id === sea.lines)))) &&
+          typeof sea.tideRunning === "boolean"))) &&
     typeof saved.open === "boolean" &&
     TABS.some((t) => t.id === saved.tab) &&
     typeof saved.showStrain === "boolean" &&
@@ -550,8 +524,6 @@ export class DebugPanel {
   private readonly momentum: Slider;
   private readonly tide: Slider;
   private readonly tideToggle: HTMLElement;
-  private readonly seaLines = new Map<SeaLines, HTMLElement>();
-  private readonly seaLinesDescription: HTMLElement;
   /** How the sea stands now, as it builds and calms. */
   private readonly seaNow: HTMLElement;
   private readonly models = new Map<WindModel, HTMLElement>();
@@ -773,18 +745,6 @@ export class DebugPanel {
     this.tideToggle = this.toggleRow(tide, "Rises and falls with the day", () =>
       this.setSea({ tideRunning: !this.sea.tideRunning }),
     );
-    const drawn = element("section", "debug-section", seaPage);
-    element("h2", "debug-title", drawn, "Inside the water");
-    const styles = element("div", "models", drawn);
-    for (const style of SEA_LINES) {
-      this.seaLines.set(
-        style.id,
-        this.radioRow(styles, style.name, () =>
-          this.setSea({ lines: style.id }),
-        ),
-      );
-    }
-    this.seaLinesDescription = element("p", "model-description", drawn);
 
     const tree = this.page("tree", card);
     const kind = element("section", "debug-section", tree);
@@ -1178,8 +1138,7 @@ export class DebugPanel {
     this.cloudCover.show(clouds, nameFor(COVERS, clouds));
     this.cloudHeight.show(cloudHeight, nameFor(HEIGHTS, cloudHeight));
 
-    const { swell, swellLength, windWaves, momentum, tideRunning, lines } =
-      this.sea;
+    const { swell, swellLength, windWaves, momentum, tideRunning } = this.sea;
     const swellHeight = swellHeightFor(swell);
     this.swell.show(
       swell,
@@ -1200,12 +1159,6 @@ export class DebugPanel {
     );
     this.showTide();
     this.tideToggle.classList.toggle("selected", tideRunning);
-    for (const [id, row] of this.seaLines) {
-      row.classList.toggle("selected", id === lines);
-    }
-    const style = SEA_LINES.find((s) => s.id === lines);
-    invariant(style !== undefined, `Unknown way to draw the sea ${lines}.`);
-    this.seaLinesDescription.textContent = style.description;
 
     for (const [id, row] of this.species) {
       row.classList.toggle("selected", id === this.planting.species);
