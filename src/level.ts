@@ -27,7 +27,7 @@ export interface Level {
   /** Whether the barn stands beside the tree, and mountains line the horizon. */
   barn: boolean;
   mountains: boolean;
-  /** Whether its ground is laid out in fields, after the sand drawings of hills. */
+  /** Whether hills raked in contour lines are drawn in its ground, after the sand drawings. */
   fields: boolean;
   /** The sides bears come in from: -1 the left, 1 the right. */
   bearsFrom: readonly (1 | -1)[];
@@ -95,7 +95,7 @@ const FARM_LEVEL: Level = {
   id: "farm",
   name: "Farm",
   description:
-    "Rolling farmland, with the tree and the barn in a level yard. Its ground is laid out in fields, after the sand drawings of hills: hedgerows of pebbles, plowed rows, pasture and furrows. Bears come from either side.",
+    "Rolling farmland, with the tree and the barn in a level yard. Its ground is drawn after the sand drawings of hills: hills raked in contour lines rise under its surface, with plain ground between them. Bears come from either side.",
   groundAt: farmGround,
   barn: true,
   mountains: true,

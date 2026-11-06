@@ -427,7 +427,6 @@ export class Renderer {
       drawFields(
         this.ctx,
         camera,
-        scene.level,
         skyline,
         scene.light,
         scene.season,

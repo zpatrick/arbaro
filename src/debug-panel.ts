@@ -629,7 +629,7 @@ export class DebugPanel {
       "Mountains on the horizon",
       () => this.setWorld({ mountains: !this.world.mountains }),
     );
-    this.fieldColorsToggle = this.toggleRow(where, "Colors in the fields", () =>
+    this.fieldColorsToggle = this.toggleRow(where, "Colors in the hills", () =>
       this.setWorld({ fieldColors: !this.world.fieldColors }),
     );
 

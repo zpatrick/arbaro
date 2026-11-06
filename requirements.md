@@ -288,15 +288,14 @@ switched on in the debug panel beside the original steer-and-grow controls:
       seen from the hill. Bears come only from the left. No barn stands there, and no mountains
       unless the debug panel puts them back.
 - [x] A third level, the farm: rolling farmland, with the tree and the barn in a level yard and
-      hills rising and falling beyond it either way. Its ground is laid out in fields after the
-      sand drawings of hills (reference 14): under a thin rim of ink along the surface lie bands
-      one under another, a hedgerow of close-packed pebbles, fields plowed in rows, and pasture,
-      over furrowed land running on down. Each band swells and thins along the land, so its edges
-      roll as hills do of their own, and is split by leaning dividers into fields, each of its
-      own color, those in rows plowed one way or the other in turn. In their colors the fields
-      are green, gold and terracotta, lit like the flowers through the day and night, turning
-      toward straw through the fall and bare earth through the winter. Without them, their
-      patterns are carved into the ink as the barn's lines are. Bears come from either side.
+      hills rising and falling beyond it either way. Its ground is drawn after the sand drawing of
+      a tree on hills (reference 14): a few hills raked in contour lines rise to just under the
+      surface and arch away again, lower on one side than the other, their lines following their
+      tops down into the ground like the ridges of a fingerprint, as close on screen however near
+      the view. Hills stand one in front of another, and between them the ground is plain ink. In
+      their colors the hills are warm sand, lit like the flowers through the day and night,
+      turning toward russet through the fall and grey-brown through the winter; without them,
+      their lines are carved into the ink as the barn's lines are. Bears come from either side.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
@@ -474,8 +473,7 @@ _Open._ A button flips into a view of the roots:
       and snows, and how fast lying snow melts; and how much of the sky the clouds cover and how
       high they hang.
 - [x] Level page: which level the tree grows in, which plants a tree there afresh; whether
-      mountains line its horizon; and, on a level laid out in fields, whether they are drawn in
-      their colors.
+      mountains line its horizon; and, on the farm, whether its hills are drawn in their colors.
 - [x] Sea page: how high and how long the swell is; how strongly the wind raises waves of its own;
       the sea's momentum, how long it takes to build or calm; the tide, set by hand or rising and
       falling with the day. A line reads out how high the waves stand now, by the Douglas sea scale.
