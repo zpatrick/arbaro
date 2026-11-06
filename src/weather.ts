@@ -8,6 +8,11 @@ import type { Wind } from "./wind";
 /** Lying snow by day, before the light falls on it. */
 export const SNOW_COLOR: Rgb = [250, 248, 243];
 
+/** Water the weather falls into: the height of its surface at `x`, wherever there is water. */
+export interface Water {
+  surfaceAt(x: number): number | undefined;
+}
+
 /** The weather, as the debug panel sets it. */
 export interface WeatherSettings {
   /** How hard it rains, from 0 dry to 1 a downpour. */
@@ -209,14 +214,15 @@ export class Weather {
     wind: Wind,
     camera: Camera,
     catchers: readonly Catcher[],
+    water: Water,
   ): void {
     this.steps += 1;
     const zone = this.zoneFor(camera);
-    this.fall(dt, wind, zone, catchers);
+    this.fall(dt, wind, zone, catchers, water);
     this.cover.update(dt, this.snowfall, this.melt, zone, (chunk) =>
       this.flakes.push(chunk),
     );
-    this.rain(dt, wind, camera);
+    this.rain(dt, wind, camera, water);
   }
 
   /** Length of a raindrop's streak at its speed, in pixels across and down. */
@@ -254,13 +260,15 @@ export class Weather {
 
   /**
    * Lets new flakes into the air through its edges, as many as the snowfall carries in, then
-   * moves each flake with the air, settling it on the first flower or surface it meets.
+   * moves each flake with the air, settling it on the first flower or surface it meets, or melting
+   * it into `water`.
    */
   private fall(
     dt: number,
     wind: Wind,
     zone: Zone,
     catchers: readonly Catcher[],
+    water: Water,
   ): void {
     const width = zone.right - zone.left;
     const height = zone.top - zone.bottom;
@@ -383,6 +391,11 @@ export class Weather {
         }
       }
 
+      // Snow falling into the sea melts there.
+      const sea = water.surfaceAt(flake.x);
+      if (sea !== undefined && flake.y <= sea) {
+        continue;
+      }
       if (flake.y <= this.cover.surfaceAt(flake.x)) {
         // Snow cannot lie on a roof steeper than it stands, so a flake landing on one rolls
         // down it, to fall from its edge.
@@ -457,14 +470,18 @@ export class Weather {
    * Moves the raindrops down the view and sideways with the wind, wrapping those that reach the
    * ground back in at the top, and adds or removes some so there are as many as the rain brings.
    */
-  private rain(dt: number, wind: Wind, camera: Camera): void {
+  private rain(dt: number, wind: Wind, camera: Camera, water: Water): void {
     this.drift = wind.at(0, 10, 0).x * RAIN.drift;
     const width = camera.width;
-    // The row of the ground under a drop `x` CSS pixels across the view.
+    // The row of the ground, or of the water over it, under a drop `x` CSS pixels across the view.
     const groundAt = (x: number): number => {
       const world = camera.toWorld(x, 0).x;
+      const ground = this.level.groundAt(world);
       return clamp(
-        camera.toScreen(world, this.level.groundAt(world)).y,
+        camera.toScreen(
+          world,
+          Math.max(ground, water.surfaceAt(world) ?? ground),
+        ).y,
         0,
         camera.height,
       );

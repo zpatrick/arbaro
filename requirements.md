@@ -223,6 +223,31 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 - [x] A flat world with level ground.
 - [ ] Levels with shaped terrain: hills, slopes, rocks underground and solid obstacles above.
+- [x] A second level, the cliff: a hill rolling down gently to the left, crowned by the tree, that
+      rolls off over a rounded brink and falls steeply into the sea. A ledge of rock at its foot
+      bares at low water, and beyond it the seabed shelves away into deep water. Bears come only
+      from the left. No barn stands there, and no mountains unless the debug panel puts them back.
+- [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
+      real sea's, so several crests roll in across the view at once. Far off it is a band of fine
+      lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
+      in a wind, by little whitecaps. Near, it is a cross-section: its water in the sea's own
+      color, taking on a share of the sky's, with lines raked through it that swing with the
+      water at their depth and still as they go down, or, as the panel chooses, its faces turned
+      from the light hatched like the mountains'.
+- [x] The waves are swell rolling in from far off and waves of the wind's own, which run the way
+      it blows and grow with the open water behind them, so an offshore wind leaves the water
+      by the cliff calm. Both build and calm with the sea's momentum rather than at once, while
+      ripples follow every gust. Waves stand taller and shorter as the water shoals, and the
+      tide, which rises and falls twice a day, moves where they break.
+- [x] A wave too tall for its water steepens, its face standing upright and hollowing, then
+      breaks: its crest pitches over in a curling lip tipped with claws of foam, lands in a burst
+      of spray, and rolls on as a front of foam, leaving foam on the water behind it to drift
+      and fade. Reaching the cliff, it surges up the rock in a sheet of foam and throws spray up
+      the face, higher the bigger the wave and the higher the tide. A strong wind tears the tops
+      off steep crests as whitecaps and blows spray off them.
+- [x] The sea answers the weather: rain flicks up little crowns of spray from its surface, snow
+      melts into it, and its colors follow the light through the day and the night. Wood and
+      hives falling into it splash, float, and bob on the waves before they fade.
 - [ ] Soil holds moisture. Rain wets the top layer, and water drains down, spreads sideways and
       evaporates near the surface. Underground water pockets and a water table stay wet.
 - [x] A day and night cycle: the sun crosses the sky by day, the moon and stars come out at night,
@@ -367,7 +392,7 @@ _Open._ A button flips into a view of the roots:
 ## Debug tools
 
 - [x] A collapsible debug panel down the right, beside the scene rather than over it, with a tab
-      down its left edge for each page: weather, the tree, flowers, and wildlife. The scene narrows as the
+      down its left edge for each page: the level, weather, the sea, the tree, flowers, and wildlife. The scene narrows as the
       panel opens. Time controls stay at the top of every page, and a button at the bottom puts
       every setting back to its default.
 - [x] A plain black strip down the left of the scene, kept for tools.
@@ -377,6 +402,12 @@ _Open._ A button flips into a view of the roots:
       strength slider, and a choice of wind model with a description of each; how hard it rains
       and snows, and how fast lying snow melts; and how much of the sky the clouds cover and how
       high they hang.
+- [x] Level page: which level the tree grows in, which plants a tree there afresh, and whether
+      mountains line its horizon.
+- [x] Sea page: how high and how long the swell is; how strongly the wind raises waves of its own;
+      the sea's momentum, how long it takes to build or calm; the tide, set by hand or rising and
+      falling with the day; and whether the inside of the water is drawn with contour lines or
+      hatching. A line reads out how high the waves stand now, by the Douglas sea scale.
 - [x] Tree page: switch between steer-and-grow and flow mode and set the flow rate; multipliers on
       how much the wood and the roots can take; and an overlay showing how close each joint is to
       breaking.

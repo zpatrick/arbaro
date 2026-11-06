@@ -33,6 +33,24 @@ const DRAG = 1.2;
 const HINGE_RELEASE = 0.5;
 /** Spin, in radians per second, a piece starts tipping off its stump with, toward its heavy side. */
 const HINGE_NUDGE = 0.08;
+/** Density of sea water, in kilograms per cubic meter. */
+const WATER_DENSITY = 1025;
+/**
+ * How hard water drags on wood moving through it, per second, as a multiple of the weight of the
+ * water the wood pushes aside.
+ */
+const WATER_DRAG = 2.5;
+/** Seconds a piece floats on the sea, from when it first falls in, before it starts to fade. */
+const FLOAT_LINGER = 16;
+/** A piece hitting the water faster than this, in meters per second, throws up a splash. */
+const SPLASH_SPEED = 1;
+
+/** Water a piece can fall into: where its surface is, how it moves, and how it takes a splash. */
+export interface Water {
+  surfaceAt(x: number): number | undefined;
+  flowAt(x: number, y: number): { x: number; y: number };
+  splash(x: number, speed: number, size: number): void;
+}
 
 /** A point a piece can land on, with the radius of wood around it. */
 export interface Contact {
@@ -84,6 +102,9 @@ export class Debris {
   private hinged: boolean;
   /** Whether it was told to fade now, as a hive does once a bear has eaten it. */
   private fading = false;
+  /** Whether any of it is in the water, and whether it has ever fallen in. */
+  private wet = false;
+  private floated = false;
 
   constructor(
     shapes: readonly Path2D[],
@@ -189,32 +210,78 @@ export class Debris {
   }
 
   /**
-   * Moves the piece over `level`'s ground, and fades it once it has lain there long enough, however
-   * much the wind still rocks it, or once it has been off the tree too long without landing.
+   * Moves the piece over `level`'s ground, or floats it on `water`, and fades it once it has lain
+   * or floated there long enough, however much the wind or the waves still rock it, or once it has
+   * been off the tree too long without landing.
    */
-  update(dt: number, wind: Wind, level: Level): void {
+  update(dt: number, wind: Wind, level: Level, water: Water): void {
     this.age += dt;
     const steps = Math.max(1, Math.ceil(dt * STEPS_PER_SECOND));
     let touched = false;
     for (let i = 0; i < steps; i += 1) {
-      touched = this.advance(dt / steps, wind, level) || touched;
+      touched = this.advance(dt / steps, wind, level, water) || touched;
     }
     if (this.landed !== undefined) {
       this.landed += dt;
     } else if (touched) {
       this.landed = 0;
     }
+    const linger = this.floated
+      ? Math.max(this.linger, FLOAT_LINGER)
+      : this.linger;
     if (
       this.fading ||
-      (this.landed ?? 0) >= this.linger ||
-      this.age >= LONGEST
+      (this.landed ?? 0) >= linger ||
+      this.age >= LONGEST + (this.floated ? FLOAT_LINGER : 0)
     ) {
       this.alpha = Math.max(0, this.alpha - dt / FADE);
     }
   }
 
-  /** Moves the piece by `h` seconds. Returns whether it is touching `level`'s ground. */
-  private advance(h: number, wind: Wind, level: Level): boolean {
+  /**
+   * Buoys up every point of the piece that is under `water` with the weight of the water it
+   * pushes aside, and drags it along with the water's swing. Returns whether any of it is wet.
+   */
+  private float(h: number, water: Water): boolean {
+    const { mass, inertia, contacts } = this.piece;
+    // Each point stands for an even share of the wood.
+    const volume = mass / (PHYSICS.woodDensity * contacts.length);
+    let wet = false;
+    let plunge = 0;
+    for (const p of this.points()) {
+      const surface = water.surfaceAt(p.x);
+      if (surface === undefined || p.y - p.r >= surface) {
+        continue;
+      }
+      wet = true;
+      const under = clamp((surface - (p.y - p.r)) / (2 * p.r), 0, 1);
+      const displaced = WATER_DENSITY * volume * under;
+      const flow = water.flowAt(p.x, p.y);
+      const fx = WATER_DRAG * displaced * (flow.x - p.vx);
+      const fy =
+        displaced * PHYSICS.gravity + WATER_DRAG * displaced * (flow.y - p.vy);
+      this.vx += (h * fx) / mass;
+      this.vy += (h * fy) / mass;
+      const armX = p.x - this.x;
+      const armY = p.y - this.y;
+      this.spin += (h * (armX * fy - armY * fx)) / inertia;
+      plunge = Math.max(plunge, -p.vy);
+    }
+    if (wet && !this.wet && plunge > SPLASH_SPEED) {
+      const { minX, maxX } = this.bounds();
+      water.splash(this.x, plunge, clamp(maxX - minX, 0.2, 3));
+    }
+    if (wet) {
+      this.floated = true;
+      this.hinged = false;
+    }
+    this.wet = wet;
+    return wet;
+  }
+
+  /** Moves the piece by `h` seconds. Returns whether it is touching `level`'s ground or `water`. */
+  private advance(h: number, wind: Wind, level: Level, water: Water): boolean {
+    const wet = this.float(h, water);
     const { mass, inertia, area, hinge } = this.piece;
     const air = wind.at(this.x, this.y, 0);
     const rx = air.x - this.vx;
@@ -329,6 +396,6 @@ export class Debris {
     this.x += h * this.vx;
     this.y += h * this.vy;
     this.angle += h * this.spin;
-    return touching.length > 0;
+    return touching.length > 0 || wet;
   }
 }

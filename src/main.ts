@@ -22,6 +22,7 @@ import { type Level, levelById, type LevelId } from "./level";
 import type { Controls, Limb } from "./limb";
 import type { Failure, Strength } from "./physics";
 import { minimumRadius, pieceShapes, Renderer, treeShapes } from "./render";
+import { Sea, type SeaSettings } from "./sea";
 import { SpoutControl } from "./spout-control";
 import {
   type Bounds,
@@ -90,6 +91,8 @@ const wind = new Wind(panel.wind);
 let level: Level = levelById(panel.world.level);
 const weather = new Weather(panel.weather, level);
 const clouds = new Clouds(panel.weather);
+const sea = new Sea(panel.sea, level);
+sea.settle(wind, panel.time.timeOfDay);
 const spoutControl = new SpoutControl(stage);
 const dots = new FlowDots();
 const flowers = new Flowers();
@@ -181,6 +184,8 @@ function useLevel(next: Level): void {
   level = next;
   frameLevel();
   weather.setLevel(level);
+  sea.setLevel(level);
+  sea.settle(wind, panel.time.timeOfDay);
   debris.length = 0;
   birds.clear();
   replant();
@@ -419,6 +424,7 @@ function step(dt: number, controls: Controls): void {
   }
   advanceDay(panel.time, dt);
   clock += dt;
+  sea.update(dt, wind, panel.time.timeOfDay);
   flowers.update(dt, tree, panel.flowers, {
     season: panel.time.season,
     wind,
@@ -438,10 +444,16 @@ function step(dt: number, controls: Controls): void {
     }),
   );
   birds.update(dt, tree, camera, panel.birds);
-  weather.update(dt, wind, camera, [
-    ...flowers.catchers(panel.flowers),
-    ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
-  ]);
+  weather.update(
+    dt,
+    wind,
+    camera,
+    [
+      ...flowers.catchers(panel.flowers),
+      ...(tree === undefined ? [] : hives.catchers(tree, panel.wildlife)),
+    ],
+    sea,
+  );
   clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay));
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
@@ -449,7 +461,7 @@ function step(dt: number, controls: Controls): void {
     dots.clear();
   }
   for (const piece of debris) {
-    piece.update(dt, wind, level);
+    piece.update(dt, wind, level, sea);
   }
   for (let i = debris.length - 1; i >= 0; i -= 1) {
     if (at(debris, i).done) {
@@ -641,6 +653,7 @@ function frame(now: number): void {
   if (panel.time.dayRunning) {
     panel.showTimeOfDay();
   }
+  panel.showSea(sea.significantHeight);
   showClock(light);
   const flowing = tree !== undefined && panel.growth.mode === "flow";
   const flowerHover =
@@ -708,6 +721,7 @@ function frame(now: number): void {
       ? { dots: dots.dots, hoveredSpout, openSpout: spoutControl.limb }
       : undefined,
     weather,
+    sea,
     clouds,
     hives: hives.views(panel.wildlife),
     bees: hives.bees(),
@@ -751,6 +765,12 @@ interface DebugHandle {
   weather(settings: Partial<WeatherSettings>): void;
   /** The rain and snow falling, and the snow lying on the ground and the barn. */
   weatherState(): Weather;
+  /** Changes the sea, as the debug panel would. */
+  sea(settings: Partial<SeaSettings>): void;
+  /** The sea's waves, foam and spray. */
+  seaState(): Sea;
+  /** Sets the sea at once to how its settings and the wind would build it, as a sea long settled. */
+  settleSea(): void;
   /**
    * Grows a flower by hand at `fraction` of limb `index`'s length, on its `side` (1 left, -1
    * right), like a shift-click.
@@ -854,6 +874,13 @@ if (import.meta.env.DEV) {
     },
     weatherState() {
       return weather;
+    },
+    sea(settings) {
+      panel.setSea(settings);
+    },
+    seaState: () => sea,
+    settleSea() {
+      sea.settle(wind, panel.time.timeOfDay);
     },
     placeFlower(index, fraction, side) {
       const limb = at(standing().limbs, index);

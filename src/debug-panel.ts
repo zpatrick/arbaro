@@ -9,6 +9,12 @@ import type { BirdSettings } from "./birds";
 import type { HiveSettings } from "./hives";
 import { LEVELS, levelById, type LevelId } from "./level";
 import type { Strength } from "./physics";
+import {
+  type SeaLines,
+  type SeaSettings,
+  swellHeightFor,
+  swellPeriodFor,
+} from "./sea";
 import { clockTime, seasonName, type TimeSettings } from "./sky";
 import type { Growth, GrowthMode } from "./tree";
 import { draggable, element, shape, Slider } from "./ui";
@@ -30,11 +36,12 @@ const FLOWER_SIZE_RANGE = 5;
 const MAX_FLOW_RATE = 3;
 
 /** The panel's pages, each opened by its own tab down the panel's left edge. */
-type Tab = "level" | "weather" | "tree" | "flowers" | "wildlife";
+type Tab = "level" | "weather" | "sea" | "tree" | "flowers" | "wildlife";
 
 const TABS: readonly { id: Tab; name: string }[] = [
   { id: "level", name: "Level" },
   { id: "weather", name: "Weather" },
+  { id: "sea", name: "Sea" },
   { id: "tree", name: "Tree" },
   { id: "flowers", name: "Flowers" },
   { id: "wildlife", name: "Wildlife" },
@@ -175,6 +182,60 @@ const BEAUFORT: readonly (readonly [number, string])[] = [
   [32.7, "Hurricane"],
 ];
 
+/** Names for the swell's height in meters, and for its length by period in seconds, from where each begins. */
+const SWELLS: readonly (readonly [number, string])[] = [
+  [0, "None"],
+  [0.02, "Low"],
+  [0.4, "Moderate"],
+  [1, "Heavy"],
+  [1.5, "Huge"],
+];
+const SWELL_LENGTHS: readonly (readonly [number, string])[] = [
+  [0, "Short"],
+  [3.5, "Average"],
+  [4.6, "Long"],
+];
+/** Douglas sea scale: names for the sea by its waves' significant height, in meters. */
+const SEA_STATES: readonly (readonly [number, string])[] = [
+  [0, "Calm, glassy"],
+  [0.02, "Calm, rippled"],
+  [0.1, "Smooth"],
+  [0.5, "Slight"],
+  [1.25, "Moderate"],
+  [2.5, "Rough"],
+  [4, "Very rough"],
+];
+/** The wind waves slider runs from none to this many times the usual. */
+const MOST_WIND_WAVES = 2;
+/** The momentum slider runs, evenly in ratio, from a second up to this many. */
+const MOST_MOMENTUM = 60;
+/** Names for the tide, from where each begins. */
+const TIDES: readonly (readonly [number, string])[] = [
+  [0, "Low water"],
+  [0.12, "Low"],
+  [0.38, "Mid tide"],
+  [0.62, "High"],
+  [0.88, "High water"],
+];
+const SEA_LINES: readonly {
+  id: SeaLines;
+  name: string;
+  description: string;
+}[] = [
+  {
+    id: "contours",
+    name: "Contour lines",
+    description:
+      "Lines raked through the water follow the waves, swinging with the water at their depth, so the motion fades into stillness further down.",
+  },
+  {
+    id: "hatching",
+    name: "Hatching",
+    description:
+      "The faces of the waves turned from the light are hatched like the mountains, densest in the hollow under a curling crest.",
+  },
+];
+
 /** Where the wind blows toward, in eighths of a turn counterclockwise from the right. */
 const HEADINGS = [
   "right",
@@ -199,6 +260,7 @@ interface Settings {
   growth: Growth;
   wind: WindSettings;
   weather: WeatherSettings;
+  sea: SeaSettings;
   strength: Strength;
   showStrain: boolean;
   flowers: FlowerSettings;
@@ -210,7 +272,7 @@ interface Settings {
 
 interface Saved extends Omit<
   Settings,
-  "world" | "weather" | "wildlife" | "birds" | "bears"
+  "world" | "weather" | "sea" | "wildlife" | "birds" | "bears"
 > {
   open: boolean;
   tab: Tab;
@@ -220,6 +282,7 @@ interface Saved extends Omit<
    */
   world?: Partial<WorldSettings>;
   weather?: Partial<WeatherSettings>;
+  sea?: Partial<SeaSettings>;
   wildlife?: Partial<HiveSettings>;
   birds?: Partial<BirdSettings>;
   bears?: Partial<BearSettings>;
@@ -237,6 +300,15 @@ function defaults(): Settings {
       melt: 1,
       clouds: 0,
       cloudHeight: 0.6,
+    },
+    sea: {
+      swell: 0.6,
+      swellLength: 0.35,
+      windWaves: 1,
+      momentum: 8,
+      tide: 0.5,
+      tideRunning: true,
+      lines: "contours",
     },
     strength: { wood: 1, roots: 1, flowers: 1 },
     showStrain: false,
@@ -287,6 +359,7 @@ function isSaved(saved: unknown): saved is Saved {
     growth,
     wind,
     weather,
+    sea,
     strength,
     flowers,
     time,
@@ -319,6 +392,15 @@ function isSaved(saved: unknown): saved is Saved {
         ["rain", "snow", "melt", "clouds", "cloudHeight"].every(
           (key) => weather[key] === undefined || isNumber(weather[key]),
         ))) &&
+    (sea === undefined ||
+      (isRecord(sea) &&
+        ["swell", "swellLength", "windWaves", "momentum", "tide"].every(
+          (key) => sea[key] === undefined || isNumber(sea[key]),
+        ) &&
+        (sea.tideRunning === undefined ||
+          typeof sea.tideRunning === "boolean") &&
+        (sea.lines === undefined ||
+          SEA_LINES.some((style) => style.id === sea.lines)))) &&
     typeof saved.open === "boolean" &&
     TABS.some((t) => t.id === saved.tab) &&
     typeof saved.showStrain === "boolean" &&
@@ -369,6 +451,8 @@ export class DebugPanel {
   readonly wind: WindSettings;
   /** Live rain and snow, read every frame. */
   readonly weather: WeatherSettings;
+  /** Live settings for the sea, read every frame. The sea moves the tide while it follows the day. */
+  readonly sea: SeaSettings;
   /** Live multipliers on how much the tree can take before it breaks. */
   readonly strength: Strength;
   /** Whether to mark how close each joint is to breaking. */
@@ -420,6 +504,16 @@ export class DebugPanel {
   private readonly melt: Slider;
   private readonly cloudCover: Slider;
   private readonly cloudHeight: Slider;
+  private readonly swell: Slider;
+  private readonly swellLength: Slider;
+  private readonly windWaves: Slider;
+  private readonly momentum: Slider;
+  private readonly tide: Slider;
+  private readonly tideToggle: HTMLElement;
+  private readonly seaLines = new Map<SeaLines, HTMLElement>();
+  private readonly seaLinesDescription: HTMLElement;
+  /** How the sea stands now, as it builds and calms. */
+  private readonly seaNow: HTMLElement;
   private readonly models = new Map<WindModel, HTMLElement>();
   private readonly description: HTMLElement;
   private readonly modes = new Map<GrowthMode, HTMLElement>();
@@ -449,6 +543,7 @@ export class DebugPanel {
     this.growth = { ...settings.growth };
     this.wind = { ...settings.wind };
     this.weather = { ...defaults().weather, ...settings.weather };
+    this.sea = { ...defaults().sea, ...settings.sea };
     this.strength = { ...settings.strength };
     this.showStrain = settings.showStrain;
     // Saved settings may carry fields the flowers no longer have; only these carry over.
@@ -599,6 +694,53 @@ export class DebugPanel {
     this.cloudHeight = new Slider(sky, "Height", (value) =>
       this.setWeather({ cloudHeight: value }),
     );
+
+    const seaPage = this.page("sea", card);
+    const waves = element("section", "debug-section", seaPage);
+    element("h2", "debug-title", waves, "Sea");
+    element(
+      "p",
+      "model-description",
+      waves,
+      "Swell rolls in from far out, and the wind raises waves of its own that run the way it blows. Both build and calm with the sea's momentum, stand taller as the water shoals, curl over and break on the shelf, and crash against the cliff. Only the cliff has a sea.",
+    );
+    this.seaNow = element("p", "model-description", waves);
+    const swell = element("section", "debug-section", seaPage);
+    element("h2", "debug-title", swell, "Swell");
+    this.swell = new Slider(swell, "Height", (value) =>
+      this.setSea({ swell: value }),
+    );
+    this.swellLength = new Slider(swell, "Length", (value) =>
+      this.setSea({ swellLength: value }),
+    );
+    const raised = element("section", "debug-section", seaPage);
+    element("h2", "debug-title", raised, "Wind and momentum");
+    this.windWaves = new Slider(raised, "Wind waves", (value) =>
+      this.setSea({ windWaves: value * MOST_WIND_WAVES }),
+    );
+    this.momentum = new Slider(raised, "Momentum", (value) =>
+      this.setSea({ momentum: Math.pow(MOST_MOMENTUM, value) }),
+    );
+    const tide = element("section", "debug-section", seaPage);
+    element("h2", "debug-title", tide, "Tide");
+    this.tide = new Slider(tide, "Level", (value) =>
+      this.setSea({ tide: value, tideRunning: false }),
+    );
+    this.tideToggle = this.toggleRow(tide, "Rises and falls with the day", () =>
+      this.setSea({ tideRunning: !this.sea.tideRunning }),
+    );
+    const drawn = element("section", "debug-section", seaPage);
+    element("h2", "debug-title", drawn, "Inside the water");
+    const styles = element("div", "models", drawn);
+    for (const style of SEA_LINES) {
+      this.seaLines.set(
+        style.id,
+        this.radioRow(styles, style.name, () =>
+          this.setSea({ lines: style.id }),
+        ),
+      );
+    }
+    this.seaLinesDescription = element("p", "model-description", drawn);
 
     const tree = this.page("tree", card);
     const growth = element("section", "debug-section", tree);
@@ -808,6 +950,31 @@ export class DebugPanel {
     this.save();
   }
 
+  setSea(settings: Partial<SeaSettings>): void {
+    Object.assign(this.sea, settings);
+    this.render();
+    this.save();
+  }
+
+  /**
+   * Shows how the sea stands now, its waves `height` meters high, and keeps the tide's slider with
+   * the tide while it follows the day.
+   */
+  showSea(height: number): void {
+    const text = `Waves now ${height.toFixed(1)} m · ${nameFor(SEA_STATES, height)}`;
+    if (this.seaNow.textContent !== text) {
+      this.seaNow.textContent = text;
+    }
+    if (this.sea.tideRunning) {
+      this.showTide();
+    }
+  }
+
+  private showTide(): void {
+    const { tide } = this.sea;
+    this.tide.show(tide, nameFor(TIDES, tide));
+  }
+
   setSimulationSpeed(speed: number): void {
     invariant(
       SPEEDS.some((s) => s.speed === speed),
@@ -844,6 +1011,7 @@ export class DebugPanel {
     Object.assign(this.growth, fresh.growth);
     Object.assign(this.wind, fresh.wind);
     Object.assign(this.weather, fresh.weather);
+    Object.assign(this.sea, fresh.sea);
     Object.assign(this.strength, fresh.strength);
     Object.assign(this.flowers, fresh.flowers);
     Object.assign(this.wildlife, fresh.wildlife);
@@ -943,6 +1111,35 @@ export class DebugPanel {
     this.cloudCover.show(clouds, nameFor(COVERS, clouds));
     this.cloudHeight.show(cloudHeight, nameFor(HEIGHTS, cloudHeight));
 
+    const { swell, swellLength, windWaves, momentum, tideRunning, lines } =
+      this.sea;
+    const swellHeight = swellHeightFor(swell);
+    this.swell.show(
+      swell,
+      `${swellHeight.toFixed(1)} m · ${nameFor(SWELLS, swellHeight)}`,
+    );
+    const period = swellPeriodFor(swellLength);
+    this.swellLength.show(
+      swellLength,
+      `${period.toFixed(1)} s · ${nameFor(SWELL_LENGTHS, period)}`,
+    );
+    this.windWaves.show(
+      windWaves / MOST_WIND_WAVES,
+      `×${windWaves.toFixed(2)}`,
+    );
+    this.momentum.show(
+      Math.log(momentum) / Math.log(MOST_MOMENTUM),
+      `Builds over ${Math.round(momentum)} s`,
+    );
+    this.showTide();
+    this.tideToggle.classList.toggle("selected", tideRunning);
+    for (const [id, row] of this.seaLines) {
+      row.classList.toggle("selected", id === lines);
+    }
+    const style = SEA_LINES.find((s) => s.id === lines);
+    invariant(style !== undefined, `Unknown way to draw the sea ${lines}.`);
+    this.seaLinesDescription.textContent = style.description;
+
     for (const [id, row] of this.modes) {
       row.classList.toggle("selected", id === this.growth.mode);
     }
@@ -1003,6 +1200,7 @@ export class DebugPanel {
       growth: this.growth,
       wind: this.wind,
       weather: this.weather,
+      sea: this.sea,
       strength: this.strength,
       showStrain: this.showStrain,
       flowers: this.flowers,

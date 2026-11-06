@@ -4,6 +4,17 @@ import { smoothstep } from "./util";
 export type LevelId = "meadow" | "cliff";
 
 /**
+ * The sea a level's land runs down into, off to its right: how high it stands at mid tide, how far
+ * the tide carries it above and below that, and where along the land to look for the water's edge
+ * from, out toward the sea. All in meters.
+ */
+export interface Shore {
+  midTide: number;
+  tide: number;
+  from: number;
+}
+
+/**
  * A place to grow a tree: the lie of its ground, what stands about it, and what the camera keeps in
  * view. All heights are in meters, from the ground the tree is planted in, at x = 0.
  */
@@ -23,6 +34,8 @@ export interface Level {
   /** Lowest height the camera keeps in view while it frames the tree, and how far right of it. */
   depth: number;
   reach: number;
+  /** The sea beyond the land, if the land runs down into one. */
+  shore: Shore | undefined;
 }
 
 /** The meadow: level ground, the barn beside the tree, and mountains along the horizon. */
@@ -38,6 +51,7 @@ const MEADOW: Level = {
   horizon: 0,
   depth: 0,
   reach: 0,
+  shore: undefined,
 };
 
 /**
@@ -62,8 +76,19 @@ const CLIFF = {
     { height: 0.45, length: 23, phase: 1.3 },
   ],
   fade: -6,
-  /** How far the shore beyond the cliff's foot keeps falling, per meter out, and at most. */
-  shelf: { slope: 0.04, most: 2.5 },
+  /**
+   * The seabed beyond the cliff's foot: a ledge of rock that bares at low water, then a bed that
+   * shelves away into deep water, steeply at first and ever more gently. How wide the ledge is, how
+   * deep the bed falls in all, and over what distance it falls most of the way, in meters.
+   */
+  seabed: { ledge: 1.2, deep: 8, falls: 13 },
+  /**
+   * The sea: its height at mid tide, below the hilltop, how far the tide carries it, and how high
+   * above it the horizon lies, as seen from the hill.
+   */
+  sea: { midTide: -6.2, tide: 0.75, horizon: 3 },
+  /** How far below the sea at mid tide the camera keeps in view, and how far out to sea. */
+  view: { below: 3.6, reach: 21 },
 } as const;
 
 /** The raw lie of the cliff level's ground, before it is set so the tree stands at height 0. */
@@ -78,25 +103,32 @@ function cliffRaw(x: number): number {
   // The fall to the shore: a rounded brink, a steep face, and a hollow at its foot.
   const fall = CLIFF.drop / (1 + Math.exp(-(x - CLIFF.brink) / CLIFF.face));
   const foot = CLIFF.brink + 4 * CLIFF.face;
-  const shelf = Math.min(
-    CLIFF.shelf.most,
-    CLIFF.shelf.slope * Math.max(0, x - foot),
-  );
-  return climb + swell - fall - shelf;
+  // The seabed shelving away beyond the ledge at its foot.
+  const out = Math.max(0, x - foot - CLIFF.seabed.ledge);
+  const seabed =
+    CLIFF.seabed.deep *
+    (1 - Math.exp(-out / CLIFF.seabed.falls)) *
+    smoothstep(0, 1.5, out);
+  return climb + swell - fall - seabed;
 }
 
 const CLIFF_LEVEL: Level = {
   id: "cliff",
   name: "Cliff",
   description:
-    "A hill that rolls off steeply to the shore. The land ends at the cliff, so bears come only from the left.",
+    "A hill that rolls off steeply into the sea. The land ends at the cliff, so bears come only from the left. The sea's waves, swell and tide are on the Sea page.",
   groundAt: (x) => cliffRaw(x) - cliffRaw(0),
   barn: false,
   mountains: false,
   bearsFrom: [-1],
-  horizon: -CLIFF.drop,
-  depth: -CLIFF.drop - 0.6,
-  reach: CLIFF.brink + 6 * CLIFF.face,
+  horizon: CLIFF.sea.midTide + CLIFF.sea.horizon,
+  depth: CLIFF.sea.midTide - CLIFF.view.below,
+  reach: CLIFF.view.reach,
+  shore: {
+    midTide: CLIFF.sea.midTide,
+    tide: CLIFF.sea.tide,
+    from: CLIFF.brink,
+  },
 };
 
 export const LEVELS: readonly Level[] = [MEADOW, CLIFF_LEVEL];

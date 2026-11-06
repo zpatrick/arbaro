@@ -34,6 +34,8 @@ import {
   type SkyLight,
 } from "./sky";
 import type { Level } from "./level";
+import type { Sea } from "./sea";
+import { drawFarSea, drawSea, drawSpray } from "./sea-art";
 import type { Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
@@ -160,6 +162,8 @@ export interface Scene {
     | undefined;
   /** Rain and snow falling, and snow lying on the ground. */
   weather: Weather;
+  /** The sea the land runs down into, on a level with one. */
+  sea: Sea;
   /** The clouds across the sky, and any fog. */
   clouds: Clouds;
   /** The hives hanging on the tree, and those that fell. */
@@ -357,6 +361,9 @@ export class Renderer {
       scene.clouds,
       scene.mountains,
     );
+    if (scene.sea.present) {
+      drawFarSea(this.ctx, camera, scene.sea, scene.light);
+    }
     const world = camera.worldTransform();
     if (scene.level.barn) {
       this.drawBarn(camera, world, scene.light);
@@ -398,6 +405,18 @@ export class Renderer {
       }
       this.fillInk(path, piece.alpha);
     }
+    const sky = aboveLine(skyline);
+    if (scene.sea.present) {
+      drawSea(
+        this.ctx,
+        camera,
+        scene.sea,
+        scene.light,
+        scene.weather.settings.rain,
+        sky,
+        this.grain,
+      );
+    }
 
     const snowColor = css(lit(SNOW_COLOR, scene.light.flowerLight));
     this.drawSnowCover(camera, scene.weather.cover, snowColor);
@@ -436,7 +455,10 @@ export class Renderer {
       }
     }
     drawBees(this.ctx, camera, scene.bees, scene.light);
-    this.drawBears(camera, world, scene.bears, scene.light, aboveLine(skyline));
+    this.drawBears(camera, world, scene.bears, scene.light, sky);
+    if (scene.sea.present) {
+      drawSpray(this.ctx, camera, scene.sea, scene.light);
+    }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
     if (scene.tree !== undefined) {
