@@ -468,7 +468,15 @@ export class Renderer {
       hillColors: scene.hillColors,
     };
     // Most of the grass stands behind what is on the ground, and the rest in front of it.
-    drawGrass(this.ctx, camera, scene.level, scene.grass, grassLook, false);
+    drawGrass(
+      this.ctx,
+      camera,
+      scene.level,
+      scene.grass,
+      sky,
+      grassLook,
+      false,
+    );
     if (scene.tree !== undefined) {
       if (scene.strain) {
         this.drawStrain(camera, scene.tree, ink);
@@ -521,7 +529,7 @@ export class Renderer {
     );
     drawBees(this.ctx, camera, scene.bees, scene.light);
     this.drawBears(camera, world, scene.bears, scene.light, sky);
-    drawGrass(this.ctx, camera, scene.level, scene.grass, grassLook, true);
+    drawGrass(this.ctx, camera, scene.level, scene.grass, sky, grassLook, true);
     if (scene.sea.present) {
       drawSpray(this.ctx, camera, scene.sea, scene.light);
     }

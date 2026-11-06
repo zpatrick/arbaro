@@ -79,11 +79,27 @@ const SHAPES = {
 } as const;
 
 /**
- * How grass moves of its own as the wind stirs it: each blade flutters by up to `flutter` radians,
- * more as the strip leans further; meadow grass flops over in waves, by up to `flop` radians, over
- * stretches of about `waves` meters; dune grass fans out of its clumps by up to `fan` radians.
+ * How grass moves of its own as the wind stirs it: each blade flutters by up to `flutter` radians
+ * once the wind leans its strip `full` radians over, less in a lighter wind, and not at all in still
+ * air; meadow grass flops over in waves, by up to `flop` radians, over
+ * stretches of about `waves` meters; dune grass fans out of its clumps by up to `fan` radians. A
+ * blade droops over the way it leans, the change easing over `soft` radians either side of upright,
+ * so a blade the wind sways back and forth through upright never flips from side to side.
  */
-const MOTION = { flutter: 0.1, flop: 0.45, waves: 3.5, fan: 0.55 } as const;
+const MOTION = {
+  flutter: 0.1,
+  full: 0.5,
+  flop: 0.45,
+  waves: 3.5,
+  fan: 0.55,
+  soft: 0.25,
+} as const;
+
+/**
+ * Every blade and stem starts this far under the ground, in meters, or `px` CSS pixels if that is
+ * more, and is drawn only above it, so each grows out of the ground with no gap however it leans.
+ */
+const ROOTED = { meters: 0.04, px: 3 } as const;
 
 /** Fewest CSS pixels a blade is drawn long; grass shorter than this on screen is left out. */
 const SHORTEST_PX = 1.5;
@@ -92,8 +108,9 @@ const SHORTEST_PX = 1.5;
 type Batches = Map<string, { color: Rgb; path: Path2D }>;
 
 /**
- * Draws the grass and meadow flowers on `level`'s ground: the blades behind everything standing on
- * the ground, or if `front`, those in front of it. Each blade is a fine stroke tapering to its tip,
+ * Draws the grass and meadow flowers on `level`'s ground, within `above`, everything above the
+ * ground in device pixels: the blades behind everything standing on the ground, or if `front`,
+ * those in front of it. Each blade is a fine stroke tapering to its tip,
  * in the ground's own ink, or the sand of a hill drawn in its colors, unless `colors`, when it is
  * green at midsummer, turning to straw and bare earth through the fall and winter. Meadow flowers
  * are always in their colors, as the tree's are.
@@ -103,6 +120,7 @@ export function drawGrass(
   camera: Camera,
   level: Level,
   grass: Grass,
+  above: Path2D,
   look: {
     light: SkyLight;
     season: number;
@@ -152,7 +170,7 @@ export function drawGrass(
       const blade = poseOf(strip, kind.droop, bias, wilt, time, n);
       const color = at(tones, Math.floor(hash(n, 3) * tones.length));
       const path = batchFor(blades, color);
-      const base = baseOf(camera, strip, (hash(n, 4) - 0.5) * STRIP);
+      const base = baseOf(camera, level, strip, (hash(n, 4) - 0.5) * STRIP);
       const tip = addBlade(
         path,
         camera,
@@ -187,7 +205,7 @@ export function drawGrass(
     }
     const pose = poseOf(strip, 0.15, biasOf(strip, i * 31), wilt, time, i * 31);
     const stemColor = at(tones, 0);
-    const base = baseOf(camera, strip, (hash(i, 10) - 0.5) * STRIP);
+    const base = baseOf(camera, level, strip, (hash(i, 10) - 0.5) * STRIP);
     const top = addBlade(
       batchFor(blades, stemColor),
       camera,
@@ -215,6 +233,7 @@ export function drawGrass(
   }
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clip(above);
   for (const { color, path } of [...blades.values(), ...flowers.values()]) {
     ctx.fillStyle = css(color);
     ctx.fill(path);
@@ -279,21 +298,33 @@ function poseOf(
 ): { lean: number; tip: number } {
   const flutter =
     MOTION.flutter *
-    (0.3 + Math.abs(strip.lean)) *
+    Math.min(1, Math.abs(strip.lean) / MOTION.full) *
     Math.sin(time * (2.5 + 2 * hash(n, 14)) + hash(n, 15) * Math.PI * 2);
-  const lean = strip.lean + bias + flutter;
-  const side = lean === 0 ? 1 : Math.sign(lean);
-  const tip = lean + side * (droop * (1 + wilt) + 0.6 * Math.abs(lean));
-  const flat = side * 1.45;
+  // Which way it droops comes from how it leans of its own and in the wind, not its flutter.
+  const own = strip.lean + bias;
+  const side = Math.tanh(own / MOTION.soft);
+  const lean = own + flutter;
+  const tip = lean + side * droop * (1 + wilt) + 0.6 * lean;
+  const flat = own >= 0 ? 1.45 : -1.45;
   return {
     lean: lerp(lean, flat, strip.press),
-    tip: lerp(tip, flat + side * 0.1, strip.press),
+    tip: lerp(tip, flat * 1.07, strip.press),
   };
 }
 
-/** Where a blade `offset` meters along `strip` leaves the ground, or the snow over it, in CSS pixels. */
-function baseOf(camera: Camera, strip: Strip, offset: number): Vec {
-  return camera.toScreen(strip.x + offset, strip.ground + strip.snow);
+/**
+ * Where a blade `offset` meters along `strip` starts, in CSS pixels: rooted a little under the
+ * ground where it stands, or under the snow over it.
+ */
+function baseOf(
+  camera: Camera,
+  level: Level,
+  strip: Strip,
+  offset: number,
+): Vec {
+  const x = strip.x + offset;
+  const rooted = Math.max(ROOTED.meters, ROOTED.px / camera.scale);
+  return camera.toScreen(x, level.groundAt(x) + strip.snow - rooted);
 }
 
 /**
