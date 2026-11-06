@@ -223,8 +223,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
 
 - [x] A flat world with level ground.
 - [ ] Levels with shaped terrain: hills, slopes, rocks underground and solid obstacles above.
-- [x] A second level, the cliff: a hill rolling down gently to the left, crowned by the tree, that
-      rolls off over a rounded brink and falls steeply into the sea. A ledge of rock at its foot
+- [x] A second level, the cliff: a hill rolling down gently to the left that rolls off over a
+      rounded brink and falls steeply into the sea. The tree stands on the brink, where the land
+      falls away at 45 degrees, leaning out over the water. A ledge of rock at its foot
       bares at low water, and beyond it the seabed shelves away into deep water. Bears come only
       from the left. No barn stands there, and no mountains unless the debug panel puts them back.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
@@ -240,14 +241,18 @@ switched on in the debug panel beside the original steer-and-grow controls:
       ripples follow every gust. Waves stand taller and shorter as the water shoals, and the
       tide, which rises and falls twice a day, moves where they break.
 - [x] A wave too tall for its water steepens, its face standing upright and hollowing, then
-      breaks: its crest pitches over in a curling lip tipped with claws of foam, lands in a burst
-      of spray, and rolls on as a front of foam, leaving foam on the water behind it to drift
-      and fade. Reaching the cliff, it surges up the rock in a sheet of foam and throws spray up
+      breaks: the top of its face rolls over as a round dome whose tip hooks back under it,
+      foam spreading back from the tip and claws of foam reaching from it, the tube under it a
+      small hollow. The hook plunges onto the water ahead in a crown of foam, the hollow closes,
+      and the wave rolls on as a rounded front of foam, leaving foam on the water behind it to
+      drift and fade. Every part of this grows from nothing and passes into the next, so a
+      breaking wave never jumps. Reaching the cliff, it surges up the rock in a sheet of foam and throws spray up
       the face, higher the bigger the wave and the higher the tide. A strong wind tears the tops
       off steep crests as whitecaps and blows spray off them.
 - [x] The sea answers the weather: rain flicks up little crowns of spray from its surface, snow
-      melts into it, and its colors follow the light through the day and the night. Wood and
-      hives falling into it splash, float, and bob on the waves before they fade.
+      melts into it, and its colors follow the light through the day and the night. Wood, hives
+      and flowers falling into it splash, float, and bob on the waves, drifting with the water,
+      before they fade.
 - [ ] Soil holds moisture. Rain wets the top layer, and water drains down, spreads sideways and
       evaporates near the surface. Underground water pockets and a water table stay wet.
 - [x] A day and night cycle: the sun crosses the sky by day, the moon and stars come out at night,
@@ -258,8 +263,8 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A range of mountains on the horizon behind the tree, after reference 10: ridgelines up to
       sharp peaks, in a far row and a lower near row with a saddle behind the tree. Spurs, forks
       and creases carved down their fronts part each peak into faces, with narrow bands along the
-      ridges and spurs. The mountains are filled with the sky, so the sun and moon set behind
-      them.
+      ridges and spurs. By day the sky is a faintly cool blue and the mountains are cut from the
+      warm paper, so they stand apart from it; the sun and moon set behind them.
 - [x] The mountains' faces are lit by the sun: faces turned from it are hatched, the steepest
       most densely, and faces turned toward a low sun glow warm, so the shading swings across the
       range from morning to evening. The moon shades them more softly by night. They darken into

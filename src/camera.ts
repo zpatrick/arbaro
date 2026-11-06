@@ -44,9 +44,10 @@ export class Camera {
   horizon = 0;
   /**
    * While framing the tree, the lowest world height kept in view, if below the ground the tree
-   * stands on, and how far right of the tree's roots the view reaches at least.
+   * stands on, and how far left and right of the tree's roots the view reaches at least.
    */
   depth = 0;
+  lead = 0;
   reach = 0;
   /** Whether the player has moved the camera, so it stays put instead of following the tree. */
   held = false;
@@ -163,10 +164,10 @@ export class Camera {
     centerX: number;
     floor: number;
   } {
+    const minX = Math.min(bounds.minX, -this.lead);
     const maxX = Math.max(bounds.maxX, this.reach);
-    const byWidth =
-      (this.width * MAX_WIDTH) / Math.max(maxX - bounds.minX, 1e-6);
-    const centerX = (bounds.minX + maxX) / 2;
+    const byWidth = (this.width * MAX_WIDTH) / Math.max(maxX - minX, 1e-6);
+    const centerX = (minX + maxX) / 2;
     if (this.depth >= 0) {
       const sky = this.groundY * (1 - HEADROOM);
       const byHeight = sky / Math.max(MIN_SKY, bounds.maxY);

@@ -54,18 +54,27 @@ export function advanceDay(time: TimeSettings, dt: number): void {
   }
 }
 
-/** The sky's colors at full day and in deep night: near the horizon, overhead, and at the edges. */
+/**
+ * The sky's colors at full day and in deep night: near the horizon, overhead, and at the edges. By
+ * day the sky is cooler than the paper the mountains are cut from, so they stand out against it.
+ */
 const SKY = {
   day: {
-    glow: [243, 236, 223],
-    middle: [237, 228, 210],
-    edge: [220, 205, 177],
+    glow: [241, 237, 229],
+    middle: [228, 229, 224],
+    edge: [206, 213, 215],
   },
   night: {
     glow: [70, 80, 108],
     middle: [48, 56, 80],
     edge: [30, 35, 52],
   },
+} as const;
+/** The warm paper the distant land is cut from by day, where the sky would be. */
+const PAPER = {
+  glow: [243, 236, 223],
+  middle: [237, 228, 210],
+  edge: [220, 205, 177],
 } as const;
 /** The sky at sunrise and sunset, which the whole sky leans toward: rose low down, lavender above. */
 const DUSK = {
@@ -104,6 +113,11 @@ export interface SkyLight {
   sun: SkyBody;
   moon: SkyBody;
   sky: { glow: Rgb; middle: Rgb; edge: Rgb };
+  /**
+   * The same for the distant land, the mountains, which by day are the warm paper rather than the
+   * sky, and by night and at sunrise and sunset take the sky's colors as it does.
+   */
+  land: { glow: Rgb; middle: Rgb; edge: Rgb };
   /** Color of the twilight glow. */
   twilightColor: Rgb;
   sunColor: Rgb;
@@ -136,28 +150,31 @@ export function skyAt(timeOfDay: number): SkyLight {
   };
   const flowerNight = mix([1, 1, 1], FLOWER_LIGHT.night, 1 - daylight);
   const flowerTwilight = mix([1, 1, 1], FLOWER_LIGHT.twilight, twilight);
+  // From deep night up to the colors given for full day, leaning toward sunrise and sunset's.
+  const lit = (day: { glow: Rgb; middle: Rgb; edge: Rgb }) => ({
+    glow: mix(
+      mix(SKY.night.glow, day.glow, daylight),
+      DUSK.glow,
+      0.85 * twilight,
+    ),
+    middle: mix(
+      mix(SKY.night.middle, day.middle, daylight),
+      DUSK.middle,
+      0.85 * twilight,
+    ),
+    edge: mix(
+      mix(SKY.night.edge, day.edge, daylight),
+      DUSK.edge,
+      0.85 * twilight,
+    ),
+  });
   return {
     daylight,
     twilight,
     sun,
     moon,
-    sky: {
-      glow: mix(
-        mix(SKY.night.glow, SKY.day.glow, daylight),
-        DUSK.glow,
-        0.85 * twilight,
-      ),
-      middle: mix(
-        mix(SKY.night.middle, SKY.day.middle, daylight),
-        DUSK.middle,
-        0.85 * twilight,
-      ),
-      edge: mix(
-        mix(SKY.night.edge, SKY.day.edge, daylight),
-        DUSK.edge,
-        0.85 * twilight,
-      ),
-    },
+    sky: lit(SKY.day),
+    land: lit(PAPER),
     twilightColor: TWILIGHT,
     sunColor: mix(SUN.high, SUN.low, smoothstep(0.45, 0, sunHeight)),
     ink: mix(INK.night, INK.day, daylight),

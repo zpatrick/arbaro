@@ -1,3 +1,4 @@
+import type { Water } from "./debris";
 import { type Level, slopeAt } from "./level";
 import { type Limb, UPRIGHT } from "./limb";
 import { type Load, PHYSICS } from "./physics";
@@ -38,6 +39,8 @@ export interface Conditions {
   flowing: boolean;
   /** Where the tree grows, whose ground fallen flowers land on. */
   level: Level;
+  /** The sea fallen flowers float on, where there is one. */
+  water: Water;
 }
 
 /**
@@ -199,6 +202,13 @@ const FALLING = {
   tumble: 0.8,
 } as const;
 
+/**
+ * How a flower floats once it falls on the sea: how high it rides, as a fraction of its size; how
+ * fast the wind skims it along, as a fraction of the wind's speed; the seconds it floats before it
+ * starts to fade; and how fast it must strike the water, in meters per second, to splash.
+ */
+const FLOATING = { ride: 0.12, skim: 0.03, linger: 14, splash: 1.6 } as const;
+
 /** Ground steeper than this, as its rise over its run, is too steep for a fallen flower to rest on. */
 const STEEP = 1;
 
@@ -290,8 +300,10 @@ interface Falling {
   spin: number;
   /** Progress through its side-to-side sway, in radians. */
   phase: number;
-  /** Seconds it has lain on the ground. */
+  /** Seconds it has lain on the ground or floated on the sea. */
   resting: number;
+  /** Whether it is floating on the sea. */
+  floating: boolean;
   alpha: number;
 }
 
@@ -452,7 +464,7 @@ export class Flowers {
       this.expose(dt, settings);
     }
     for (const flower of this.falling) {
-      fall(flower, dt, conditions.wind, conditions.level);
+      fall(flower, dt, conditions.wind, conditions.level, conditions.water);
     }
     this.falling = this.falling.filter((flower) => flower.alpha > 0);
   }
@@ -950,6 +962,7 @@ export class Flowers {
       spin: (this.rng.next() - 0.5) * 2.4,
       phase: this.rng.next() * Math.PI * 2,
       resting: 0,
+      floating: false,
       alpha: 1,
     });
     flower.grown = 0;
@@ -1245,9 +1258,25 @@ function thinFrom(limb: Limb, girth: number): number | undefined {
 
 /**
  * Moves a flower that came off the tree through the air, and lets it settle on `level`'s ground
- * and fade. Ground too steep to rest on it tumbles down instead.
+ * and fade, or float on `water`. Ground too steep to rest on it tumbles down instead.
  */
-function fall(flower: Falling, dt: number, wind: Wind, level: Level): void {
+function fall(
+  flower: Falling,
+  dt: number,
+  wind: Wind,
+  level: Level,
+  water: Water,
+): void {
+  const sea = water.surfaceAt(flower.x);
+  if (
+    sea !== undefined &&
+    (flower.floating || flower.y <= sea + FLOATING.ride * flower.size)
+  ) {
+    float(flower, dt, wind, sea, water);
+    return;
+  }
+  // Washed up on the shore, it lies where the water left it.
+  flower.floating = false;
   const ground = level.groundAt(flower.x) + 0.22 * flower.size;
   const slope = slopeAt(level, flower.x);
   if (flower.resting === 0 && flower.y <= ground && Math.abs(slope) > STEEP) {
@@ -1277,6 +1306,43 @@ function fall(flower: Falling, dt: number, wind: Wind, level: Level): void {
   flower.x += dt * flower.vx;
   flower.y += dt * flower.vy;
   flower.angle += dt * flower.spin;
+}
+
+/**
+ * Floats a flower on the sea, whose surface stands at `sea` under it: riding the surface as it
+ * rises and falls, lying along it as it tilts, carried with the water's swing and skimmed before
+ * the wind, until it fades. It splashes as it first strikes the water.
+ */
+function float(
+  flower: Falling,
+  dt: number,
+  wind: Wind,
+  sea: number,
+  water: Water,
+): void {
+  if (!flower.floating) {
+    flower.floating = true;
+    const speed = Math.hypot(flower.vx, flower.vy);
+    if (speed > FLOATING.splash) {
+      water.splash(flower.x, speed, flower.size);
+    }
+  }
+  const flow = water.flowAt(flower.x, sea);
+  const air = wind.at(flower.x, sea, 2000 + flower.traits.variant * 100);
+  flower.vx = flow.x + FLOATING.skim * air.x;
+  flower.vy = 0;
+  flower.x += dt * flower.vx;
+  flower.y = sea + FLOATING.ride * flower.size;
+  // It lies along the water, rocking as the waves pass under it.
+  const ahead = water.surfaceAt(flower.x + flower.size) ?? sea;
+  const behind = water.surfaceAt(flower.x - flower.size) ?? sea;
+  const tilt = Math.atan2(ahead - behind, 2 * flower.size);
+  const flat = Math.round(flower.angle / Math.PI) * Math.PI;
+  flower.angle = approach(flower.angle, flat + tilt, 0.3, dt);
+  flower.resting += dt;
+  if (flower.resting > FLOATING.linger) {
+    flower.alpha = Math.max(0, flower.alpha - dt / FALLING.fade);
+  }
 }
 
 /** The time of year a flower shows: the season, a little early or late for each flower. */

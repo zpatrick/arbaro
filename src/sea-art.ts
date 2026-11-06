@@ -1,7 +1,15 @@
 import type { Camera } from "./camera";
 import type { Profile, Sea } from "./sea";
 import { css, lit, mix, type Rgb, skyBodyAt, type SkyLight } from "./sky";
-import { at, clamp, lerp, Rng, smoothstep, valueNoise } from "./util";
+import {
+  at,
+  clamp,
+  invariant,
+  lerp,
+  Rng,
+  smoothstep,
+  valueNoise,
+} from "./util";
 import { SNOW_COLOR } from "./weather";
 
 /**
@@ -52,6 +60,8 @@ const FOAM_LINES = [
 const RAIN_ON = { perPx: 0.05, seconds: 0.16, size: 2.6 } as const;
 /** How deep, in meters, the rise of a shaped wave reaches into the water under it before it has mostly faded. */
 const LIFT_DEPTH = 0.9;
+/** How far, in meters, the rise of a shaped wave is eased across in the water under it, beyond its depth. */
+const LIFT_SOFT = 0.25;
 /**
  * Hatching the water's shaded faces: the gap between lines in CSS pixels; how far each reaches into
  * the water at most, in meters, and at least, in CSS pixels; how wide each is, in CSS pixels; how
@@ -72,6 +82,83 @@ const HATCHING = {
   overcast: 0.36,
   strength: 1.1,
   still: 1.2,
+} as const;
+/**
+ * A breaker's life, in fractions of the way through breaking: as its crest pitches over, as its lip
+ * is thrown out, as the lip falls onto the water ahead, as its tube fills with foam, and as it
+ * rolls into a front of foam; and how deep into its curl its foam lies before the tube fills, as a
+ * fraction of the foam's full depth.
+ */
+const BREAKER = {
+  pitch: [0, 0.22],
+  throw: [0.02, 0.42],
+  land: [0.28, 0.46],
+  close: [0.44, 0.56],
+  roll: [0.56, 0.86],
+  foam: 0.45,
+} as const;
+/**
+ * A breaker rolled into a front of foam, in multiples of its height: how far on its crest has
+ * rolled and how high it stands, as a fraction of the crest it broke from; how broad its back is
+ * over the crest; and how deep the foam on its front lies, and how far back over the crest it
+ * starts.
+ */
+const BORE = {
+  on: 0.35,
+  rise: 0.92,
+  round: 1,
+  foam: 0.42,
+  foamBack: 0.5,
+} as const;
+/**
+ * Claws of foam reaching from a lip: how many at least, where along the lip the first and last
+ * reach from, how far they lean on the way the wave runs, in radians, and how long they grow, in
+ * multiples of the wave's height.
+ */
+const CLAWS = {
+  least: 3,
+  from: 0.5,
+  to: 0.95,
+  lean: 0.55,
+  length: 0.26,
+} as const;
+/**
+ * How many points a curl's dome and its hook, a breaker's outline as it rolls, and its foam are
+ * worked out at.
+ */
+const SAMPLES = { dome: 14, hook: 10, outline: 48, foam: 40 } as const;
+/**
+ * A breaker's curl, in multiples of its height, fully grown: how far on its nose comes over and how
+ * far it drops, and how much further on and down it goes as the curl plunges; how far back under
+ * the nose its tip hooks and how far below the nose, and how far on of the nose it lands; how far
+ * back under the nose the top of the tube under it reaches, and how far above the nose; how far
+ * back of the crest the face meets the curl, and how far below the crest; and how deep the foam
+ * along it lies.
+ */
+const CURL = {
+  nose: { on: 0.45, drops: 0.42, plunges: 0.1, sinks: 0.15 },
+  tip: { under: 0.12, drops: 0.3, lands: 0.3 },
+  tube: { under: 0.28, up: 0.04 },
+  root: { under: 0.06, drops: 0.72 },
+  foam: 0.18,
+} as const;
+/**
+ * Foam bursting up where a lip lands: when it starts, as a fraction of the way through breaking,
+ * and for how much of the breaking it lasts; how many fingers; and how long they grow, in
+ * multiples of the wave's height.
+ */
+const SPLASH = { from: 0.38, lasts: 0.4, fingers: 5, length: 0.5 } as const;
+/**
+ * Claws of foam tumbling over the front of a rolling breaker: how many, where along the front the
+ * first and last are, from its crest to the water, how quickly they turn over, in radians a second,
+ * and how long they grow, in multiples of the wave's height.
+ */
+const TUMBLE = {
+  claws: 3,
+  from: 0.45,
+  to: 0.85,
+  rate: 2.2,
+  length: 0.17,
 } as const;
 const WAVE = {
   back: 4.5,
@@ -312,43 +399,6 @@ interface Near {
 }
 
 /**
- * A wave drawn to its own shape over the surface: one steepening as it nears breaking, or a
- * breaker, its crest pitching over, its lip curling, then rolling on as a front of foam.
- */
-interface Shaped {
-  id: number;
-  /** Which way it runs across the view: -1 to the left, 1 to the right. */
-  heading: -1 | 1;
-  /** Its height, and the height it broke at, in device pixels. */
-  height: number;
-  broke: number;
-  /** How steep its face stands, from 0 to 1 upright and hollow. */
-  steep: number;
-  /** How far its lip has curled over, from 0 to 1. */
-  curl: number;
-  /** Foam on its crest and face, from 0 to 1. */
-  foam: number;
-  /** How far through breaking it is, for the spray of its claws. */
-  breaking: number;
-  /** How much of its shape is set over the surface, from 0 to 1, as a wave nears breaking. */
-  blend: number;
-  crest: Point;
-  /** Its back, from where it leaves the surface up to the crest, and its face down to where it meets the surface again, in the order it runs. */
-  back: Point[];
-  face: Point[];
-  lip: Lip | undefined;
-  /** The points of the surface it stands in place of. */
-  from: number;
-  to: number;
-}
-
-/** A curling lip: its outer edge from the crest out to its tip, and its inner edge back from the tip to its root. */
-interface Lip {
-  outer: Point[];
-  inner: Point[];
-}
-
-/**
  * The sea near, in front of the land and in the same light: its water, the lines raked through
  * it, the foam on it, its breaking waves, and the water thrown up the cliff. `above` is everything
  * above the land, in device pixels, which the water is kept within; `grain` is the sand's grain.
@@ -424,12 +474,9 @@ export function drawSea(
       throw new Error(`Unknown way to draw the sea ${String(unknown)}.`);
     }
   }
-  drawFoam(ctx, camera, sea, near, waters);
+  drawFoam(ctx, camera, sea, near, waters, shaped);
   for (const cap of whitecapsOf(camera, sea, near, shaped)) {
     drawCap(ctx, cap, waters, dpr);
-  }
-  for (const wave of shaped) {
-    drawFront(ctx, wave, waters, dpr);
   }
   ctx.restore();
 
@@ -440,10 +487,9 @@ export function drawSea(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   ctx.lineWidth = WIDTH.surface * dpr;
-  ctx.strokeStyle = css(waters.line, waters.lineAlpha * 1.1);
-  ctx.stroke(polyline(outline));
+  strokeSurface(ctx, outline, waters);
   for (const wave of shaped) {
-    drawLipFoam(ctx, wave, waters, dpr);
+    drawWaveFoam(ctx, wave, waters, dpr);
   }
   if (rain > 0) {
     drawRainOn(ctx, camera, sea, near, rain, waters);
@@ -555,57 +601,99 @@ function indexNear(surface: readonly Point[], x: number): number {
 }
 
 /**
+ * A wave drawn to its own shape over the surface: one steepening as it nears breaking, or a
+ * breaker pitching its lip over, its tube filling with foam as the lip lands, and rolling on as a
+ * front of foam.
+ */
+interface Shaped {
+  id: number;
+  /** Which way it runs across the view: -1 to the left, 1 to the right. */
+  heading: -1 | 1;
+  /** Its height, in device pixels. */
+  height: number;
+  /** How much of its shape is set over the surface, from 0 to 1, as a wave nears breaking. */
+  blend: number;
+  /** The surface it stands in place of points `from` to `to`, in the order it runs. */
+  run: Edge[];
+  from: number;
+  to: number;
+  /** Its body, without lip or tube, which the water under it rises and falls with. */
+  body: Point[];
+  /** The points of the surface its face stands over, from its crest to the trough ahead. */
+  face: { from: number; to: number };
+  /** Foam over it: along its lip, filling its tube, or rolling down its face. */
+  foam: Foam[];
+  /** Claws of foam reaching on from its lip. */
+  claws: Path2D[];
+}
+
+/**
+ * A shape of foam: its outer edge, along the surface, and its inner edge, back through the water;
+ * how strongly it shows, and how strongly its inner edge is inked, each from 0 to 1.
+ */
+interface Foam {
+  outer: Point[];
+  inner: Point[];
+  alpha: number;
+  inked: number;
+  /** Whether its outer edge is the surface, lined as the surface is. */
+  edged: boolean;
+}
+
+/** What a wave to be shaped is: where its crest stands and how far it is through breaking. */
+interface Subject {
+  id: number;
+  heading: -1 | 1;
+  /** Where its crest stands across the view, and its height, in device pixels. */
+  x: number;
+  height: number;
+  /** How steep it stands as it nears breaking, from 0 to 1. */
+  steep: number;
+  /** How far through breaking it is, if it has broken. */
+  breaking: number | undefined;
+  blend: number;
+  /** Foam spilling down its face, from 0 to 1. */
+  spill: number;
+}
+
+/**
  * Shapes every wave nearing breaking, and every breaker, in device pixels over `near`'s surface,
  * from the furthest left to the furthest right, leaving out any that would overlap one that shows
  * more.
  */
 function shapeWaves(camera: Camera, sea: Sea, near: Near): Shaped[] {
   const px = camera.scale * camera.dpr;
-  const subjects: Omit<
-    Shaped,
-    "crest" | "back" | "face" | "lip" | "from" | "to"
-  >[] = [];
-  const at0 = (x: number): number => camera.toScreen(x, 0).x * camera.dpr;
-  const xs: number[] = [];
+  const across = (x: number): number => camera.toScreen(x, 0).x * camera.dpr;
+  const subjects: Subject[] = [];
   for (const crest of sea.crests) {
     if (crest.poise > 0.02 && !crest.broken) {
       subjects.push({
         id: crest.id,
         heading: crest.heading,
+        x: across(crest.x),
         height: crest.height * px,
-        broke: crest.height * px,
         steep: WAVE.poised * crest.poise,
-        curl: 0,
-        foam: crest.cap,
-        breaking: 0,
+        breaking: undefined,
         blend: smoothstep(0.02, 0.45, crest.poise),
+        spill: crest.cap,
       });
-      xs.push(at0(crest.x));
     }
   }
   for (const breaker of sea.breakers) {
-    const b = breaker.breaking;
-    const landed = smoothstep(0.42, 0.62, b);
     subjects.push({
       id: breaker.id,
       heading: breaker.heading,
+      x: across(breaker.x),
       height: breaker.height * px,
-      broke: breaker.broke * px,
-      steep: lerp(
-        lerp(WAVE.poised, 1, smoothstep(0, 0.3, b)),
-        WAVE.bore,
-        landed,
-      ),
-      curl: smoothstep(0.03, 0.42, b) * (1 - landed),
-      foam: lerp(0, 1, landed) * (1 - 0.4 * smoothstep(0.7, 1, b)),
-      breaking: b,
+      steep: WAVE.poised,
+      breaking: breaker.breaking,
       blend: 1,
+      spill: 0,
     });
-    xs.push(at0(breaker.x));
   }
   const shaped: Shaped[] = [];
-  for (const [i, subject] of subjects.entries()) {
-    const wave = shape(near.surface, subject, at(xs, i));
+  for (const subject of subjects) {
+    const wave = shape(near.surface, subject, sea.clock, camera.dpr);
     if (wave !== undefined) {
       shaped.push(wave);
     }
@@ -629,18 +717,18 @@ function shapeWaves(camera: Camera, sea: Sea, near: Near): Shaped[] {
 }
 
 /**
- * Notes how far `wave`'s shape raises or lowers the surface at each point it covers, by as much
- * of its shape as is set over the surface, so the water under it can rise and fall with it.
+ * Notes how far `wave`'s body raises or lowers the surface at each point it covers, by as much of
+ * its shape as is set over the surface, so the water under it can rise and fall with it.
  */
 function raise(near: Near, wave: Shaped): void {
-  const outline = [...wave.back, ...wave.face];
+  const body = wave.body;
   for (let i = wave.from; i <= wave.to; i += 1) {
     const p = at(near.surface, i);
-    // The highest point of the shape over this point.
+    // The highest point of the body over this point.
     let top = Infinity;
-    for (let j = 0; j + 1 < outline.length; j += 1) {
-      const a = at(outline, j);
-      const b = at(outline, j + 1);
+    for (let j = 0; j + 1 < body.length; j += 1) {
+      const a = at(body, j);
+      const b = at(body, j + 1);
       if ((a.x - p.x) * (b.x - p.x) <= 0 && a.x !== b.x) {
         top = Math.min(top, lerp(a.y, b.y, (p.x - a.x) / (b.x - a.x)));
       }
@@ -652,84 +740,302 @@ function raise(near: Near, wave: Shaped): void {
 }
 
 /**
- * Shapes a wave whose crest stands over `x`, in device pixels: a long back rising from the surface
- * to a crest that runs on ahead as the wave steepens, a face falling from it to the water ahead,
- * hollowing and standing upright, and a lip curling over from the crest.
+ * Shapes `subject` over `surface`, in device pixels. Every part of the shape grows smoothly from
+ * nothing and passes smoothly into the next, so a wave never jumps from one frame to the next:
+ *
+ * - Nearing breaking, its back draws out long and its crest runs on and rises as its face steepens
+ *   and hollows, sweeping out level into the trough ahead.
+ * - Breaking, its crest pitches over and throws a lip out ahead, which grows from nothing out of
+ *   the crest itself, arcs on and down, and lands on the water ahead, foam spreading back along it
+ *   from its tip and claws of foam reaching from it.
+ * - As the lip lands, the tube under it fills with foam, and the whole wave then rolls on as a
+ *   rounded front of foam, its shape passing point for point from the curl into the roll.
  */
 function shape(
   surface: readonly Point[],
-  wave: Omit<Shaped, "crest" | "back" | "face" | "lip" | "from" | "to">,
-  x: number,
+  subject: Subject,
+  clock: number,
+  dpr: number,
 ): Shaped | undefined {
-  const { heading, height, steep } = wave;
-  if (height < 3) {
+  const { heading: h, height: H } = subject;
+  if (H < 3) {
     return undefined;
   }
-  // Its back and face, held within the surface worked out, which reaches a little past the view.
+  const b = subject.breaking ?? 0;
+  const broken = subject.breaking !== undefined;
+  const pitch = broken ? smoothstep(...BREAKER.pitch, b) : 0;
+  const throwing = broken ? smoothstep(...BREAKER.throw, b) : 0;
+  const landing = broken ? smoothstep(...BREAKER.land, b) : 0;
+  const closing = broken ? smoothstep(...BREAKER.close, b) : 0;
+  const rolling = broken ? smoothstep(...BREAKER.roll, b) : 0;
+  const steep = broken ? lerp(WAVE.poised, 1, pitch) : subject.steep;
+
+  // Its back and face reach from the surface and back to it, held within the surface worked out.
   const inside = (i: number): number => clamp(i, 1, surface.length - 2);
-  const iBack = inside(indexNear(surface, x - heading * WAVE.back * height));
-  const iAhead = inside(
-    indexNear(
-      surface,
-      x + heading * lerp(WAVE.face.gentle, WAVE.face.steep, steep) * height,
-    ),
-  );
+  const x = subject.x;
+  const iBack = inside(indexNear(surface, x - h * WAVE.back * H));
+  const toe = lerp(WAVE.face.gentle, WAVE.face.steep, steep);
+  const iAhead = inside(indexNear(surface, x + h * toe * H));
   const iCrest = indexNear(surface, x);
   if (
     iBack === iAhead ||
     iCrest <= 1 ||
     iCrest >= surface.length - 2 ||
-    (iCrest - iBack) * heading <= 0 ||
-    (iAhead - iCrest) * heading <= 0
+    (iCrest - iBack) * h <= 0 ||
+    (iAhead - iCrest) * h <= 0
   ) {
     return undefined;
   }
   const back = at(surface, iBack);
   const ahead = at(surface, iAhead);
-  const crest = {
-    x: x + heading * WAVE.run * steep * height,
-    y: Math.min(
-      ahead.y - height * (1 + WAVE.rise * steep),
-      back.y - 0.3 * height,
-    ),
-  };
-  const lip = lipOf(crest, heading, wave.broke, wave.curl);
-  // Back: rising long and smooth to a crest that sharpens as the wave steepens.
+  const level = ahead.y;
+  // In multiples of its height: on the way it runs, and up from the water ahead.
+  const local = (u: number, v: number): Point => ({
+    x: x + h * u * H,
+    y: level - v * H,
+  });
+  const crestU = WAVE.run * steep;
+  const crest = local(crestU, 1 + WAVE.rise * steep);
+  crest.y = Math.min(crest.y, back.y - 0.3 * H);
+  const crestV = (level - crest.y) / H;
+
   const backCurve = bezier(
     back,
-    { x: back.x + heading * 0.55 * Math.abs(crest.x - back.x), y: back.y },
-    {
-      x: crest.x - heading * height * lerp(1.5, 0.55, steep),
-      y: crest.y,
-    },
+    { x: back.x + h * 0.55 * Math.abs(crest.x - back.x), y: back.y },
+    { x: crest.x - h * H * lerp(1.5, 0.55, steep), y: crest.y },
     crest,
     24,
   );
-  // Face: falling from the crest, or from under the lip, and hollowing as it stands upright until
-  // it drops straight from the crest and sweeps out level into the trough ahead.
-  const top = lip === undefined ? crest : at(lip.inner, lip.inner.length - 1);
+
+  // The curl: the top of the face rolling over on itself, then plunging onto the water ahead.
+  const lip =
+    throwing * H > 0.5 * dpr
+      ? curlOf(local, crestU, crestV, throwing, landing, H, h)
+      : undefined;
+  const tip = lip === undefined ? crest : at(lip.outer, lip.outer.length - 1);
+  const root = lip === undefined ? crest : at(lip.inner, 0);
+
+  // The face: falling from the crest, or from under the lip, hollowing as it stands upright until
+  // it drops straight from the crest, a little under it as the crest pitches over, and sweeps out
+  // level into the trough ahead.
   const faceCurve = bezier(
-    top,
+    root,
     {
-      x: top.x + heading * height * lerp(0.9, 0, steep),
-      y: top.y + height * lerp(0.15, 0.55, steep),
+      x: root.x + h * H * (lerp(0.9, 0, steep) - 0.08 * pitch),
+      y: root.y + H * lerp(0.15, 0.5, steep),
     },
     {
-      x: ahead.x - heading * height * lerp(0.6, 0.45, steep),
-      y: ahead.y - height * lerp(0.15, 0, steep),
+      x: ahead.x - h * H * lerp(0.6, 0.55, steep),
+      y: ahead.y - H * lerp(0.15, 0, steep),
     },
     ahead,
     18,
   );
-  return {
-    ...wave,
-    crest,
-    back: backCurve,
-    face: faceCurve,
-    lip,
-    from: Math.min(iBack, iAhead),
-    to: Math.max(iBack, iAhead),
+
+  const edge = (points: readonly Point[], hollow = 0, ink = 1): Edge[] =>
+    points.map((p) => ({ x: p.x, y: p.y, hollow, ink }));
+  const shaped = {
+    id: subject.id,
+    heading: h,
+    height: H,
+    blend: subject.blend,
   };
+
+  const splash = splashOf(tip, subject.id, b, H, h, clock, dpr);
+  if (lip === undefined || closing < 1) {
+    // Standing or curling: the water runs out along the lip and back into its tube. As the lip
+    // lands the tube closes, the hollow under it shrinking away into the water as the lip meets
+    // the water ahead.
+    const foam: Foam[] = [];
+    const claws: Path2D[] = [...splash];
+    if (lip !== undefined) {
+      foam.push(lipFoam(lip, throwing, closing, b));
+      claws.push(
+        ...clawsOf(lip, subject.id, throwing, closing, H, h, clock, dpr),
+      );
+    }
+    if (subject.spill > 0.04) {
+      foam.push(spillOf(backCurve, faceCurve, subject.spill, H, clock));
+    }
+    const hollow =
+      lip === undefined
+        ? edge(faceCurve.slice(1))
+        : edge(
+            blendPaths(
+              [
+                tip,
+                ...[...lip.inner].reverse().slice(1),
+                ...faceCurve.slice(1),
+              ],
+              [tip, ...beneath(surface, iAhead, tip, h).reverse(), ahead],
+              closing,
+              SAMPLES.outline,
+            ).slice(1),
+            throwing * (1 - closing),
+            1 - closing,
+          );
+    const run: Edge[] = [
+      ...edge(backCurve),
+      ...(lip === undefined ? [] : edge(lip.outer.slice(1))),
+      ...hollow,
+    ];
+    return {
+      ...shaped,
+      run: h > 0 ? run : run.reverse(),
+      from: Math.min(iBack, iAhead),
+      to: Math.max(iBack, iAhead),
+      body: [...backCurve, ...faceCurve],
+      face: {
+        from: Math.min(iCrest, iAhead),
+        to: Math.max(iCrest, iAhead),
+      },
+      foam,
+      claws,
+    };
+  }
+
+  // Closed: the curl, its tube gone, rolls into a rounded front of foam.
+  const curled = [...backCurve, ...lip.outer.slice(1)];
+  const crestRoll = local(crestU + BORE.on, crestV * BORE.rise);
+  const backRoll = bezier(
+    back,
+    { x: back.x + h * 0.55 * Math.abs(crestRoll.x - back.x), y: back.y },
+    { x: crestRoll.x - h * H * BORE.round, y: crestRoll.y },
+    crestRoll,
+    24,
+  );
+  const frontRoll = bezier(
+    crestRoll,
+    { x: crestRoll.x + h * H * 0.3, y: crestRoll.y },
+    { x: tip.x - h * H * 0.1, y: tip.y - H * 0.55 },
+    tip,
+    18,
+  );
+  const rolled = [...backRoll, ...frontRoll.slice(1)];
+  const outline = blendPaths(curled, rolled, rolling, SAMPLES.outline);
+  // The foam: the lip, foam all through, passing into a roll of foam over the crest and down the
+  // front.
+  const startRoll = arcFrom(rolled, BORE.foamBack * H, crestRoll);
+  const rollOuter = rolled.slice(startRoll);
+  const rollInner = scallops(rollOuter, BORE.foam * H, clock, subject.id);
+  const landed = lipFoam(lip, 1, 1, b);
+  const foam: Foam = {
+    outer: blendPaths(landed.outer, rollOuter, rolling, SAMPLES.foam),
+    inner: blendPaths(landed.inner, rollInner, rolling, SAMPLES.foam),
+    alpha: 1,
+    inked: lerp(0, 0.9, rolling),
+    edged: true,
+  };
+  const end = indexNear(surface, at(outline, outline.length - 1).x);
+  return {
+    ...shaped,
+    run: edge(h > 0 ? outline : [...outline].reverse()),
+    from: Math.min(iBack, end),
+    to: Math.max(iBack, end),
+    body: outline,
+    face: { from: Math.min(iCrest, end), to: Math.max(iCrest, end) },
+    foam: [foam],
+    claws: [
+      ...splash,
+      ...tumbling(rollOuter, subject.id, rolling, H, h, clock, dpr),
+    ],
+  };
+}
+
+/**
+ * Little claws of foam tumbling over the front of a breaker `rolling` of the way into a roll, along
+ * `front` from its crest down to the water: each curling on over the way it runs and turning over
+ * as the foam rolls.
+ */
+function tumbling(
+  front: readonly Point[],
+  id: number,
+  rolling: number,
+  height: number,
+  h: -1 | 1,
+  clock: number,
+  dpr: number,
+): Path2D[] {
+  if (rolling <= 0.01 || front.length < 4) {
+    return [];
+  }
+  const rng = new Rng(id * 4243);
+  const claws: Path2D[] = [];
+  for (let k = 0; k < TUMBLE.claws; k += 1) {
+    const s = lerp(TUMBLE.from, TUMBLE.to, k / (TUMBLE.claws - 1));
+    const i = Math.min(front.length - 2, Math.round(s * (front.length - 1)));
+    const p = at(front, i);
+    const q = at(front, i + 1);
+    const along = Math.atan2(q.y - p.y, q.x - p.x);
+    // Out from the front, turning over and back as the foam tumbles.
+    const turn = Math.sin(clock * TUMBLE.rate + k * 2.1 + id) * 0.35;
+    const out = along - h * (Math.PI / 2) + h * 0.4 + turn;
+    const length =
+      height * TUMBLE.length * rolling * lerp(0.7, 1.2, rng.next());
+    const width = Math.max(1.2 * dpr, length * 0.3);
+    claws.push(clawPath(p, out, length, width, h, rng.next()));
+  }
+  return claws;
+}
+
+/**
+ * Foam bursting up where a lip lands, `b` through breaking: a crown of fingers flung up from the
+ * lip's tip on the water, rising and curling on the way the wave runs, then falling back into the
+ * foam.
+ */
+function splashOf(
+  tip: Point,
+  id: number,
+  b: number,
+  height: number,
+  h: -1 | 1,
+  clock: number,
+  dpr: number,
+): Path2D[] {
+  const burst = Math.sin(
+    Math.PI * clamp((b - SPLASH.from) / SPLASH.lasts, 0, 1),
+  );
+  if (burst <= 0.01) {
+    return [];
+  }
+  const rng = new Rng(id * 7919);
+  const fingers: Path2D[] = [];
+  for (let k = 0; k < SPLASH.fingers; k += 1) {
+    const t = k / (SPLASH.fingers - 1);
+    // From leaning back a little to leaning well on, the way the wave runs.
+    const angle =
+      -Math.PI / 2 + h * lerp(-0.35, 1.05, t) + 0.1 * Math.sin(clock * 4 + k);
+    const length =
+      height *
+      SPLASH.length *
+      burst *
+      lerp(0.6, 1.15, rng.next()) *
+      (1 - 0.35 * Math.abs(t - 0.4));
+    const width = Math.max(1.2 * dpr, length * 0.24);
+    fingers.push(clawPath(tip, angle, length, width, h, rng.next()));
+  }
+  return fingers;
+}
+
+/**
+ * The points of `surface` from just past `from` on to below `tip`, the way the wave runs `h`: the
+ * water ahead of its face, under its lip.
+ */
+function beneath(
+  surface: readonly Point[],
+  from: number,
+  tip: Point,
+  h: -1 | 1,
+): Point[] {
+  const points: Point[] = [];
+  for (
+    let i = from + h;
+    i > 0 && i < surface.length - 1 && (tip.x - at(surface, i).x) * h > 0;
+    i += h
+  ) {
+    points.push(at(surface, i));
+  }
+  return points;
 }
 
 /** Points along the cubic Bézier curve from `a` to `d`, `count` steps. */
@@ -761,59 +1067,340 @@ function bezier(
 }
 
 /**
- * The lip of a wave cresting at `crest`, `size` device pixels high when it broke, curled `curl` of
- * the way over: thrown on the way it runs, curving down and over as it goes, and thinning to its
- * tip.
+ * The curl of a wave cresting `crestV` heights above the water ahead, `crestU` heights on, grown
+ * `g` of the way and plunged `landing` of the way onto the water ahead, in device pixels: the top
+ * of its face rolling forward as a round dome whose nose drops as it comes over and whose tip
+ * hooks back under it, then reaching on and down onto the water as it plunges. Every point starts
+ * at the crest, so the curl grows from nothing out of the crest itself.
+ *
+ * Its outer edge runs from the crest over the dome and around the hook to the tip; its inner edge
+ * from its root, where the face below meets it, up into the tube under the dome and out to the tip;
+ * and its underside, point for point with its outer edge, bounds the foam along it.
  */
-function lipOf(
-  crest: Point,
-  heading: -1 | 1,
-  size: number,
-  curl: number,
-): Lip | undefined {
-  if (curl <= 0.02 || size < 6) {
-    return undefined;
-  }
-  const length = size * lerp(0.25, 1.05, curl);
-  const sweep = curl * 2.8;
-  const thick = size * lerp(0.14, 0.22, curl);
-  const steps = 16;
-  const outer: Point[] = [];
-  const inner: Point[] = [];
-  let u = 0;
-  let v = 0;
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    const angle = 0.1 - sweep * Math.pow(t, 1.4);
-    const half = thick * Math.pow(1 - t, 0.7);
-    const map = (pu: number, pv: number): Point => ({
-      x: crest.x + heading * pu,
-      y: crest.y - pv,
-    });
-    outer.push(map(u, v));
-    inner.push(map(u + Math.sin(angle) * half, v - Math.cos(angle) * half));
-    u += (Math.cos(angle) * length) / steps;
-    v += (Math.sin(angle) * length) / steps;
-  }
-  return { outer, inner: inner.reverse() };
-}
-
-/** A point of the surface as drawn, and how deep in the hollow under a curling lip it lies, from 0 to 1. */
-interface Edge extends Point {
-  hollow: number;
+function curlOf(
+  local: (u: number, v: number) => Point,
+  crestU: number,
+  crestV: number,
+  g: number,
+  landing: number,
+  height: number,
+  h: -1 | 1,
+): Lip {
+  const nose = {
+    u: crestU + CURL.nose.on * g + CURL.nose.plunges * landing,
+    v: crestV - CURL.nose.drops * g - CURL.nose.sinks * landing,
+  };
+  const tip = {
+    u: lerp(nose.u - CURL.tip.under * g, nose.u + CURL.tip.lands, landing),
+    v: lerp(nose.v - CURL.tip.drops * g, 0, landing),
+  };
+  const tube = {
+    u: nose.u - CURL.tube.under * g,
+    v: nose.v + CURL.tube.up * g,
+  };
+  const root = {
+    u: crestU - CURL.root.under * g,
+    v: crestV - CURL.root.drops * g,
+  };
+  // Cubic curves given in heights, on and up, drawn in device pixels.
+  const curve = (
+    a: { u: number; v: number },
+    b: { u: number; v: number },
+    c: { u: number; v: number },
+    d: { u: number; v: number },
+    count: number,
+  ): Point[] =>
+    bezier(
+      local(a.u, a.v),
+      local(b.u, b.v),
+      local(c.u, c.v),
+      local(d.u, d.v),
+      count,
+    );
+  const crest = { u: crestU, v: crestV };
+  // Over the dome, leaving the crest level and arriving at the nose heading straight down.
+  const dome = curve(
+    crest,
+    { u: crestU + 0.6 * (nose.u - crestU), v: crestV },
+    { u: nose.u, v: nose.v + 0.6 * (crestV - nose.v) },
+    nose,
+    SAMPLES.dome,
+  );
+  // Around the hook, falling from the nose and curling back under to the tip, or, as it plunges,
+  // reaching on down to the water.
+  const fall = Math.max(nose.v - tip.v, 0.05 * g);
+  const hook = curve(
+    nose,
+    { u: nose.u, v: nose.v - 0.5 * fall },
+    {
+      u: tip.u + lerp(0.1 * g, -0.05, landing),
+      v: tip.v + lerp(0, 0.3, landing),
+    },
+    tip,
+    SAMPLES.hook,
+  );
+  const outer = [...dome, ...hook.slice(1)];
+  // Up from the root into the tube under the dome, then on out to the tip.
+  const inner = [
+    ...curve(
+      root,
+      { u: root.u, v: root.v + 0.25 * g },
+      { u: tube.u - 0.15 * g, v: tube.v },
+      tube,
+      SAMPLES.dome,
+    ),
+    ...curve(
+      tube,
+      { u: tube.u + 0.12 * g, v: tube.v },
+      {
+        u: tip.u + lerp(-0.02 * g, -0.15, landing),
+        v: tip.v + lerp(0.12 * g, 0.2, landing),
+      },
+      tip,
+      SAMPLES.hook,
+    ).slice(1),
+  ];
+  // The foam's underside: in from the outer edge, thickest over the nose, thin at either end.
+  const offset = outer.map((p, i) => {
+    const s = i / (outer.length - 1);
+    const before = at(outer, Math.max(0, i - 1));
+    const after = at(outer, Math.min(outer.length - 1, i + 1));
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    const span = Math.hypot(dx, dy) || 1;
+    const thick =
+      CURL.foam *
+      height *
+      g *
+      smoothstep(0, 0.3, s) *
+      (1 - 0.6 * smoothstep(0.75, 1, s));
+    return {
+      x: p.x - (h * dy * thick) / span,
+      y: p.y + (h * dx * thick) / span,
+    };
+  });
+  return { outer, inner, offset };
 }
 
 /**
- * The surface with every shaped wave set into it in place of the points it covers: its back up to
- * the crest, out along its lip to the tip and back under it, and down its face.
+ * Foam along a lip `throwing` of the way thrown and `closing` of the way to filling its tube,
+ * `b` through breaking: spreading back from the tip as it curls, and thickening until the whole
+ * lip is foam as the tube fills.
  */
+function lipFoam(lip: Lip, throwing: number, closing: number, b: number): Foam {
+  const spread = lerp(0.3, 1, smoothstep(0.05, 0.45, b));
+  const count = lip.outer.length;
+  const outer: Point[] = [];
+  const inner: Point[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const s = i / (count - 1);
+    // Thin where the foam is just reaching, full along the rest.
+    const reach = smoothstep(1 - spread, 1 - spread + 0.25, s);
+    const depth =
+      reach * lerp(BREAKER.foam, 1, closing) * smoothstep(0, 0.3, s);
+    const o = at(lip.outer, i);
+    const n = at(lip.offset, i);
+    outer.push(o);
+    inner.push({ x: lerp(o.x, n.x, depth), y: lerp(o.y, n.y, depth) });
+  }
+  return {
+    outer,
+    inner: inner.reverse(),
+    alpha: smoothstep(0, 0.15, throwing),
+    inked: 0.7 * (1 - closing),
+    edged: true,
+  };
+}
+
+/**
+ * Claws of foam reaching on from a lip `throwing` of the way thrown, for a wave `height` device
+ * pixels high: as many as the wave's own, each growing from nothing as the lip curls, swaying, and
+ * shrinking back into the foam as its tube fills.
+ */
+function clawsOf(
+  lip: Lip,
+  id: number,
+  throwing: number,
+  closing: number,
+  height: number,
+  h: -1 | 1,
+  clock: number,
+  dpr: number,
+): Path2D[] {
+  const grown = smoothstep(0.15, 0.85, throwing) * (1 - closing);
+  if (grown <= 0.01) {
+    return [];
+  }
+  const count = CLAWS.least + (id % 2);
+  const rng = new Rng(id * 977);
+  const claws: Path2D[] = [];
+  const outer = lip.outer;
+  for (let k = 0; k < count; k += 1) {
+    const s = lerp(CLAWS.from, CLAWS.to, count === 1 ? 1 : k / (count - 1));
+    const i = Math.min(outer.length - 2, Math.round(s * (outer.length - 1)));
+    const p = at(outer, i);
+    const q = at(outer, i + 1);
+    // Out from the lip, leaning on the way it runs, and swaying a little.
+    const along = Math.atan2(q.y - p.y, q.x - p.x);
+    const out = along - h * (Math.PI / 2) + h * CLAWS.lean;
+    const sway = 0.12 * Math.sin(clock * 3.1 + id + k * 1.7);
+    const length = height * CLAWS.length * grown * lerp(0.7, 1.2, rng.next());
+    const width = Math.max(1.2 * dpr, length * 0.3);
+    claws.push(clawPath(p, out + sway, length, width, h, rng.next()));
+  }
+  return claws;
+}
+
+/**
+ * Foam spilling down the face of a wave too small to curl, `amount` of it, over its crest from a
+ * little way down its back to partway down its face.
+ */
+function spillOf(
+  back: readonly Point[],
+  face: readonly Point[],
+  amount: number,
+  height: number,
+  clock: number,
+): Foam {
+  const outer = [
+    ...back.slice(Math.floor(back.length * 0.8)),
+    ...face.slice(1, Math.ceil(face.length * 0.45)),
+  ];
+  return {
+    outer,
+    inner: scallops(outer, height * 0.22 * amount, clock, 0),
+    alpha: amount,
+    inked: amount,
+    edged: true,
+  };
+}
+
+/**
+ * The inner edge of foam lying `thick` device pixels deep along `outer`: thickest a little ahead
+ * of its middle, thinning to nothing at either end, its underside scalloped, the scallops rolling
+ * on as the foam tumbles. Runs back from the end of `outer` to its start.
+ */
+function scallops(
+  outer: readonly Point[],
+  thick: number,
+  clock: number,
+  seed: number,
+): Point[] {
+  const count = outer.length;
+  const bumps = 4 + (seed % 2);
+  const inner: Point[] = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const t = i / Math.max(1, count - 1);
+    const p = at(outer, i);
+    const before = at(outer, Math.max(0, i - 1));
+    const after = at(outer, Math.min(count - 1, i + 1));
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    const span = Math.hypot(dx, dy) || 1;
+    const swell = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.8)), 0.8);
+    const scallop =
+      0.55 + 0.45 * Math.abs(Math.cos(Math.PI * (bumps * t - clock * 0.6)));
+    const depth = thick * swell * scallop;
+    // Into the water, square to the surface there.
+    const sign = dx >= 0 ? 1 : -1;
+    inner.push({
+      x: p.x - (sign * dy * depth) / span,
+      y: p.y + (sign * dx * depth) / span,
+    });
+  }
+  return inner;
+}
+
+/** The index of the point of `path` whose distance from its start first passes that of `mark`, less `before` device pixels. */
+function arcFrom(path: readonly Point[], before: number, mark: Point): number {
+  let markAt = 0;
+  let best = Infinity;
+  let travelled = 0;
+  const along: number[] = [0];
+  for (let i = 1; i < path.length; i += 1) {
+    travelled += distance(at(path, i - 1), at(path, i));
+    along.push(travelled);
+  }
+  for (const [i, p] of path.entries()) {
+    const d = distance(p, mark);
+    if (d < best) {
+      best = d;
+      markAt = at(along, i);
+    }
+  }
+  const target = markAt - before;
+  return Math.max(
+    0,
+    along.findIndex((a) => a >= target),
+  );
+}
+
+/** `count` points spaced evenly along the path through `points`. */
+function resample(points: readonly Point[], count: number): Point[] {
+  invariant(points.length > 0, "Cannot space points along an empty path.");
+  const along: number[] = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    along.push(at(along, i - 1) + distance(at(points, i - 1), at(points, i)));
+  }
+  const total = at(along, along.length - 1);
+  const out: Point[] = [];
+  let j = 0;
+  for (let k = 0; k < count; k += 1) {
+    const target = (total * k) / Math.max(1, count - 1);
+    while (j < along.length - 2 && at(along, j + 1) < target) {
+      j += 1;
+    }
+    const a = at(points, j);
+    const b = at(points, Math.min(points.length - 1, j + 1));
+    const span = at(along, Math.min(along.length - 1, j + 1)) - at(along, j);
+    const f = span > 1e-9 ? clamp((target - at(along, j)) / span, 0, 1) : 0;
+    out.push({ x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f) });
+  }
+  return out;
+}
+
+/** The path a fraction `t` of the way from `from` to `to`, each spaced evenly over `count` points. */
+function blendPaths(
+  from: readonly Point[],
+  to: readonly Point[],
+  t: number,
+  count: number,
+): Point[] {
+  const a = resample(from, count);
+  const b = resample(to, count);
+  return a.map((p, i) => {
+    const q = at(b, i);
+    return { x: lerp(p.x, q.x, t), y: lerp(p.y, q.y, t) };
+  });
+}
+
+/**
+ * A curling lip: its outer edge from the crest out to its tip, its inner edge from its root out to
+ * its tip, and its underside point for point with its outer edge.
+ */
+interface Lip {
+  outer: Point[];
+  inner: Point[];
+  offset: Point[];
+}
+
+/**
+ * A point of the surface as drawn: how deep in the hollow under a curling lip it lies, and how
+ * strongly the surface's line is drawn through it, each from 0 to 1.
+ */
+interface Edge extends Point {
+  hollow: number;
+  ink: number;
+}
+
+/** The surface with every shaped wave set into it in place of the points it covers. */
 function setInto(
   surface: readonly Point[],
   shaped: readonly Shaped[],
   lift: Float64Array,
 ): Edge[] {
-  const open = (points: readonly Point[], hollow = 0): Edge[] =>
-    points.map((p) => ({ x: p.x, y: p.y, hollow }));
+  const open = (points: readonly Point[]): Edge[] =>
+    points.map((p) => ({ x: p.x, y: p.y, hollow: 0, ink: 1 }));
   const out: Edge[] = [];
   let i = 0;
   for (const wave of shaped) {
@@ -822,23 +1409,58 @@ function setInto(
       // Not yet breaking: the surface rises toward the wave's shape, point for point.
       for (let j = wave.from; j <= wave.to; j += 1) {
         const p = at(surface, j);
-        out.push({ x: p.x, y: p.y + (lift[j] ?? 0), hollow: 0 });
+        out.push({ x: p.x, y: p.y + (lift[j] ?? 0), hollow: 0, ink: 1 });
       }
-      i = wave.to + 1;
-      continue;
+    } else {
+      out.push(...wave.run);
     }
-    const run = [
-      ...open(wave.back),
-      ...(wave.lip === undefined
-        ? []
-        : open([...wave.lip.outer, ...wave.lip.inner])),
-      ...open(wave.face, wave.curl),
-    ];
-    out.push(...(wave.heading > 0 ? run : run.reverse()));
     i = wave.to + 1;
   }
   out.push(...open(surface.slice(i)));
   return out;
+}
+
+/** Foam over the shaped waves: white, its inner edge inked, and the claws reaching from the lips. */
+function drawWaveFoam(
+  ctx: CanvasRenderingContext2D,
+  wave: Shaped,
+  waters: Waters,
+  dpr: number,
+): void {
+  for (const foam of wave.foam) {
+    if (foam.alpha <= 0.01 || foam.outer.length < 2) {
+      continue;
+    }
+    const shape = new Path2D();
+    const all = [...foam.outer, ...foam.inner];
+    shape.moveTo(at(all, 0).x, at(all, 0).y);
+    for (const p of all) {
+      shape.lineTo(p.x, p.y);
+    }
+    shape.closePath();
+    ctx.fillStyle = css(waters.foam, foam.alpha);
+    ctx.fill(shape);
+    if (foam.inked > 0.01 && foam.inner.length > 1) {
+      ctx.lineWidth = 0.85 * dpr;
+      ctx.strokeStyle = css(
+        waters.line,
+        waters.lineAlpha * foam.inked * foam.alpha,
+      );
+      ctx.stroke(polyline(foam.inner));
+    }
+    if (foam.edged) {
+      ctx.lineWidth = WIDTH.surface * dpr;
+      ctx.strokeStyle = css(waters.line, waters.lineAlpha * 1.1 * foam.alpha);
+      ctx.stroke(polyline(foam.outer));
+    }
+  }
+  for (const claw of wave.claws) {
+    ctx.fillStyle = css(waters.foam, 0.97);
+    ctx.fill(claw);
+    ctx.lineWidth = 0.7 * dpr;
+    ctx.strokeStyle = css(waters.line, waters.lineAlpha * 0.9);
+    ctx.stroke(claw);
+  }
 }
 
 /**
@@ -918,6 +1540,28 @@ function drawHatching(
   ctx.stroke(dense);
 }
 
+/** The surface's line along `outline`, drawn as strongly through each point as it asks. */
+function strokeSurface(
+  ctx: CanvasRenderingContext2D,
+  outline: readonly Edge[],
+  waters: Waters,
+): void {
+  let from = 0;
+  for (let i = 1; i <= outline.length; i += 1) {
+    const ink = at(outline, from).ink;
+    if (i < outline.length && Math.abs(at(outline, i).ink - ink) < 0.01) {
+      continue;
+    }
+    if (ink > 0.01) {
+      ctx.strokeStyle = css(waters.line, waters.lineAlpha * 1.1 * ink);
+      ctx.stroke(
+        polyline(outline.slice(from, Math.min(outline.length, i + 1))),
+      );
+    }
+    from = i;
+  }
+}
+
 /** A path through `points`. */
 function polyline(points: readonly Point[]): Path2D {
   const path = new Path2D();
@@ -956,6 +1600,10 @@ function drawContours(
     const fade = 1 - 0.7 * smoothstep(0.2, 5, depth);
     const width = lerp(WIDTH.near, WIDTH.deep, smoothstep(0.2, 4, depth)) * dpr;
     const follow = Math.exp(-depth / LIFT_DEPTH);
+    const lift = softened(
+      near.lift,
+      Math.max(2, Math.round(((LIFT_SOFT + depth) * camera.scale) / STEP_PX)),
+    );
     const points: Point[] = [];
     const pens: number[] = [];
     for (let i = 0; i < near.xs.length; i += 1) {
@@ -966,7 +1614,7 @@ function drawContours(
       );
       points.push({
         x: p.x * dpr,
-        y: p.y * dpr + (near.lift[i] ?? 0) * follow,
+        y: p.y * dpr + (lift[i] ?? 0) * follow,
       });
       // Long strokes with short gaps, which keep their place in the water as it swings.
       const along = (x - drift) / (2.6 + 0.9 * (k % 3));
@@ -978,16 +1626,26 @@ function drawContours(
   }
 }
 
-/** Foam lying on the water: pale lines just under the surface, more of them where more foam lies. */
+/**
+ * Foam lying on the water: pale lines just under the surface, more of them where more foam lies,
+ * except down the steep faces of the `shaped` waves, which carry foam of their own.
+ */
 function drawFoam(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
   sea: Sea,
   near: Near,
   waters: Waters,
+  shaped: readonly Shaped[],
 ): void {
   const dpr = camera.dpr;
-  const foam = near.xs.map((x) => sea.foamAt(x));
+  const foam = near.xs.map((x, i) =>
+    shaped.some((w) => i >= w.face.from && i <= w.face.to) ? 0 : sea.foamAt(x),
+  );
+  const lift = softened(
+    near.lift,
+    Math.max(1, Math.round((0.1 * camera.scale) / STEP_PX)),
+  );
   if (!foam.some((f) => f > 0.03)) {
     return;
   }
@@ -1002,7 +1660,7 @@ function drawFoam(
         x + (shifts[i] ?? 0),
         sea.waterLevel - depth + (heights[i] ?? 0),
       );
-      points.push({ x: p.x * dpr, y: p.y * dpr + (near.lift[i] ?? 0) });
+      points.push({ x: p.x * dpr, y: p.y * dpr + (lift[i] ?? 0) });
       const lace = valueNoise(x * 1.7 - sea.clock * 0.1, 61 + k * 5.7);
       pens.push(
         smoothstep(needs, needs + 0.2, foam[i] ?? 0) *
@@ -1013,6 +1671,22 @@ function drawFoam(
     ctx.fillStyle = css(waters.foam, 0.92);
     ctx.fill(ribbons(points, pens, width));
   }
+}
+
+/** `values` averaged over `reach` points either side of each, so steps in them are eased. */
+function softened(values: Float64Array, reach: number): Float64Array {
+  const n = values.length;
+  const sums = new Float64Array(n + 1);
+  for (let i = 0; i < n; i += 1) {
+    sums[i + 1] = (sums[i] ?? 0) + (values[i] ?? 0);
+  }
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const from = Math.max(0, i - reach);
+    const to = Math.min(n, i + reach + 1);
+    out[i] = ((sums[to] ?? 0) - (sums[from] ?? 0)) / (to - from);
+  }
+  return out;
 }
 
 /**
@@ -1193,104 +1867,6 @@ function drawCap(
   ctx.lineWidth = 0.8 * dpr;
   ctx.strokeStyle = css(waters.line, waters.lineAlpha * 0.8 * amount);
   ctx.stroke(polyline(under));
-}
-
-/**
- * The foam of a breaker rolling on after its lip has landed: over its crest and down its face, the
- * thicker the more foam it carries.
- */
-function drawFront(
-  ctx: CanvasRenderingContext2D,
-  wave: Shaped,
-  waters: Waters,
-  dpr: number,
-): void {
-  if (wave.foam < 0.04) {
-    return;
-  }
-  // The last of its back, over the crest, and down most of its face.
-  const back = wave.back.slice(Math.floor(wave.back.length * 0.6));
-  const face = wave.face.slice(0, Math.ceil(wave.face.length * 0.75));
-  drawCap(
-    ctx,
-    {
-      points: [...back, ...face],
-      thick: wave.height * 0.4 + 2 * dpr,
-      amount: wave.foam,
-    },
-    waters,
-    dpr,
-  );
-}
-
-/**
- * Foam on a curling lip: pale along its top, and breaking into claws of foam at its tip, the way
- * the old prints draw a great wave.
- */
-function drawLipFoam(
-  ctx: CanvasRenderingContext2D,
-  wave: Shaped,
-  waters: Waters,
-  dpr: number,
-): void {
-  const lip = wave.lip;
-  if (lip === undefined) {
-    return;
-  }
-  const outer = lip.outer;
-  const inner = [...lip.inner].reverse();
-  // A band of foam along the top of the lip, and down the back a little way.
-  const band = new Path2D();
-  const backTop = wave.back.slice(Math.floor(wave.back.length * 0.8));
-  const top = [...backTop, ...outer];
-  for (const [i, p] of top.entries()) {
-    if (i === 0) {
-      band.moveTo(p.x, p.y);
-    } else {
-      band.lineTo(p.x, p.y);
-    }
-  }
-  for (let i = outer.length - 1; i >= 0; i -= 1) {
-    const o = at(outer, i);
-    const n = at(inner, i);
-    band.lineTo(lerp(o.x, n.x, 0.5), lerp(o.y, n.y, 0.5));
-  }
-  const reach = wave.height * 0.12;
-  for (let i = backTop.length - 1; i >= 0; i -= 1) {
-    const p = at(backTop, i);
-    band.lineTo(p.x, p.y + reach * (i / Math.max(1, backTop.length - 1)));
-  }
-  band.closePath();
-  ctx.fillStyle = css(waters.foam, 0.96);
-  ctx.fill(band);
-
-  // Claws of foam reaching on from the tip, curling back on themselves.
-  const claws = 2 + Math.round(3 * wave.curl);
-  const rng = new Rng(wave.id * 977);
-  const sway = Math.sin(wave.id + wave.breaking * 9);
-  for (let c = 0; c < claws; c += 1) {
-    const t = lerp(0.4, 0.97, (c + 0.5) / claws);
-    const index = Math.min(
-      outer.length - 2,
-      Math.floor(t * (outer.length - 1)),
-    );
-    const p = at(outer, index);
-    const q = at(outer, index + 1);
-    const along = Math.atan2(q.y - p.y, q.x - p.x);
-    // Out from the lip, leaning on the way it runs.
-    const out = along - (Math.PI / 2) * wave.heading * 0.75 + 0.2 * sway;
-    const length = wave.broke * lerp(0.18, 0.32, rng.next()) * wave.curl;
-    const width = Math.max(1.6 * dpr, wave.broke * 0.07);
-    const claw = clawPath(p, out, length, width, wave.heading, rng.next());
-    ctx.fillStyle = css(waters.foam, 0.97);
-    ctx.fill(claw);
-    ctx.lineWidth = 0.7 * dpr;
-    ctx.strokeStyle = css(waters.line, waters.lineAlpha * 0.9);
-    ctx.stroke(claw);
-  }
-  ctx.lineWidth = 0.9 * dpr;
-  ctx.strokeStyle = css(waters.line, waters.lineAlpha);
-  ctx.stroke(polyline(inner));
 }
 
 /**

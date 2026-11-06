@@ -176,6 +176,7 @@ function replant(): void {
 function frameLevel(): void {
   camera.horizon = level.horizon;
   camera.depth = level.depth;
+  camera.lead = level.lead;
   camera.reach = level.reach;
 }
 
@@ -432,6 +433,7 @@ function step(dt: number, controls: Controls): void {
     hold: panel.strength.flowers,
     flowing: growth.mode === "flow",
     level,
+    water: sea,
   });
   debris.push(
     ...hives.update(dt, tree, panel.wildlife, {

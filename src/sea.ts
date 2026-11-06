@@ -111,6 +111,8 @@ const WHITECAP = { calm: 0.15, gale: 0.07, seconds: 0.4 } as const;
  * most, and the slope of land past which it climbs as a sheet rather than washing up as foam.
  */
 const RUNUP = { reach: 1.6, height: 3.6, spray: 2.2, steep: 0.55 } as const;
+/** Seconds a breaker spent against the land takes to sink away. */
+const SPENT = 0.15;
 /** A broken wave rolls on as a front of foam at most this fraction of the depth of water under it. */
 const BORE = 0.6;
 /** Foam: seconds it lasts, and the most that gathers in one place. */
@@ -194,8 +196,9 @@ export interface Breaker {
   height: number;
   /** How far through breaking it is, from 0 as its crest first pitches forward to 1 once spent. */
   breaking: number;
-  /** Whether its lip has landed. */
+  /** Whether its lip has landed, and whether it has struck the land. */
   landed: boolean;
+  struck: boolean;
   /** How fast it runs, in meters per second. */
   speed: number;
 }
@@ -1061,6 +1064,7 @@ export class Sea {
         height: crest.height,
         breaking: 0,
         landed: false,
+        struck: false,
         speed: Math.sqrt(PHYSICS.gravity * depth),
       });
     }
@@ -1116,7 +1120,10 @@ export class Sea {
         breaker.landed = true;
         this.plunge(breaker);
       }
-      if (breaker.landed) {
+      if (breaker.struck) {
+        // Spent against the land, it sinks away into the water it threw up.
+        breaker.height = approach(breaker.height, 0, SPENT, dt);
+      } else if (breaker.landed) {
         // The broken wave rolls on as a front of foam no taller than its water lets it be.
         breaker.height = approach(
           breaker.height,
@@ -1136,9 +1143,13 @@ export class Sea {
         (1 - breaker.breaking) * breaker.height,
         dt,
       );
-      if (breaker.heading < 0 && breaker.x - this.coast < RUNUP.reach) {
+      if (
+        !breaker.struck &&
+        breaker.heading < 0 &&
+        breaker.x - this.coast < RUNUP.reach
+      ) {
+        breaker.struck = true;
         this.strike(breaker.height, breaker.breaking);
-        continue;
       }
       if (breaker.height < LEAST_CREST) {
         continue;

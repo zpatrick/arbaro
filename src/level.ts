@@ -1,4 +1,4 @@
-import { smoothstep } from "./util";
+import { invariant, smoothstep } from "./util";
 
 /** The levels a tree can be grown in. */
 export type LevelId = "meadow" | "cliff";
@@ -31,8 +31,12 @@ export interface Level {
   bearsFrom: readonly (1 | -1)[];
   /** Height of the horizon, where the land or the sea far off meets the sky. */
   horizon: number;
-  /** Lowest height the camera keeps in view while it frames the tree, and how far right of it. */
+  /**
+   * Lowest height the camera keeps in view while it frames the tree, and how far left and right of
+   * it.
+   */
   depth: number;
+  lead: number;
   reach: number;
   /** The sea beyond the land, if the land runs down into one. */
   shore: Shore | undefined;
@@ -50,14 +54,15 @@ const MEADOW: Level = {
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
+  lead: 0,
   reach: 0,
   shore: undefined,
 };
 
 /**
- * The cliff: a hill rolling gently down to the left, crowned near the tree, that rolls off over a
- * rounded brink a few meters to its right and falls away steeply to the shore far below, where the
- * land ends. All in meters, from the tree.
+ * The cliff: a hill rolling gently down to the left that rolls off over a rounded brink and falls
+ * away steeply into the sea far below, where the land ends. The tree is planted on the brink. All
+ * in meters, along the land from the hilltop.
  */
 const CLIFF = {
   /** Where the hill rolls off, and how far and how steeply it falls to the shore. */
@@ -87,8 +92,13 @@ const CLIFF = {
    * above it the horizon lies, as seen from the hill.
    */
   sea: { midTide: -6.2, tide: 0.75, horizon: 3 },
-  /** How far below the sea at mid tide the camera keeps in view, and how far out to sea. */
-  view: { below: 3.6, reach: 21 },
+  /** The tree is planted on the brink where the land falls away this steeply, as rise over run. */
+  plant: 1,
+  /**
+   * How far below the sea at mid tide the camera keeps in view, how far back over the land behind
+   * the tree, and how far out to sea.
+   */
+  view: { below: 3.6, lead: 6, reach: 18 },
 } as const;
 
 /** The raw lie of the cliff level's ground, before it is set so the tree stands at height 0. */
@@ -112,22 +122,48 @@ function cliffRaw(x: number): number {
   return climb + swell - fall - seabed;
 }
 
+/** Where along the land the tree is planted: on the brink, where it falls away as steeply as asked. */
+function plantedAt(): number {
+  const fall = (x: number): number =>
+    (cliffRaw(x - 0.01) - cliffRaw(x + 0.01)) / 0.02;
+  let gentle = 0;
+  let steep: number = CLIFF.brink;
+  invariant(
+    fall(gentle) < CLIFF.plant && fall(steep) > CLIFF.plant,
+    `The brink never falls away at ${CLIFF.plant} to plant a tree on.`,
+  );
+  for (let i = 0; i < 40; i += 1) {
+    const middle = (gentle + steep) / 2;
+    if (fall(middle) < CLIFF.plant) {
+      gentle = middle;
+    } else {
+      steep = middle;
+    }
+  }
+  return (gentle + steep) / 2;
+}
+
+const PLANTED = plantedAt();
+/** Height of the hilltop above the tree, which the sea's heights are given from. */
+const HILLTOP = cliffRaw(0) - cliffRaw(PLANTED);
+
 const CLIFF_LEVEL: Level = {
   id: "cliff",
   name: "Cliff",
   description:
-    "A hill that rolls off steeply into the sea. The land ends at the cliff, so bears come only from the left. The sea's waves, swell and tide are on the Sea page.",
-  groundAt: (x) => cliffRaw(x) - cliffRaw(0),
+    "A hill that rolls off steeply into the sea, with the tree on its brink. The land ends at the cliff, so bears come only from the left. The sea's waves, swell and tide are on the Sea page.",
+  groundAt: (x) => cliffRaw(x + PLANTED) - cliffRaw(PLANTED),
   barn: false,
   mountains: false,
   bearsFrom: [-1],
-  horizon: CLIFF.sea.midTide + CLIFF.sea.horizon,
-  depth: CLIFF.sea.midTide - CLIFF.view.below,
+  horizon: HILLTOP + CLIFF.sea.midTide + CLIFF.sea.horizon,
+  depth: HILLTOP + CLIFF.sea.midTide - CLIFF.view.below,
+  lead: CLIFF.view.lead,
   reach: CLIFF.view.reach,
   shore: {
-    midTide: CLIFF.sea.midTide,
+    midTide: HILLTOP + CLIFF.sea.midTide,
     tide: CLIFF.sea.tide,
-    from: CLIFF.brink,
+    from: CLIFF.brink - PLANTED,
   },
 };
 

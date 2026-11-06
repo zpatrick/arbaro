@@ -175,8 +175,9 @@ function rangeShape(): PeakShape[] {
  * A mountain range on the horizon, after the sand drawings: ridgelines up to sharp peaks, and
  * spurs, forks and creases wandering down their fronts that part each peak into faces. Faces
  * turned from the sun are hatched, and faces turned toward a low sun glow, so the shading swings
- * across the range through the day. The mountains are filled with the sky itself, so by day only
- * their lines and shading show, yet the sun and moon set behind them.
+ * across the range through the day. The mountains are cut from warm paper a shade apart from the
+ * cooler sky by day, so their lines and shading stand on them, and the sun and moon set behind
+ * them.
  */
 export class Mountains {
   private built: Built[] = [];
@@ -191,21 +192,21 @@ export class Mountains {
   private carvedFor = "";
 
   /**
-   * Draws the range on the horizon. `sky` is the gradient the sky was painted with, in device
-   * pixels, which the mountains are filled with.
+   * Draws the range on the horizon. `paper` is the gradient the mountains are filled with, in device
+   * pixels, glowing from the horizon as the sky does.
    */
   draw(
     ctx: CanvasRenderingContext2D,
     camera: Camera,
-    sky: CanvasGradient,
+    paper: CanvasGradient,
     light: SkyLight,
   ): void {
     if (this.builtFor !== camera.groundY) {
       this.built = rangeShape().map((shape) => build(shape, camera.groundY));
       this.builtFor = camera.groundY;
     }
-    // The bodies are drawn afresh every frame, filled with the sky in the sky's own space, so
-    // they always match the sky around them while hiding whatever is behind them.
+    // The bodies are drawn afresh every frame, filled with the paper in the sky's own space, so
+    // they always glow as the sky around them does while hiding whatever is behind them.
     const place = new DOMMatrix([
       camera.dpr,
       0,
@@ -226,7 +227,7 @@ export class Mountains {
           bodies.addPath(mountain.body, place);
         }
       }
-      ctx.fillStyle = sky;
+      ctx.fillStyle = paper;
       ctx.fill(bodies);
       if (silhouette > 0) {
         ctx.fillStyle = css(

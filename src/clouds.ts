@@ -230,6 +230,11 @@ export class Clouds {
         middle: toward(light.sky.middle),
         edge: toward(light.sky.edge),
       },
+      land: {
+        glow: toward(light.land.glow),
+        middle: toward(light.land.middle),
+        edge: toward(light.land.edge),
+      },
       twilight: light.twilight * (1 - OVERCAST.twilight * cover),
       flowerLight: [
         light.flowerLight[0] * dim,

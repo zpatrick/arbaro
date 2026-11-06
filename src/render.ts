@@ -512,18 +512,23 @@ export class Renderer {
     const cx = width * 0.5;
     const cy = camera.horizonRow * camera.dpr;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const sky = ctx.createRadialGradient(
-      cx,
-      cy,
-      0,
-      cx,
-      cy,
-      Math.hypot(cx, camera.groundY * camera.dpr) * 1.05,
-    );
-    sky.addColorStop(0, css(light.sky.glow));
-    sky.addColorStop(0.55, css(light.sky.middle));
-    sky.addColorStop(1, css(light.sky.edge));
-    ctx.fillStyle = sky;
+    // The sky, and the paper the mountains are cut from, both glowing from the middle of the
+    // horizon in the same way.
+    const glowing = (colors: SkyLight["sky"]): CanvasGradient => {
+      const gradient = ctx.createRadialGradient(
+        cx,
+        cy,
+        0,
+        cx,
+        cy,
+        Math.hypot(cx, camera.groundY * camera.dpr) * 1.05,
+      );
+      gradient.addColorStop(0, css(colors.glow));
+      gradient.addColorStop(0.55, css(colors.middle));
+      gradient.addColorStop(1, css(colors.edge));
+      return gradient;
+    };
+    ctx.fillStyle = glowing(light.sky);
     ctx.fillRect(0, 0, width, ground);
 
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
@@ -549,7 +554,7 @@ export class Renderer {
     }
     const banks = clouds.placed(camera);
     if (mountains) {
-      this.mountains.draw(ctx, camera, sky, light);
+      this.mountains.draw(ctx, camera, glowing(light.land), light);
       // The clouds hang in front of the mountains, casting shadows on them while the sun shines.
       this.mountains.shade(
         ctx,
