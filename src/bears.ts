@@ -47,7 +47,7 @@ const BODY = {
   spine: 0.8,
   /** Height of the hip joint standing on all fours, and reared up. */
   hip: 0.7,
-  rearedHip: 0.8,
+  rearedHip: 0.86,
   /** The bones of the hind leg, hip to knee and knee to ankle. */
   thigh: 0.38,
   shin: 0.34,
@@ -88,15 +88,18 @@ interface LegShape {
   foot: FootShape;
 }
 
-/** A bear's legs: heavy hams and calves over long flat hind feet, and thick forearms. */
+/**
+ * A bear's legs: heavy hams and calves over long flat hind feet, and thick forearms. A hind leg
+ * leaves the body as wide as the haunch, so the back of its ham runs on from the curve of the rump.
+ */
 const LEGS: { hind: LegShape; front: LegShape } = {
   hind: {
-    root: 0.32,
-    upper: 0.29,
-    joint: 0.18,
-    lower: 0.15,
-    ankle: 0.105,
-    swell: { upper: [0.95, 1.12], lower: [0.85, 1.12] },
+    root: 0.6,
+    upper: 0.31,
+    joint: 0.19,
+    lower: 0.165,
+    ankle: 0.115,
+    swell: { upper: [0.95, 1.2], lower: [0.85, 1.15] },
     foot: {
       length: 0.2,
       height: 0.075,
@@ -121,6 +124,15 @@ const LEGS: { hind: LegShape; front: LegShape } = {
     },
   },
 };
+
+/** How far above where a hind leg leaves the body the middle of its haunch lies, in meters. */
+const HAUNCH_DEPTH = 0.2;
+
+/**
+ * The share of the way its body tips up from standing on all fours that a bear's rump stays
+ * behind, bending at the small of its back, so its hams stay over its hind legs as it rears.
+ */
+const HAUNCH_LAG = 0.2;
 
 /**
  * A forepaw's claws: how far they reach past its toes, and how thick they are where they start;
@@ -300,6 +312,8 @@ interface Pose {
   head: Point;
   /** The way the head faces, in radians from level, toward the way the bear faces. */
   headAngle: number;
+  /** The slope of its rump, in radians from level, toward the way the bear faces. */
+  haunch: number;
   /** How far its jaw hangs open, from 0 shut to 1 wide. */
   jaw: number;
   /** Near and far hind legs, then near and far front legs. */
@@ -1528,6 +1542,7 @@ function poseOf(bear: Bear): Pose {
     -0.04 + slope,
     down,
   );
+  const haunch = pitch - HAUNCH_LAG * (pitch - REST.pitch - slope);
   const hipHeight =
     lerp(lerp(BODY.hip, BODY.rearedHip - shove.sink, reared), 0.34, down) + bob;
   const hip = { x: hipX, y: ground + hipHeight };
@@ -1677,6 +1692,7 @@ function poseOf(bear: Bear): Pose {
     shoulder,
     head,
     headAngle,
+    haunch,
     jaw: clamp(bear.jaw + 0.5 * bear.flinch, 0, 1),
     legs: [at(legs, 0), at(legs, 1), at(legs, 2), at(legs, 3)],
   };
@@ -1713,8 +1729,8 @@ function bodyOf(pose: Pose): { x: number; y: number; r: number }[] {
 /**
  * A point of the drawn outline of a bear standing on all fours facing right, in meters, its hip
  * joint at (0, 0.7) and its shoulder joint at (0.8, 0.75). The third number says which bones it
- * follows: 0 the hips, 1 the shoulders, 2 the head, and between them a blend of the two; or
- * `JAW_BONE`, the lower jaw.
+ * follows: -1 the rump, 0 the hips, 1 the shoulders, 2 the head, and between them a blend of the
+ * two; or `JAW_BONE`, the lower jaw.
  */
 type Spec = readonly [number, number, number];
 
@@ -1722,14 +1738,18 @@ type Spec = readonly [number, number, number];
 const JAW_BONE = 3;
 
 /**
- * The outline from under the rump, over the back and the modest rise at the shoulders, to the nape
- * of the neck.
+ * The outline from the back of the haunch, round a short stubby tail at the top of the rump, over
+ * the back and the modest rise at the shoulders, to the nape of the neck.
  */
 const BACK: readonly Spec[] = [
-  [-0.37, 0.79, 0],
-  [-0.34, 0.86, 0],
-  [-0.25, 0.93, 0],
-  [-0.1, 0.98, 0],
+  [-0.37, 0.75, -1],
+  [-0.39, 0.795, -1],
+  [-0.422, 0.812, -1],
+  [-0.416, 0.842, -1],
+  [-0.372, 0.868, -1],
+  [-0.29, 0.918, -0.85],
+  [-0.17, 0.958, -0.5],
+  [-0.03, 0.984, -0.15],
   [0.12, 1.0, 0.15],
   [0.38, 0.99, 0.5],
   [0.62, 1.02, 0.85],
@@ -1779,7 +1799,10 @@ const JAW: readonly Spec[] = [
   [1.352, 0.742, JAW_BONE],
 ];
 
-/** The jowl and throat, down the neck and chest, along the belly and back up under the rump. */
+/**
+ * The jowl and throat, down the neck and chest, along the belly, tucked up at the flank before the
+ * hind leg, and back under the haunch.
+ */
 const BELLY: readonly Spec[] = [
   [1.28, 0.722, 2],
   [1.19, 0.672, 1.8],
@@ -1788,11 +1811,12 @@ const BELLY: readonly Spec[] = [
   [0.86, 0.45, 1],
   [0.7, 0.41, 0.85],
   [0.45, 0.39, 0.55],
-  [0.2, 0.42, 0.25],
-  [0.05, 0.49, 0.05],
-  [-0.12, 0.49, 0],
-  [-0.28, 0.57, 0],
-  [-0.36, 0.69, 0],
+  [0.22, 0.43, 0.25],
+  [0.08, 0.49, 0.05],
+  [-0.08, 0.51, -0.3],
+  [-0.21, 0.55, -0.7],
+  [-0.32, 0.61, -1],
+  [-0.365, 0.68, -1],
 ];
 
 /**
@@ -1819,9 +1843,17 @@ function bearShape(pose: Pose, facing: 1 | -1): Path2D {
   const path = new Path2D();
   const f = facing;
   addPolygon(path, smooth(skin(pose, f)));
+  const rump = { x: f * Math.cos(pose.haunch), y: Math.sin(pose.haunch) };
   for (const [i, leg] of pose.legs.entries()) {
     const hind = i < 2;
-    addPolygon(path, smooth(legOutline(leg, hind ? LEGS.hind : LEGS.front, f)));
+    addPolygon(
+      path,
+      smooth(
+        hind
+          ? legOutline(leg, LEGS.hind, f, rump)
+          : legOutline(leg, LEGS.front, f, undefined),
+      ),
+    );
     addClaws(path, leg, f, hind ? CLAWS.hind : 1);
   }
   return path;
@@ -1839,6 +1871,10 @@ function skin(pose: Pose, f: 1 | -1): Point[] {
   const bones: { rest: Bone; now: Bone }[] = [
     {
       rest: { ...REST.hip, angle: REST.pitch },
+      now: { ...pose.hip, angle: pose.haunch },
+    },
+    {
+      rest: { ...REST.hip, angle: REST.pitch },
       now: { ...pose.hip, angle: pitch },
     },
     {
@@ -1850,7 +1886,7 @@ function skin(pose: Pose, f: 1 | -1): Point[] {
       now: { ...pose.shoulder, angle: pose.headAngle },
     },
   ];
-  const head = at(bones, 2);
+  const head = at(bones, 3);
   const jaw = {
     rest: { x: HINGE.x, y: HINGE.y, angle: REST.head },
     now: {
@@ -1862,11 +1898,11 @@ function skin(pose: Pose, f: 1 | -1): Point[] {
     if (follows === JAW_BONE) {
       return carry(jaw, { x, y }, f);
     }
-    const i = Math.min(1, Math.floor(follows));
+    const i = Math.min(2, Math.floor(follows + 1));
     return mix(
       carry(at(bones, i), { x, y }, f),
       carry(at(bones, i + 1), { x, y }, f),
-      follows - i,
+      follows + 1 - i,
     );
   };
   return [
@@ -1882,13 +1918,23 @@ function skin(pose: Pose, f: 1 | -1): Point[] {
  * The outline of `leg`, shaped by `shape`, for a bear facing `f`: down the front of its upper bone,
  * around the front of its knee or elbow, down the front of its lower bone, over its foot to its
  * toes, back along its sole and around its heel, and up the back of the leg, each part as wide as
- * `shape` says, the knee or elbow fuller on the side it bends out to.
+ * `shape` says, the knee or elbow fuller on the side it bends out to. A hind leg leaves the body
+ * along `rump`, the line of the rump toward the head, so the top of its ham stays with the rump
+ * however the leg swings, until its thigh hangs back along the rump, as it does reared up; then,
+ * as a front leg always does, it leaves square to its upper bone.
  */
-function legOutline(leg: Leg, shape: LegShape, f: 1 | -1): Point[] {
+function legOutline(
+  leg: Leg,
+  shape: LegShape,
+  f: 1 | -1,
+  rump: Point | undefined,
+): Point[] {
   const { root, knee, ankle, heel, toe } = leg;
   const upper = unit(root, knee);
   const lower = unit(knee, ankle);
   const frontUpper = frontOf(upper, f);
+  const along = rump === undefined ? 0 : rump.x * upper.x + rump.y * upper.y;
+  const leaving = rump !== undefined && along >= 0 ? rump : frontUpper;
   const frontLower = frontOf(lower, f);
   const bisector = unit(
     { x: 0, y: 0 },
@@ -1911,8 +1957,22 @@ function legOutline(leg: Leg, shape: LegShape, f: 1 | -1): Point[] {
     y: p.y + side.y * by,
   });
   const into = (p: Point, by: number): Point => offset(p, upper, -by);
+  // Where the leg leaves the body, before and behind, tucked up into it: a front leg's up along
+  // its upper bone, a hind leg's up into its haunch, which closes through its middle so the curve
+  // drawn through the outline meets the rump without swinging out past it.
+  const rise = rump === undefined ? undefined : frontOf(leaving, f);
+  // With its thigh hanging back along its rump, reared up, the front of a ham closes in to the
+  // thigh under the belly.
+  const closed = clamp(-2 * along, 0, 1);
+  const leaves = (side: 1 | -1): Point => {
+    const width =
+      side > 0 ? lerp(shape.root, shape.upper, closed) : shape.root;
+    const edge = offset(root, leaving, (side * width) / 2);
+    return rise === undefined ? into(edge, 0.06) : offset(edge, rise, 0.04);
+  };
+  const haunch = rise === undefined ? [] : [offset(root, rise, HAUNCH_DEPTH)];
   return [
-    into(offset(root, frontUpper, shape.root / 2), 0.06),
+    leaves(1),
     offset(midUpper, frontUpper, (shape.upper / 2) * shape.swell.upper[0]),
     offset(knee, bisector, jointFront),
     offset(midLower, frontLower, (shape.lower / 2) * shape.swell.lower[0]),
@@ -1926,7 +1986,8 @@ function legOutline(leg: Leg, shape: LegShape, f: 1 | -1): Point[] {
     offset(midLower, frontLower, -(shape.lower / 2) * shape.swell.lower[1]),
     offset(knee, bisector, -jointBack),
     offset(midUpper, frontUpper, -(shape.upper / 2) * shape.swell.upper[1]),
-    into(offset(root, frontUpper, -shape.root / 2), 0.06),
+    leaves(-1),
+    ...haunch,
   ];
 }
 

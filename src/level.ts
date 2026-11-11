@@ -25,24 +25,6 @@ export interface Edges {
   bottom: number;
 }
 
-/**
- * A hill rising out of a level's ground, raked in contour lines after the sand drawings: where its
- * crest stands along the land, how high it rises above the land around it, and how wide it is where
- * it meets that land, in meters. Its top arches over and runs on down into the ground past its
- * feet, so it stands in front of the land around it.
- */
-export interface Hill {
-  x: number;
-  height: number;
-  width: number;
-}
-
-/** Height of the top of `hill` at `x`, which runs on down into the ground past its feet. */
-export function hillTop(hill: Hill, x: number): number {
-  const u = (2 * (x - hill.x)) / hill.width;
-  return hill.height * (1 - u * u);
-}
-
 /** The kinds of grass that grow on a level's ground, each after its reference photo. */
 export type GrassKind = "meadow" | "wildflower" | "wheat";
 
@@ -59,12 +41,13 @@ export interface GrassPatch {
 
 /**
  * A rail fence standing along a level's ground, as though it kept to a path: where each of its posts
- * stands along the land, from one end to the other, and the two posts of a gate beyond a gap in it,
- * where the path runs through. All in meters.
+ * stands along the land, from one end to the other, and which bay is the gate the path runs through.
+ * All in meters.
  */
 export interface Fence {
   posts: readonly number[];
-  gate: readonly [number, number];
+  /** Index of the post the gate hangs from. The next post is the latch. */
+  gate: number;
 }
 
 /**
@@ -81,12 +64,18 @@ export interface Level {
   /** Whether the barn stands beside the tree, and mountains line the horizon. */
   barn: boolean;
   mountains: boolean;
+  /** Whether a fishing village stands on the far shore across the sea. */
+  village: boolean;
+  /**
+   * How tall the mountains are compared with the usual range, and how far their bases sit below the
+   * horizon, as a fraction of the sky, so they meet the ground.
+   */
+  mountainScale: number;
+  mountainDrop: number;
   /** A rail fence along its ground, if one stands there. */
   fence: Fence | undefined;
   /** Where grass grows along its ground, and of what kind, from left to right. */
   grass: readonly GrassPatch[];
-  /** Hills raked in contour lines rising out of its ground, after the sand drawings. */
-  hills: readonly Hill[];
   edges: Edges;
   /** The sides bears come in from: -1 the left, 1 the right. */
   bearsFrom: readonly (1 | -1)[];
@@ -126,11 +115,20 @@ const MEADOW: Level = {
   id: "meadow",
   name: "Meadow",
   description:
-    "Long, gentle swells of meadow, a rail fence along the rise to the right of the tree where a path runs through, and mountains along the horizon. Bears come from either side.",
+    "Long, gentle swells of meadow, a long rail fence along the rise to the right of the tree where a path runs through, and mountains along the horizon. Bears come from either side.",
   groundAt: (x) => meadowRaw(x) - meadowRaw(0),
   barn: false,
   mountains: true,
-  fence: { posts: [14, 16.6, 19.1, 21.8], gate: [24.6, 25.5] },
+  village: false,
+  mountainScale: 1,
+  mountainDrop: 0,
+  fence: {
+    posts: [
+      4.2, 6.9, 9.4, 12.2, 14.8, 17.5, 20.1, 22.7, 24.5, 26.2, 28.8, 31.5, 34.2,
+      37, 39.7,
+    ],
+    gate: 8,
+  },
   grass: [
     { kind: "meadow", from: -50, to: -22 },
     { kind: "wildflower", from: -22, to: -7 },
@@ -138,59 +136,66 @@ const MEADOW: Level = {
     { kind: "wildflower", from: 9, to: 33 },
     { kind: "meadow", from: 33, to: 50 },
   ],
-  hills: [],
   edges: { left: -50, right: 50, top: 55, bottom: -6 },
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
-  lead: 0,
-  reach: 0,
+  lead: 12,
+  reach: 14,
   shore: undefined,
 };
 
 /**
- * The farm: a level plain where the tree and the barn stand, and a few hills rising out of it either
- * way, with a good stretch of plain between each. The plain reaches 8 m down. All in meters, from
- * the tree's roots.
+ * The farm's land: a few long, gentle swells, as the meadow's, each with its height, its length and
+ * where it starts along the land; level from `yard.from` to `yard.to`, where the tree and the barn
+ * stand, the swells easing in over `ease` meters either side. All in meters.
  */
-const FARM_HILLS: readonly Hill[] = [
-  { x: -13, height: 1.4, width: 12 },
-  { x: -40, height: 2.2, width: 16 },
-  { x: 22, height: 1.6, width: 13 },
-  { x: 48, height: 2.4, width: 18 },
-];
+const FARM_LAND = {
+  swells: [
+    { height: 0.7, length: 48, phase: -2.094 },
+    { height: 0.35, length: 105, phase: 0 },
+  ],
+  yard: { from: -5, to: 13 },
+  ease: 7,
+} as const;
 
-/** Height of the farm's ground at `x`: the plain, or the top of a hill where one rises out of it. */
-function farmGround(x: number): number {
-  let ground = 0;
-  for (const hill of FARM_HILLS) {
-    ground = Math.max(ground, hillTop(hill, x));
+/** Height of the farm's land at `x`. */
+function farmLand(x: number): number {
+  const away = Math.max(0, FARM_LAND.yard.from - x, x - FARM_LAND.yard.to);
+  let height = 0;
+  for (const { height: swell, length, phase } of FARM_LAND.swells) {
+    height += swell * Math.sin((2 * Math.PI * x) / length + phase);
   }
-  return ground;
+  return height * smoothstep(0, FARM_LAND.ease, away);
 }
 
 const FARM_LEVEL: Level = {
   id: "farm",
   name: "Farm",
   description:
-    "A level plain with the tree and the barn on it, and hills rising out of it either way, raked in contour lines after the sand drawings, with a good stretch of plain between them. Bears come from either side.",
-  groundAt: farmGround,
+    "Long, gentle swells of farmland, the barn beside the tree, and a rail fence along the rise beyond it. Bears come from either side.",
+  groundAt: farmLand,
   barn: true,
   mountains: true,
-  fence: undefined,
+  village: false,
+  mountainScale: 1,
+  mountainDrop: 0,
+  fence: {
+    posts: [17, 19.7, 22.3, 25, 27.6, 30.3, 32.9, 35.6, 38.2],
+    gate: 4,
+  },
   grass: [
     { kind: "wildflower", from: -66, to: -28 },
     { kind: "meadow", from: -28, to: 11.5 },
     { kind: "wheat", from: 11.5, to: 38 },
     { kind: "wildflower", from: 38, to: 76 },
   ],
-  hills: FARM_HILLS,
   edges: { left: -66, right: 76, top: 55, bottom: -8 },
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
-  lead: 0,
-  reach: 0,
+  lead: 12,
+  reach: 14,
   shore: undefined,
 };
 
@@ -289,15 +294,20 @@ const HIGH_WATER = -CLIFF.sea.high;
 
 const CLIFF_LEVEL: Level = {
   id: "cliff",
-  name: "Cliff",
+  name: "Sea",
   description:
-    "A hill that rolls off steeply into the sea, with the tree on its brink. The land ends at the cliff, so bears come only from the left. The sea's waves, swell and tide are on the Sea page.",
+    "A hill that rolls off steeply into the sea, with the tree on the brink of its cliff, an old rail fence along the land behind it, and a fishing village on the far shore to the right. The land ends at the cliff, so bears come only from the left. The sea's waves, swell and tide are on the Sea page.",
   groundAt: (x) => cliffRaw(x + PLANTED) - cliffRaw(PLANTED),
   barn: false,
   mountains: false,
-  fence: undefined,
+  village: true,
+  mountainScale: 1,
+  mountainDrop: 0,
+  fence: {
+    posts: [-25.3, -22.6, -20, -17.3, -14.7, -12, -9.4, -6.8, -4.2],
+    gate: 4,
+  },
   grass: [{ kind: "wheat", from: -50, to: -0.6, clumped: true }],
-  hills: [],
   edges: { left: -50, right: 40, top: 55, bottom: -12 },
   bearsFrom: [-1],
   horizon: HIGH_WATER + CLIFF.sea.horizon,

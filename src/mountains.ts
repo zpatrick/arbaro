@@ -77,6 +77,23 @@ const LINE_COLOR = { day: [42, 33, 26], night: [220, 216, 204] } as const;
  */
 const SILHOUETTE = { twilight: 0.42, night: 0.12, far: 0.6 } as const;
 /**
+ * The mountains' colors in full day, as the painters of the northern fjords give them, fading out
+ * toward sunrise and sunset so the paper and the glow have those to themselves: faces low on a
+ * peak green, below a treeline `treeline` of its height up that wanders `ragged` either way from
+ * face to face, and faces above it warm rock; the far peaks hazed blue with the distance, `share`
+ * of the way; faces turned from the sun cooled toward deep blue, and faces turned to it warmed.
+ * Each lies over the paper as strongly as `alpha` says.
+ */
+const DAY = {
+  green: { color: [94, 128, 84], alpha: 0.55 },
+  rock: { color: [194, 152, 144], alpha: 0.4 },
+  treeline: 0.3,
+  ragged: 0.12,
+  haze: { color: [124, 148, 198], share: 0.55 },
+  cool: { color: [62, 74, 146], alpha: 0.42 },
+  warm: { color: [244, 202, 170], alpha: 0.24 },
+} as const;
+/**
  * Shading of the faces. A face turned from the light is hatched in two passes: every other line
  * comes in as its shade deepens through `sparse`, and the lines between through `dense`. It is
  * darkened by up to `tone` of ink, and one turned toward a low sun glows with up to `glow` of the
@@ -116,6 +133,42 @@ const TALLEST = Math.max(...PEAKS.map((peak) => peak.height));
 /** Room around the carving for the width of its lines, in CSS pixels. */
 const CARVING_MARGIN = 6;
 /**
+ * How far the mountains are carved on below their feet, in multiples of the horizon's height above
+ * the view's top, so wherever the ground dips below the horizon their lower slopes carry on down
+ * behind it, faces, spurs and ridges and all, rather than stopping short at a line. Each foot runs
+ * on down its ridge, spreading out no more than `spread` for every unit it drops.
+ */
+const SKIRT = { depth: 0.12, spread: 2.5 } as const;
+/**
+ * How far the mountains' bodies run on below their carving, in multiples of the horizon's height
+ * above the view's top, so however far the ground dips below the horizon it still meets mountain.
+ */
+const BELOW_FEET = 1;
+/**
+ * Snow on the peaks. It lies above a snowline that comes down the range as the year turns, from
+ * `summer` of the way up the tallest peak at midsummer to `winter` at midwinter; lower on the far
+ * row's greater peaks, at `far` of that; ragged along the range by up to `ragged` of the horizon's
+ * height either way, over stretches about `along` of it long, and from face to face by up to
+ * `byFace`; and reaching `gully` further down the hollow in the middle of each face than at the
+ * spurs either side, which the wind scours. It is `day` by day and `night` by night, hazed `haze`
+ * of the way to the far row's blue on its peaks, and laid as thickly as `alpha` says.
+ */
+const SNOW = {
+  summer: 0.92,
+  winter: 0.45,
+  far: 0.9,
+  ragged: 0.012,
+  along: 0.05,
+  byFace: 0.02,
+  gully: 0.025,
+  day: [250, 251, 253],
+  night: [168, 176, 200],
+  haze: 0.2,
+  alpha: { day: 0.92, night: 0.55 },
+} as const;
+/** How far the year turns, as a share of it, before the snow is laid afresh. */
+const SEASON_STEP = 0.01;
+/**
  * How far the light moves on, in where the sun and moon are and how much daylight and twilight
  * there is, before the carving is drawn again: too little to see in the shading.
  */
@@ -126,10 +179,14 @@ interface Point {
   y: number;
 }
 
-/** A line carved on a peak, and how wide it is along its length as a fraction of a spur. */
+/**
+ * A line carved on a peak, and how wide it is along its length as a fraction of a spur; and for a
+ * spur, where it carries on to below the peak's feet.
+ */
 interface Line {
   points: Point[];
   weight: (t: number) => number;
+  skirt: Point | undefined;
 }
 
 /** A face of a peak while it is carved: its outline, and how much further than its place it turns. */
@@ -140,26 +197,37 @@ interface Carved {
 
 /**
  * A peak's shape, in multiples of the horizon's height from the middle of the horizon with y
- * down: its outline from the left foot over the summit to the right foot, its faces and which way
- * each turns, from -1 left to 1 right, and the lines carved on it.
+ * down: its outline from below the left foot over the summit to below the right foot, its faces
+ * and which way each turns, from -1 left to 1 right, and the lines carved on it. Each face is
+ * carried on below the feet, and keeps its outline as carved above them.
  */
 interface PeakShape {
   far: boolean;
   outline: Point[];
-  faces: { points: Point[]; facing: number }[];
+  faces: { points: Point[]; carved: Point[]; facing: number }[];
   lines: Line[];
 }
 
-/** One peak, ready to draw: in CSS pixels from the middle of the horizon, with y down. */
+/**
+ * One peak, ready to draw: in CSS pixels from the middle of the horizon, with y down, its feet
+ * `sunk` below the horizon and every unit of its carving `unit` pixels. Each face knows its
+ * corners, how far up the peak it stands, as a share of the peak's height, and where the treeline
+ * falls on it.
+ */
 interface Built {
   far: boolean;
+  sunk: number;
+  unit: number;
   body: Path2D;
   ridge: Path2D;
   lines: Path2D;
   faces: {
     outline: Path2D;
+    points: Point[];
     hatch: { sparse: Path2D; dense: Path2D };
     facing: number;
+    rise: number;
+    treeline: number;
   }[];
 }
 
@@ -183,6 +251,9 @@ export class Mountains {
   private built: Built[] = [];
   /** The horizon height the range was last built for, in CSS pixels. */
   private builtFor = 0;
+  /** The peak scale and base drop the range was last built for. */
+  private builtScale = 1;
+  private builtDrop = 0;
   /**
    * Everything carved on the mountains, drawn over their bodies: redrawn only as the light moves
    * on, since there is a great deal of it and it changes slowly.
@@ -192,18 +263,32 @@ export class Mountains {
   private carvedFor = "";
 
   /**
-   * Draws the range on the horizon. `paper` is the gradient the mountains are filled with, in device
-   * pixels, glowing from the horizon as the sky does.
+   * Draws the range on the horizon in `season`, from midsummer at 0 to midwinter at 1, which
+   * brings the snow down the peaks. `paper` is the gradient the mountains are filled with, in
+   * device pixels, glowing from the horizon as the sky does. `peakScale` shortens the peaks, and
+   * `drop` is how far their bases sit below the horizon, as a fraction of the sky, so they meet
+   * the ground.
    */
   draw(
     ctx: CanvasRenderingContext2D,
     camera: Camera,
     paper: CanvasGradient,
     light: SkyLight,
+    season: number,
+    peakScale: number,
+    drop: number,
   ): void {
-    if (this.builtFor !== camera.groundY) {
-      this.built = rangeShape().map((shape) => build(shape, camera.groundY));
+    if (
+      this.builtFor !== camera.groundY ||
+      this.builtScale !== peakScale ||
+      this.builtDrop !== drop
+    ) {
+      this.built = rangeShape().map((shape) =>
+        build(shape, camera.groundY, peakScale, drop),
+      );
       this.builtFor = camera.groundY;
+      this.builtScale = peakScale;
+      this.builtDrop = drop;
     }
     // The bodies are drawn afresh every frame, filled with the paper in the sky's own space, so
     // they always glow as the sky around them does while hiding whatever is behind them.
@@ -215,11 +300,11 @@ export class Mountains {
       (camera.width / 2) * camera.dpr,
       camera.horizonRow * camera.dpr,
     ]);
-    const silhouette =
-      SILHOUETTE.twilight * light.twilight +
-      SILHOUETTE.night * (1 - light.daylight);
+    const silhouette = silhouetteOf(light);
+    const day = light.daylight * (1 - light.twilight);
+    const carvedTo = drop + SKIRT.depth * peakScale;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // A row at a time, far then near, so the near row's darkening covers the far row's.
+    // A row at a time, far then near, so the near row's colors and darkening cover the far row's.
     for (const far of [true, false]) {
       const bodies = new Path2D();
       for (const mountain of this.built) {
@@ -229,23 +314,27 @@ export class Mountains {
       }
       ctx.fillStyle = paper;
       ctx.fill(bodies);
+      if (day > 0.01) {
+        ctx.fillStyle = belowFeet(ctx, camera, far, carvedTo, day);
+        ctx.fill(bodies);
+      }
       if (silhouette > 0) {
-        ctx.fillStyle = css(
-          light.ink,
-          silhouette * (far ? SILHOUETTE.far : 1),
-        );
+        ctx.fillStyle = css(light.ink, silhouette * (far ? SILHOUETTE.far : 1));
         ctx.fill(bodies);
       }
     }
 
     // The carving lies over them, kept from the last time the light moved far enough to show.
     const above = Math.ceil(
-      (TALLEST * camera.groundY + CARVING_MARGIN) * camera.dpr,
+      (TALLEST * peakScale * camera.groundY + CARVING_MARGIN) * camera.dpr,
     );
     const key = [
       ctx.canvas.width,
       camera.dpr,
       camera.groundY,
+      peakScale,
+      drop,
+      Math.round(season / SEASON_STEP),
       ...[
         light.sun.along,
         light.sun.height,
@@ -257,7 +346,7 @@ export class Mountains {
       ].map((value) => Math.round(value / LIGHT_STEP)),
     ].join();
     if (key !== this.carvedFor) {
-      this.carve(camera, light, ctx.canvas.width, above);
+      this.carve(camera, light, season, ctx.canvas.width, above, carvedTo);
       this.carvedFor = key;
     }
     ctx.drawImage(
@@ -265,6 +354,23 @@ export class Mountains {
       0,
       Math.round(camera.horizonRow * camera.dpr) - above,
     );
+  }
+
+  /** The mountains' bodies as they were last drawn, as one shape in device pixels. */
+  silhouette(camera: Camera): Path2D {
+    const place = new DOMMatrix([
+      camera.dpr,
+      0,
+      0,
+      camera.dpr,
+      (camera.width / 2) * camera.dpr,
+      camera.horizonRow * camera.dpr,
+    ]);
+    const bodies = new Path2D();
+    for (const mountain of this.built) {
+      bodies.addPath(mountain.body, place);
+    }
+    return bodies;
   }
 
   /**
@@ -313,16 +419,21 @@ export class Mountains {
 
   /**
    * Draws the carving into its own canvas, `width` device pixels wide with the horizon `above`
-   * device pixels down. Each mountain first clears the carving of those behind it from its body.
+   * device pixels down, reaching down to `below` of the sky under the horizon, and the snow lying
+   * on it in `season`. Each mountain first clears the carving of those behind it from its body.
    */
   private carve(
     camera: Camera,
     light: SkyLight,
+    season: number,
     width: number,
     above: number,
+    below: number,
   ): void {
     const canvas = this.carving;
-    const height = above + Math.ceil(CARVING_MARGIN * camera.dpr);
+    const height =
+      above +
+      Math.ceil((below * camera.groundY + CARVING_MARGIN) * camera.dpr);
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
@@ -345,15 +456,38 @@ export class Mountains {
     const alpha = lerp(LINE_ALPHA.night, LINE_ALPHA.day, light.daylight);
     const sunUp = smoothstep(-0.04, 0.1, light.sun.height);
     const moonUp = smoothstep(-0.04, 0.1, light.moon.height);
+    // In full day, faces turned from the sun cool toward deep blue and those turned to it warm.
+    const day = light.daylight * (1 - light.twilight);
+    const colored = day * light.direct;
+    // The snowline, in multiples of the horizon's height above the peaks' feet, and the snow's
+    // color, dimmed with the mountains as the light goes.
+    const snowline =
+      TALLEST * lerp(SNOW.summer, SNOW.winter, smoothstep(0, 1, season));
+    const silhouette = silhouetteOf(light);
+    const snowColor = mix(SNOW.night, SNOW.day, light.daylight);
+    const snowAlpha = lerp(SNOW.alpha.night, SNOW.alpha.day, light.daylight);
 
-    for (const mountain of this.built) {
+    for (const [index, mountain] of this.built.entries()) {
       const fade = mountain.far ? LINE_ALPHA.far : 1;
       ctx.globalCompositeOperation = "destination-out";
       ctx.fillStyle = "#000";
       ctx.fill(mountain.body);
       ctx.globalCompositeOperation = "source-over";
+      const snow = css(
+        mix(
+          mountain.far
+            ? mix(snowColor, DAY.haze.color, SNOW.haze * day)
+            : snowColor,
+          light.ink,
+          silhouette * (mountain.far ? SILHOUETTE.far : 1),
+        ),
+        snowAlpha,
+      );
+      const line =
+        mountain.sunk -
+        snowline * (mountain.far ? SNOW.far : 1) * mountain.unit;
 
-      for (const face of mountain.faces) {
+      for (const [i, face] of mountain.faces.entries()) {
         // By day the sun shades the faces; by night the moon does, more softly, and with neither
         // up the faces are evenly lit.
         const bySun = 1 - litBy(face.facing, light.sun, WRAP);
@@ -368,8 +502,46 @@ export class Mountains {
           lerp(lerp(0.5, byMoon, SHADE.moon), bySun, sunUp),
           light.direct,
         );
+        // In full day, green low on the peak and warm rock above, hazed blue far off, the rock
+        // warmer where the sun falls on it.
+        if (day > 0.01) {
+          const green =
+            1 -
+            smoothstep(face.treeline - 0.06, face.treeline + 0.06, face.rise);
+          const near = mix(DAY.rock.color, DAY.green.color, green);
+          ctx.fillStyle = css(
+            mountain.far ? mix(near, DAY.haze.color, DAY.haze.share) : near,
+            lerp(DAY.rock.alpha, DAY.green.alpha, green) * day,
+          );
+          ctx.fill(face.outline);
+        }
+        const warm =
+          DAY.warm.alpha * colored * (1 - smoothstep(0.15, 0.55, shade)) * fade;
+        if (warm > 0.005) {
+          ctx.fillStyle = css(DAY.warm.color, warm);
+          ctx.fill(face.outline);
+        }
+        // Snow above the snowline, white where the sun falls on it, and under the face's shading
+        // so it is shaded, cooled and hatched as the rock is.
+        const lies =
+          line +
+          SNOW.byFace * mountain.unit * valueNoise(i * 1.37 + index * 7.1, 313);
+        const above = snowAbove(face.points, lies, mountain.unit, index);
+        if (above !== undefined) {
+          ctx.save();
+          ctx.clip(face.outline);
+          ctx.fillStyle = snow;
+          ctx.fill(above);
+          ctx.restore();
+        }
         if (shade > 0) {
           ctx.fillStyle = css(light.ink, SHADE.tone * shade * fade);
+          ctx.fill(face.outline);
+        }
+        const cool =
+          DAY.cool.alpha * colored * smoothstep(0.3, 0.85, shade) * fade;
+        if (cool > 0.005) {
+          ctx.fillStyle = css(DAY.cool.color, cool);
           ctx.fill(face.outline);
         }
         const glow =
@@ -382,8 +554,7 @@ export class Mountains {
           ctx.fillStyle = css(light.sunColor, glow * fade);
           ctx.fill(face.outline);
         }
-        const sparse =
-          SHADE.hatch * smoothstep(...SHADE.sparse, shade) * fade;
+        const sparse = SHADE.hatch * smoothstep(...SHADE.sparse, shade) * fade;
         const dense = SHADE.hatch * smoothstep(...SHADE.dense, shade) * fade;
         if (sparse > 0.01) {
           ctx.lineCap = "butt";
@@ -409,6 +580,82 @@ export class Mountains {
 }
 
 /**
+ * The color a row of the range takes in full day, `day` of the way there, where its body runs on
+ * below its carving, `below` of the sky under the horizon for `camera`, in device pixels: the
+ * green of its lower slopes, hazed blue for the far row. Above that the faces carry their own
+ * colors.
+ */
+function belowFeet(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  far: boolean,
+  below: number,
+  day: number,
+): CanvasGradient {
+  const foot = (camera.horizonRow + below * camera.groundY) * camera.dpr;
+  const gradient = ctx.createLinearGradient(0, foot - 1, 0, foot + 1);
+  const color = far
+    ? mix(DAY.green.color, DAY.haze.color, DAY.haze.share)
+    : DAY.green.color;
+  gradient.addColorStop(0, css(color, 0));
+  gradient.addColorStop(1, css(color, DAY.green.alpha * day));
+  return gradient;
+}
+
+/** How far the mountains darken toward the ink in `light`: into silhouettes at twilight and by night. */
+function silhouetteOf(light: SkyLight): number {
+  return (
+    SILHOUETTE.twilight * light.twilight +
+    SILHOUETTE.night * (1 - light.daylight)
+  );
+}
+
+/**
+ * The part of a face with corners `points` that lies above a snowline at `line`, ragged along the
+ * range and reaching further down the hollow in the middle of the face, in CSS pixels for a peak
+ * `unit` pixels to the unit of its carving; or nothing if the face lies wholly below it. `seed`
+ * sets how the line wanders along this peak.
+ */
+function snowAbove(
+  points: readonly Point[],
+  line: number,
+  unit: number,
+  seed: number,
+): Path2D | undefined {
+  const top = Math.min(...points.map((p) => p.y));
+  const reach = SNOW.ragged * unit;
+  const gully = SNOW.gully * unit;
+  if (top > line + reach + gully) {
+    return undefined;
+  }
+  const left = Math.min(...points.map((p) => p.x));
+  const right = Math.max(...points.map((p) => p.x));
+  const middle = (left + right) / 2;
+  const along = SNOW.along * unit;
+  const steps = Math.max(2, Math.ceil((right - left) / 3));
+  const path = new Path2D();
+  for (let i = 0; i <= steps; i += 1) {
+    const x = lerp(left, right, i / steps);
+    const across = (2 * (x - middle)) / Math.max(right - left, 1e-6);
+    const y =
+      line +
+      gully * (1 - across * across) +
+      reach *
+        (0.7 * valueNoise(x / along, 401 + seed) +
+          0.3 * valueNoise((x * 3.3) / along, 402 + seed));
+    if (i === 0) {
+      path.moveTo(x, y);
+    } else {
+      path.lineTo(x, y);
+    }
+  }
+  path.lineTo(right, top - 1);
+  path.lineTo(left, top - 1);
+  path.closePath();
+  return path;
+}
+
+/**
  * How much light a face turned `facing` takes from a body in the sky, from 0 to 1: faces turned
  * toward a low sun are lit full on and faces turned from it fall dark, while a sun overhead lights
  * every face about the same. Light wraps `wrap` past the edge of the face.
@@ -424,20 +671,34 @@ function litBy(facing: number, body: SkyBody, wrap: number): number {
   return Math.max(0, (dot / (normal * light) + wrap) / (1 + wrap));
 }
 
-/** A peak's shape in CSS pixels for a horizon `horizon` pixels below the top of the view. */
-function build(shape: PeakShape, horizon: number): Built {
-  const scale = horizon / BASE_HORIZON;
-  const px = (p: Point): Point => ({ x: p.x * horizon, y: p.y * horizon });
+/**
+ * A peak's shape in CSS pixels for a horizon `horizon` pixels below the top of the view. Peaks are
+ * `peakScale` as tall as carved, and their bases sit `drop` of the sky below the horizon.
+ */
+function build(
+  shape: PeakShape,
+  horizon: number,
+  peakScale: number,
+  drop: number,
+): Built {
+  const lineScale = horizon / BASE_HORIZON;
+  const sunk = drop * horizon;
+  const unit = horizon * peakScale;
+  const px = (p: Point): Point => ({
+    x: p.x * horizon,
+    y: p.y * unit + sunk,
+  });
   const outline = shape.outline.map(px);
   const first = at(outline, 0);
   const last = at(outline, outline.length - 1);
 
   const body = new Path2D();
-  body.moveTo(first.x, 2);
+  const below = sunk + SKIRT.depth * unit + BELOW_FEET * horizon;
+  body.moveTo(first.x, below);
   for (const p of outline) {
     body.lineTo(p.x, p.y);
   }
-  body.lineTo(last.x, 2);
+  body.lineTo(last.x, below);
   body.closePath();
   const ridgeLine = new Path2D();
   ridgeLine.moveTo(first.x, first.y);
@@ -445,31 +706,51 @@ function build(shape: PeakShape, horizon: number): Built {
     ridgeLine.lineTo(p.x, p.y);
   }
 
+  // A spur carries on below the feet as wide as it reached them.
   const lines = new Path2D();
   for (const line of shape.lines) {
-    lines.addPath(
-      taper(line.points.map(px), (t) => line.weight(t) * LINE.spur * scale),
+    const points = line.points.map(px);
+    const widths = points.map(
+      (_, i) => line.weight(i / (points.length - 1)) * LINE.spur * lineScale,
     );
+    if (line.skirt !== undefined) {
+      points.push(px(line.skirt));
+      widths.push(at(widths, widths.length - 1));
+    }
+    lines.addPath(taper(points, widths));
   }
 
-  const faces = shape.faces.map((face) => {
+  // Each face is shaded and colored as it was carved, above the feet, and carries that on below.
+  const summit = Math.min(...shape.outline.map((p) => p.y));
+  const faces = shape.faces.map((face, i) => {
     const points = face.points.map(px);
     const path = new Path2D();
-    points.forEach((p, i) => {
-      if (i === 0) {
+    points.forEach((p, j) => {
+      if (j === 0) {
         path.moveTo(p.x, p.y);
       } else {
         path.lineTo(p.x, p.y);
       }
     });
     path.closePath();
+    const middle =
+      face.carved.reduce((sum, p) => sum + p.y, 0) / face.carved.length;
     return {
       outline: path,
-      hatch: hatching(points, face.facing < 0 ? -1 : 1, scale),
+      points,
+      hatch: hatching(
+        points,
+        face.carved.map(px),
+        face.facing < 0 ? -1 : 1,
+        lineScale,
+      ),
       facing: face.facing,
+      rise: middle / summit,
+      treeline:
+        DAY.treeline + DAY.ragged * valueNoise(i * 1.7 + summit * 13, 31),
     };
   });
-  return { far: shape.far, body, ridge: ridgeLine, lines, faces };
+  return { far: shape.far, sunk, unit, body, ridge: ridgeLine, lines, faces };
 }
 
 /**
@@ -495,8 +776,20 @@ function carvePeak(peak: Peak, index: number): PeakShape {
 
   if (tall >= 0.35) {
     const middle = carving.spur(top, base(0.5), 0.05, WEIGHT.spur, seed);
-    const leftSpur = carving.spur(at(left, 2), base(0.24), -0.05, WEIGHT.side, seed + 1);
-    const rightSpur = carving.spur(at(right, 2), base(0.78), 0.05, WEIGHT.side, seed + 2);
+    const leftSpur = carving.spur(
+      at(left, 2),
+      base(0.24),
+      -0.05,
+      WEIGHT.side,
+      seed + 1,
+    );
+    const rightSpur = carving.spur(
+      at(right, 2),
+      base(0.78),
+      0.05,
+      WEIGHT.side,
+      seed + 2,
+    );
     carving.spur(at(middle, 8), base(0.64), -0.06, WEIGHT.fork, seed + 3);
     carving.spur(at(leftSpur, 11), base(0.13), 0.05, WEIGHT.fork, seed + 4);
     carving.spur(at(rightSpur, 11), base(0.88), -0.05, WEIGHT.fork, seed + 5);
@@ -509,7 +802,13 @@ function carvePeak(peak: Peak, index: number): PeakShape {
     carving.crease(at(leftSpur, 4), down(0.2), 0.3 * tall, seed + 11);
   } else if (tall >= 0.2) {
     const first = carving.spur(top, base(0.42), 0.05, WEIGHT.spur, seed);
-    const second = carving.spur(at(right, 3), base(0.78), 0.04, WEIGHT.side, seed + 1);
+    const second = carving.spur(
+      at(right, 3),
+      base(0.78),
+      0.04,
+      WEIGHT.side,
+      seed + 1,
+    );
     carving.spur(at(first, 8), base(0.16), -0.05, WEIGHT.fork, seed + 2);
     carving.spur(at(second, 7), base(0.62), 0.05, WEIGHT.fork, seed + 3);
     carving.band(at(left, 1), at(left, 6), 0.1, -TURN.band, seed + 4);
@@ -527,21 +826,63 @@ function carvePeak(peak: Peak, index: number): PeakShape {
     carving.crease(at(side, 7), down(-out * 0.3), 0.32 * tall, seed + 3);
   }
 
+  // Below the feet, each foot runs on down its ridge and every other corner along the base runs on
+  // down and out from the summit, its spur with it, so the faces between carry on down as they ran.
+  const skirt = new Map<Point, Point>();
+  for (const side of [left, right]) {
+    const foot = at(side, side.length - 1);
+    const higher = at(side, side.length - 4);
+    const spread = clamp(
+      Math.abs((foot.x - higher.x) / (foot.y - higher.y)),
+      Math.abs(foot.x - top.x) / tall,
+      SKIRT.spread,
+    );
+    skirt.set(foot, {
+      x: foot.x + Math.sign(foot.x - top.x) * spread * SKIRT.depth,
+      y: SKIRT.depth,
+    });
+  }
+  const below = (corner: Point): Point => {
+    let end = skirt.get(corner);
+    if (end === undefined) {
+      end = {
+        x: corner.x + ((corner.x - top.x) * SKIRT.depth) / tall,
+        y: SKIRT.depth,
+      };
+      skirt.set(corner, end);
+    }
+    return end;
+  };
+
   const half = (peak.left + peak.right) / 2;
   return {
     far: peak.far,
-    outline,
-    lines: carving.lines,
-    faces: carving.faces.map((face) => ({
-      points: face.points,
-      facing: clamp(
-        (TURN.spread * (centroid(face.points).x - top.x)) / half +
-          face.turn +
-          (rng.next() - 0.5) * TURN.jitter,
-        -1,
-        1,
-      ),
-    })),
+    outline: [below(leftFoot), ...outline, below(rightFoot)],
+    lines: carving.lines.map((line) => {
+      const end = at(line.points, line.points.length - 1);
+      return { ...line, skirt: end.y === 0 ? below(end) : undefined };
+    }),
+    faces: carving.faces.map((face) => {
+      const points: Point[] = [];
+      face.points.forEach((p, i) => {
+        points.push(p);
+        const next = at(face.points, (i + 1) % face.points.length);
+        if (p.y === 0 && next.y === 0) {
+          points.push(below(p), below(next));
+        }
+      });
+      return {
+        points,
+        carved: face.points,
+        facing: clamp(
+          (TURN.spread * (centroid(face.points).x - top.x)) / half +
+            face.turn +
+            (rng.next() - 0.5) * TURN.jitter,
+          -1,
+          1,
+        ),
+      };
+    }),
   };
 }
 
@@ -590,7 +931,7 @@ class Carving {
       const path = wander(from, foot, bow * ease, seed + i, ease);
       const parts = this.split(face, path);
       if (parts !== undefined) {
-        this.lines.push({ points: path, weight });
+        this.lines.push({ points: path, weight, skirt: undefined });
         return path;
       }
     }
@@ -608,11 +949,19 @@ class Carving {
     const faces = this.faces.filter(
       (f) => f.points.includes(a) && f.points.includes(b),
     );
-    invariant(faces.length > 0, `${this.name}: no face has both ends of a band.`);
+    invariant(
+      faces.length > 0,
+      `${this.name}: no face has both ends of a band.`,
+    );
     for (let i = 0; i < FIT_TRIES; i += 1) {
       const ease = 1 - i / FIT_TRIES;
       for (const face of faces) {
-        const path = swell(edgeRun(face.points, a, b), face.points, bulge * ease, seed + i);
+        const path = swell(
+          edgeRun(face.points, a, b),
+          face.points,
+          bulge * ease,
+          seed + i,
+        );
         const parts = this.split(face, path);
         if (parts === undefined) {
           continue;
@@ -625,7 +974,7 @@ class Carving {
         // a spur, away from it.
         const onRidge = faces.length === 1;
         narrow.turn += onRidge ? turn : Math.abs(turn) * away;
-        this.lines.push({ points: path, weight: WEIGHT.lens });
+        this.lines.push({ points: path, weight: WEIGHT.lens, skirt: undefined });
         return;
       }
     }
@@ -655,7 +1004,11 @@ class Carving {
         for (const face of faces) {
           const corner = face.points.indexOf(from);
           if (inside(path.slice(1), face.points, corner, undefined)) {
-            this.lines.push({ points: path, weight: WEIGHT.crease });
+            this.lines.push({
+              points: path,
+              weight: WEIGHT.crease,
+              skirt: undefined,
+            });
             return;
           }
         }
@@ -668,7 +1021,10 @@ class Carving {
    * Parts `face` along `path`, which runs between two of its corners, if the path stays inside
    * it. Returns the two new faces, or undefined if the path strays out of the face.
    */
-  private split(face: Carved, path: readonly Point[]): [Carved, Carved] | undefined {
+  private split(
+    face: Carved,
+    path: readonly Point[],
+  ): [Carved, Carved] | undefined {
     const start = face.points.indexOf(at(path, 0));
     const end = face.points.indexOf(at(path, path.length - 1));
     invariant(
@@ -746,9 +1102,7 @@ function inside(
 function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
   const turn = (p: Point, q: Point, r: Point): number =>
     (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
-  return (
-    turn(a, b, c) * turn(a, b, d) < 0 && turn(c, d, a) * turn(c, d, b) < 0
-  );
+  return turn(a, b, c) * turn(a, b, d) < 0 && turn(c, d, a) * turn(c, d, b) < 0;
 }
 
 /** Whether `p` lies inside `polygon`. */
@@ -772,7 +1126,12 @@ function baseEdge(polygon: readonly Point[], x: number): number | undefined {
   for (let i = 0; i < polygon.length; i += 1) {
     const a = at(polygon, i);
     const b = at(polygon, (i + 1) % polygon.length);
-    if (a.y === 0 && b.y === 0 && Math.min(a.x, b.x) < x && x < Math.max(a.x, b.x)) {
+    if (
+      a.y === 0 &&
+      b.y === 0 &&
+      Math.min(a.x, b.x) < x &&
+      x < Math.max(a.x, b.x)
+    ) {
       return i;
     }
   }
@@ -827,11 +1186,7 @@ function ridge(top: Point, foot: Point, rng: Rng): Point[] {
       notch * Math.exp(-(((t - bench + 0.09) / 0.04) ** 2));
     points.push({
       x: lerp(top.x, foot.x, t) + (rng.next() - 0.5) * 0.025 * drop,
-      y:
-        lerp(top.y, foot.y, t) +
-        sag -
-        lift +
-        (rng.next() - 0.5) * 0.03 * drop,
+      y: lerp(top.y, foot.y, t) + sag - lift + (rng.next() - 0.5) * 0.03 * drop,
     });
   }
   points.push(foot);
@@ -861,9 +1216,13 @@ function wander(
     const side =
       bow * length * 4 * t * (1 - t) +
       wobble *
-        (valueNoise(t * 7, seed) * 0.009 + valueNoise(t * 19, seed + 1) * 0.003) *
+        (valueNoise(t * 7, seed) * 0.009 +
+          valueNoise(t * 19, seed + 1) * 0.003) *
         Math.min(1, t * 3);
-    points.push({ x: start.x + dx * t + nx * side, y: start.y + dy * t + ny * side });
+    points.push({
+      x: start.x + dx * t + nx * side,
+      y: start.y + dy * t + ny * side,
+    });
   }
   points.push(end);
   return points;
@@ -960,8 +1319,12 @@ function swell(
   });
 }
 
-/** A line along `points` as a filled shape, `width(t)` wide a fraction `t` of the way along. */
-function taper(points: readonly Point[], width: (t: number) => number): Path2D {
+/** A line along `points` as a filled shape, as wide at each point as `widths` says. */
+function taper(points: readonly Point[], widths: readonly number[]): Path2D {
+  invariant(
+    widths.length === points.length,
+    "A line needs a width at every point.",
+  );
   const sides = points.map((p, i) => {
     const before = at(points, Math.max(0, i - 1));
     const after = at(points, Math.min(points.length - 1, i + 1));
@@ -969,7 +1332,7 @@ function taper(points: readonly Point[], width: (t: number) => number): Path2D {
     const dy = after.y - before.y;
     const length = Math.hypot(dx, dy);
     invariant(length > 0, "A line cannot double back on itself.");
-    const half = width(i / (points.length - 1)) / 2;
+    const half = at(widths, i) / 2;
     return {
       left: { x: p.x - (dy / length) * half, y: p.y + (dx / length) * half },
       right: { x: p.x + (dy / length) * half, y: p.y - (dx / length) * half },
@@ -991,18 +1354,19 @@ function taper(points: readonly Point[], width: (t: number) => number): Path2D {
 }
 
 /**
- * Parallel lines across a face, running across its length from its highest corner to its lowest
- * and leaning off square to that toward `lean`, cut to the face's outline, and split into every
- * other line and the lines between.
+ * Parallel lines across a face with corners `points`, running across the length of the face as
+ * `carved`, from its highest corner to its lowest, and leaning off square to that toward `lean`,
+ * cut to the face's outline, and split into every other line and the lines between.
  */
 function hatching(
   points: readonly Point[],
+  carved: readonly Point[],
   lean: 1 | -1,
   scale: number,
 ): { sparse: Path2D; dense: Path2D } {
-  const crest = points.reduce((a, b) => (b.y < a.y ? b : a));
-  const deepest = Math.max(...points.map((p) => p.y));
-  const floor = points.filter((p) => p.y === deepest);
+  const crest = carved.reduce((a, b) => (b.y < a.y ? b : a));
+  const deepest = Math.max(...carved.map((p) => p.y));
+  const floor = carved.filter((p) => p.y === deepest);
   const base = {
     x: floor.reduce((sum, p) => sum + p.x, 0) / floor.length,
     y: deepest,

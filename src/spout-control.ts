@@ -15,6 +15,12 @@ const GAP = 16;
 export class SpoutControl {
   /** The offshoot whose spout is open, if any. */
   limb: Limb | undefined;
+  /**
+   * Cuts off the open spout's branch. Set by the scene, which owns how a cut falls.
+   */
+  onPrune: (limb: Limb) => void = () => {
+    invariant(false, "Nothing handles pruning a branch from its spout.");
+  };
   /** What the popover sits over, which it keeps inside. */
   private readonly host: HTMLElement;
   private readonly root: HTMLElement;
@@ -34,6 +40,11 @@ export class SpoutControl {
       chip.addEventListener("click", () => this.set(share));
       this.presets.push([chip, share]);
     }
+    const prune = element("div", "spout-prune", this.root, "Prune branch");
+    prune.addEventListener("click", () => {
+      invariant(this.limb !== undefined, "No spout is open.");
+      this.onPrune(this.limb);
+    });
     this.root.hidden = true;
   }
 

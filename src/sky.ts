@@ -47,6 +47,12 @@ export interface TimeSettings {
 /** Seconds a whole day and night takes at normal speed. */
 export const DAY_SECONDS = 180;
 
+/**
+ * How much of the whole day and night the sun is up, in midsummer and in midwinter, as far north
+ * as the village lies.
+ */
+const DAY_LENGTH = { summer: 0.68, winter: 0.32 } as const;
+
 /** Moves the time of day on by `dt` seconds, if the day is running. */
 export function advanceDay(time: TimeSettings, dt: number): void {
   if (time.dayRunning) {
@@ -134,18 +140,32 @@ export interface SkyLight {
   veiled: number;
 }
 
-/** The light at a time of day, from midnight at 0 through noon at 0.5. */
-export function skyAt(timeOfDay: number): SkyLight {
-  // The sun's height runs from -1 at midnight through 0 at sunrise to 1 at noon.
-  const sunHeight = Math.sin(Math.PI * 2 * (timeOfDay - 0.25));
+/**
+ * The light at a time of day, from midnight at 0 through noon at 0.5, in `season`, from midsummer
+ * at 0 to midwinter at 1: the sun rises earlier and sets later in summer, and keeps short hours
+ * in winter.
+ */
+export function skyAt(timeOfDay: number, season: number): SkyLight {
+  const day = lerp(DAY_LENGTH.summer, DAY_LENGTH.winter, clamp(season, 0, 1));
+  const sunrise = 0.5 - day / 2;
+  const sunset = 0.5 + day / 2;
+  // The sun's height runs from its lowest at midnight through 0 at sunrise to its highest at noon:
+  // in high summer it barely sets, and in deep winter it barely rises.
+  const lean = -Math.cos(Math.PI * day);
+  const sunHeight =
+    (lean + Math.cos(Math.PI * 2 * (timeOfDay - 0.5))) / (1 + Math.abs(lean));
   const daylight = smoothstep(-0.15, 0.25, sunHeight);
   const twilight = clamp(1 - Math.abs(sunHeight + 0.03) / 0.32, 0, 1);
+  // Along its arc while it is up, and through the night after it sets; the moon the other way.
+  const up = timeOfDay >= sunrise && timeOfDay < sunset;
+  const intoDay = (timeOfDay - sunrise) / day;
+  const intoNight = wrapDay(timeOfDay - sunset) / (1 - day);
   const sun: SkyBody = {
-    along: wrapDay(timeOfDay - 0.25) * 2,
+    along: up ? intoDay : 1 + intoNight,
     height: sunHeight,
   };
   const moon: SkyBody = {
-    along: wrapDay(timeOfDay - 0.75) * 2,
+    along: up ? 1 + intoDay : intoNight,
     height: -sunHeight,
   };
   const flowerNight = mix([1, 1, 1], FLOWER_LIGHT.night, 1 - daylight);

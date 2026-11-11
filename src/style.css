@@ -414,6 +414,25 @@ body {
   margin-top: 12px;
 }
 
+/* Cuts the open spout's branch off at the fork. */
+.spout-prune {
+  margin-top: 14px;
+  padding: 7px 0;
+  text-align: center;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(42, 33, 26, 0.7);
+  border: 1px solid rgba(42, 33, 26, 0.25);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.spout-prune:hover {
+  color: var(--ink);
+  border-color: rgba(42, 33, 26, 0.5);
+}
+
 .chip {
   flex: 1;
   padding: 5px 0;

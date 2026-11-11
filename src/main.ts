@@ -1,4 +1,5 @@
 import "./style.css";
+import { Weathervane } from "./barn";
 import { Camera } from "./camera";
 import { Clouds } from "./clouds";
 import { Debris } from "./debris";
@@ -105,6 +106,7 @@ const willows = new Willows();
 const hives = new Hives();
 const birds = new Birds();
 const bears = new Bears();
+const vane = new Weathervane();
 
 /** Where every tree is planted, along the ground. */
 const PLANTING_X = 0;
@@ -118,6 +120,16 @@ let tree: Tree | undefined = new Tree(
   panel.planting.species,
 );
 const debris: Debris[] = [];
+spoutControl.onPrune = (limb) => {
+  invariant(
+    tree !== undefined && tree.has(limb),
+    "The branch to prune is gone.",
+  );
+  const s = tree.prunePoint(limb, 0);
+  invariant(s !== undefined, "This branch is too short to prune.");
+  breakOff(tree, limb, s);
+  spoutControl.close();
+};
 let pointer: { x: number; y: number } | undefined;
 /** Whether shift is held, which turns a click on the tree into placing or knocking off a flower. */
 let shiftHeld = false;
@@ -143,7 +155,8 @@ const BLOCKED: Record<Obstacle, string> = {
  * far enough to count as a drag yet.
  */
 let panning:
-  { pointerId: number; x: number; y: number; dragging: boolean } | undefined;
+  | { pointerId: number; x: number; y: number; dragging: boolean }
+  | undefined;
 let messageTimer: number | undefined;
 /**
  * When set, frames still draw but time stands still, so a script can step the simulation exactly.
@@ -477,6 +490,7 @@ function step(dt: number, controls: Controls): void {
   advanceDay(panel.time, dt);
   clock += dt;
   sea.update(dt, wind, panel.time.timeOfDay);
+  vane.update(dt, wind);
   const conditions = {
     season: panel.time.season,
     wind,
@@ -502,7 +516,7 @@ function step(dt: number, controls: Controls): void {
   debris.push(
     ...hives.update(dt, tree, panel.wildlife, {
       wind,
-      daylight: skyAt(panel.time.timeOfDay).daylight,
+      daylight: skyAt(panel.time.timeOfDay, panel.time.season).daylight,
       blooms: [...flowers.blooms(panel.flowers), ...willows.blooms()],
       hold: panel.strength.flowers,
       melt: weather.melt,
@@ -521,7 +535,7 @@ function step(dt: number, controls: Controls): void {
     ],
     sea,
   );
-  clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay));
+  clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay, panel.time.season));
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -731,7 +745,7 @@ function frame(now: number): void {
   if (view !== undefined) {
     camera.follow(view, dt);
   }
-  const light = clouds.shine(skyAt(panel.time.timeOfDay));
+  const light = clouds.shine(skyAt(panel.time.timeOfDay, panel.time.season));
   if (panel.time.dayRunning) {
     panel.showTimeOfDay();
   }
@@ -794,12 +808,13 @@ function frame(now: number): void {
   }
   renderer.draw(camera, {
     level,
+    vane: vane.heading,
     mountains: panel.world.mountains,
-    hillColors: panel.world.hillColors,
     grass,
     grassColors: panel.world.grassColors,
     grassHeight: panel.world.grassHeight,
     light,
+    rays: panel.world.rays,
     season: panel.time.season,
     clock,
     tree,

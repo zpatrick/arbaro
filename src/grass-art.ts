@@ -8,7 +8,6 @@ import {
   type Strip,
   wiltAt,
 } from "./grass";
-import { hillAt, sandOf } from "./hills";
 import type { GrassKind, Level } from "./level";
 import { css, lit, mix, type Rgb, type SkyLight } from "./sky";
 import { at, clamp, hash, lerp, smoothstep, valueNoise } from "./util";
@@ -111,8 +110,8 @@ type Batches = Map<string, { color: Rgb; path: Path2D }>;
  * Draws the grass and meadow flowers on `level`'s ground, `look.height` times as tall as usual,
  * within `above`, everything above the ground in device pixels: the blades behind everything
  * standing on the ground, or if `front`, those in front of it. Each blade is a fine stroke tapering to its tip,
- * in the ground's own ink, or the sand of a hill drawn in its colors, unless `colors`, when it is
- * green at midsummer, turning to straw and bare earth through the fall and winter. Meadow flowers
+ * in the ground's own ink, unless `colors`, when it is green at midsummer, turning to straw and
+ * bare earth through the fall and winter. Meadow flowers
  * are always in their colors, as the tree's are.
  */
 export function drawGrass(
@@ -126,7 +125,6 @@ export function drawGrass(
     season: number;
     time: number;
     colors: boolean;
-    hillColors: boolean;
     height: number;
   },
   front: boolean,
@@ -156,7 +154,7 @@ export function drawGrass(
       ),
     );
     const snowy = smoothstep(0, 0.05, strip.snow);
-    const tones = tonesOf(level, strip, look, snowy);
+    const tones = tonesOf(strip, look, snowy);
     for (let k = 0; k < count; k += 1) {
       const n = i * 17 + k;
       if (hash(n, 1) < 0.35 !== front) {
@@ -247,13 +245,11 @@ export function drawGrass(
  * is in its colors, or else the color of the ground it stands on; whitened by the snow on it.
  */
 function tonesOf(
-  level: Level,
   strip: Strip,
   look: {
     light: SkyLight;
     season: number;
     colors: boolean;
-    hillColors: boolean;
   },
   snowy: number,
 ): Rgb[] {
@@ -264,12 +260,7 @@ function tonesOf(
       mix(lit(seasoned(green, season), light.flowerLight), snow, 0.6 * snowy),
     );
   }
-  const hill = look.hillColors
-    ? hillAt(level.hills, strip.x, strip.ground)
-    : undefined;
-  const ground =
-    hill === undefined ? light.ink : sandOf(level.hills, hill, season, light);
-  return [mix(ground, snow, 0.6 * snowy)];
+  return [mix(light.ink, snow, 0.6 * snowy)];
 }
 
 /** How a blade of `strip` leans of its own: the meadow's waves, a dune clump's fan, and its own tilt. */

@@ -31,7 +31,7 @@ Either way, the physics stays simple because it only sees the above-ground tree.
 
 ## Growth and decay
 
-Water is the currency. Resources come up the trunk and, left alone, point upward. If you do nothing while more water comes in, the tree just gets taller, until it hits some maximum height. Steering a new branch also steers where that growth goes.
+Water is the currency.
 
 Decay rises with tree mass: more branches, a thicker trunk, a taller trunk. A larger branch decays faster. A larger stem decays faster. More tree means a higher decay rate.
 
@@ -39,29 +39,14 @@ If more is coming in than the decay rate, that part keeps growing. If less is co
 
 ## Building branches
 
-Growth is a continual process. It keeps going on its own over time. You do not press a button to send water or energy to a spot. You only dictate where the flow goes.
-
-You place where a branch starts. Think of that point as a spout. Click it and set how much of the flow goes into the branch versus on up the trunk. Fifty percent, for example.
-
-Visually this is the reverse of the water droplets. Dots stand for the plant's energy. The name is unclear. They guessed chloroplasts and were not sure. The dots start large. At a spout they split by the share you set, then travel out along the branch. Whatever arrives at the end makes that end longer, in the direction it is currently being steered.
-
-Branches have stems, and stems have their own nozzles, with the same kind of split: how much of this branch's flow goes into each stem.
+Dots stand for the plant's energy. The name is unclear. They guessed chloroplasts and were not sure.
 
 A flower is another node type, and it is always a leaf. It gets resources dedicated to it the same way a branch or a stem does, and it needs enough of them. It also brings in light energy, which is a different currency. How that connects, and why you would use it, is still open.
 
-On each valve, a few settings feel right, even if the exact set is not settled: give it everything, hold it where incoming matches decay, or turn the valve off.
+On each valve, a setting that holds its branch where incoming matches decay is still open.
 
-## Bees, bears, and birds
+## Bears and level goals
 
-Certain flowers attract bees. Bees that stay may build a beehive on a branch. The hive is a load hung on the tree, the same kind of weight as the other things that sit on a limb and pull it down.
-
-A hive eventually draws a bear. The bear walks over, rears onto its hind legs, sets its forelegs on the trunk, and swipes at the hive. If it connects, it knocks the hive to the ground, eats it, and leaves. If it cannot reach, it keeps at it for a while and then gives up. Shaking the tree is one version of that. What else it might go after instead, seeds or leaves, is still open.
-
-Pruning is a way to answer the bear. Cut a limb so the falling wood lands on it. A small branch the bear shrugs off. A larger one drives it off. One big enough can kill it. The wind is part of the aim. A limb already swaying keeps the motion it had when you cut it, so cutting at the right point in the swing can send it flying. Extra weight on that limb, a beehive especially, carries it farther.
+The bear may go after something other than hives, such as seeds or leaves. That is still open.
 
 A level's goal might be something other than height and flower count. Killing a number of bears, five say, is one example. What those goals actually are is still open.
-
-Birds are lighter and separate from that. They fly in and land on the tree, and their weight is something you can watch: enough to bend a thin twig, or too little to move the wood at all. Sky birds that only drift past are a different, earlier idea.
-
-
-- Snow, weghts down heavy limbs in winter. covers ground. 

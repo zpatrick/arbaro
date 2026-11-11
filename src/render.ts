@@ -6,7 +6,6 @@ import type { Debris } from "./debris";
 import { fenceShape } from "./fence";
 import { drawGrass } from "./grass-art";
 import type { Grass } from "./grass";
-import { drawHills } from "./hills";
 import { drawBees, drawHive, hiveLook } from "./hive-art";
 import type { BeeView, HiveView } from "./hives";
 import type { Dot } from "./flow";
@@ -24,7 +23,8 @@ import {
   type Stalk,
 } from "./flowers";
 import type { Limb } from "./limb";
-import { BARN_LINE, barnLines, barnOutline } from "./barn";
+import { barnShape, drawBarn } from "./barn";
+import { Rays } from "./rays";
 import { Mountains } from "./mountains";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
@@ -42,6 +42,7 @@ import type { Sea } from "./sea";
 import { drawFarSea, drawSea, drawSpray } from "./sea-art";
 import type { Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
+import { Village } from "./village";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
 import { drawFallingLeaves, drawWillow } from "./willow-art";
 import type { StrandHover, StrandView, WillowView } from "./willows";
@@ -88,6 +89,16 @@ const VEIN = {
 } as const;
 /** Radius of the gauge marking each spout, in CSS pixels. */
 const SPOUT_PX = 5.5;
+/** How long the light takes to travel from the base of an open spout's branch to its tip. */
+const FADE_MS = 2400;
+/** How strongly the light shows at its heart, as an alpha over the scene. */
+const FADE_PEAK = 0.8;
+/** The warm of the sun, so the wash reads on the ink and on the paper around it. */
+const FADE_GLOW: Rgb = [234, 196, 140];
+/** Share of the branch the light covers at once, fading out to either side of its heart. */
+const FADE_WIDTH = 0.72;
+/** How far the light feathers past the wood, in CSS pixels. */
+const FADE_FEATHER = 28;
 /** An energy dot leaving the roots is this fraction of the trunk's radius at the ground. */
 const DOT_SIZE = 0.32;
 /** An energy dot never fills more of the wood it rides in than this fraction of its radius. */
@@ -101,9 +112,6 @@ const DOT_MIN_PX = 0.9;
 const STALK_INTO = 0.6;
 /** Stars in the night sky, and how many of them are bright enough to sparkle. */
 const STARS = { count: 170, bright: 14 } as const;
-/** How strongly the lines carved into the barn show, and their thinnest, in CSS pixels. */
-const BARN_LINE_ALPHA = 0.5;
-const BARN_LINE_MIN_PX = 0.7;
 const STARLIGHT: Rgb = [240, 236, 222];
 const MOONLIGHT: Rgb = [238, 233, 214];
 /**
@@ -137,10 +145,10 @@ const SNOW_THINNEST_PX = 0.3;
 export interface Scene {
   /** Where the tree grows: the lie of its ground, and whether the barn stands there. */
   level: Level;
+  /** Which way the barn's weathervane points, in radians from straight right, turning back away from the view. */
+  vane: number;
   /** Whether mountains line the horizon. */
   mountains: boolean;
-  /** Whether the hills of a level with hills are drawn in their colors. */
-  hillColors: boolean;
   /**
    * The grass and meadow flowers on the ground, whether the grass is drawn in its colors, and how
    * tall it grows, as a multiple of its usual height.
@@ -150,6 +158,8 @@ export interface Scene {
   grassHeight: number;
   /** The light at this time of day. */
   light: SkyLight;
+  /** How strongly rays of light stream from the sun and the moon, from none at 0 to their strongest at 1. */
+  rays: number;
   /** The time of year, from midsummer at 0 to midwinter at 1. */
   season: number;
   /** Seconds of simulated time, which set the stars twinkling. */
@@ -193,6 +203,19 @@ export interface Scene {
   birds: readonly BirdView[];
   /** The bears about the tree. */
   bears: readonly BearView[];
+}
+
+/** How deep snow lies where it has settled, in meters: its mean depth over the strips holding any. */
+function lyingSnow(cover: SnowCover): number {
+  let sum = 0;
+  let count = 0;
+  for (const depth of cover.depth) {
+    if (depth > 0) {
+      sum += depth;
+      count += 1;
+    }
+  }
+  return count === 0 ? 0 : sum / count;
 }
 
 /** Thinnest a limb's radius can be drawn at the camera's zoom, in world units. */
@@ -311,8 +334,9 @@ export class Renderer {
   private resized = false;
   private readonly stars: Star[];
   private readonly mountains = new Mountains();
-  private readonly barn = { outline: barnOutline(), lines: barnLines() };
+  private readonly rays = new Rays();
   private readonly fences = new Map<Level, Path2D>();
+  private readonly villages = new Map<Level, Village>();
   /** Ink of the wood and ground in this frame's light. */
   private inkColor: string = PALETTE.ink;
   /** Ink of the guides drawn over the scene in this frame's light. */
@@ -323,6 +347,9 @@ export class Renderer {
   /** The veins' glow, blurred at low resolution. */
   private readonly glow: HTMLCanvasElement;
   private readonly glowCtx: CanvasRenderingContext2D;
+  /** The soft light traveling a branch, drawn on black so it can be screened over the scene. */
+  private readonly fade: HTMLCanvasElement;
+  private readonly fadeCtx: CanvasRenderingContext2D;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -346,6 +373,13 @@ export class Renderer {
       "Canvas 2D is not available for the strain glow.",
     );
     this.glowCtx = glowCtx;
+    this.fade = document.createElement("canvas");
+    const fadeCtx = this.fade.getContext("2d");
+    invariant(
+      fadeCtx !== null,
+      "Canvas 2D is not available for the branch light.",
+    );
+    this.fadeCtx = fadeCtx;
     const rng = new Rng(11);
     this.stars = Array.from({ length: STARS.count }, (_, i) => ({
       x: rng.next(),
@@ -378,15 +412,37 @@ export class Renderer {
       camera,
       scene.light,
       scene.clock,
+      scene.season,
       scene.clouds,
       scene.mountains,
+      scene.level.mountainScale,
+      scene.level.mountainDrop,
     );
     if (scene.sea.present) {
       drawFarSea(this.ctx, camera, scene.sea, scene.light);
     }
+    if (scene.level.village) {
+      this.villageOf(scene.level).draw(
+        this.ctx,
+        camera,
+        scene.light,
+        scene.sea,
+        scene.season,
+        lyingSnow(scene.weather.cover),
+        this.grain,
+      );
+    }
     const world = camera.worldTransform();
     if (scene.level.barn) {
-      this.drawBarn(camera, world, scene.light);
+      drawBarn(
+        this.ctx,
+        camera,
+        world,
+        scene.light,
+        scene.season,
+        lyingSnow(scene.weather.cover),
+        scene.vane,
+      );
     }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.far);
     // Half a willow's strands hang behind its wood.
@@ -438,17 +494,6 @@ export class Renderer {
       }
       this.fillInk(path, piece.alpha);
     }
-    if (scene.level.hills.length > 0) {
-      drawHills(
-        this.ctx,
-        camera,
-        scene.level.hills,
-        skyline,
-        scene.light,
-        scene.season,
-        scene.hillColors,
-      );
-    }
     const sky = aboveLine(skyline);
     if (scene.sea.present) {
       drawSea(
@@ -469,7 +514,6 @@ export class Renderer {
       season: scene.season,
       time: scene.clock,
       colors: scene.grassColors,
-      hillColors: scene.hillColors,
       height: scene.grassHeight,
     };
     // Most of the grass stands behind what is on the ground, and the rest in front of it.
@@ -540,8 +584,28 @@ export class Renderer {
     }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
+    // Rays of light from the sun or the moon, broken by the mountains, the barn, the wood and the
+    // ground.
+    const blocking = [ink];
+    if (scene.mountains) {
+      blocking.push(this.mountains.silhouette(camera));
+    }
+    if (scene.level.barn) {
+      blocking.push(barnShape(world));
+    }
+    this.rays.draw(
+      this.ctx,
+      camera,
+      scene.light,
+      scene.rays,
+      scene.clock,
+      blocking,
+    );
     if (scene.tree !== undefined) {
       if (scene.flow !== undefined) {
+        if (scene.flow.openSpout !== undefined) {
+          this.drawBranchFade(camera, scene.flow.openSpout);
+        }
         this.drawSpouts(
           camera,
           scene.tree,
@@ -615,15 +679,18 @@ export class Renderer {
 
   /**
    * Fills the sky for the time of day, down behind the ground: a glow over the middle of the
-   * horizon, the stars, moon and sun, the mountains in front of them if there are any, and warm
-   * light on the sun's side at sunrise and sunset.
+   * horizon, the stars, moon and sun, the mountains in front of them if there are any, snowy as
+   * far as `season` brings the snow down, and warm light on the sun's side at sunrise and sunset.
    */
   private drawSky(
     camera: Camera,
     light: SkyLight,
     clock: number,
+    season: number,
     clouds: Clouds,
     mountains: boolean,
+    mountainScale: number,
+    mountainDrop: number,
   ): void {
     const ctx = this.ctx;
     const width = this.canvas.width;
@@ -673,7 +740,21 @@ export class Renderer {
     }
     const banks = clouds.placed(camera);
     if (mountains) {
-      this.mountains.draw(ctx, camera, glowing(light.land), light);
+      // The distant land the mountains stand on runs on down behind the near ground, so wherever the
+      // ground dips below the horizon it shows land, and the mountains never float over the sky.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = glowing(light.land);
+      ctx.fillRect(0, cy, width, ground - cy);
+      ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+      this.mountains.draw(
+        ctx,
+        camera,
+        glowing(light.land),
+        light,
+        season,
+        mountainScale,
+        mountainDrop,
+      );
       // The clouds hang in front of the mountains, casting shadows on them while the sun shines.
       this.mountains.shade(
         ctx,
@@ -911,6 +992,114 @@ export class Renderer {
   }
 
   /**
+   * A soft patch of light travels from the base of the branch an open spout feeds out to its
+   * tip, then starts again. It fills the wood and feathers out past it, fading away to either
+   * side of its heart, so it reads as a wash of light rather than a line.
+   */
+  private drawBranchFade(camera: Camera, limb: Limb): void {
+    const fork = limb.attachment;
+    invariant(fork !== undefined, "A spout feeds an offshoot.");
+    // The branch's base sits inside its parent. Start where it comes out, so the light is the
+    // branch and not a bite out of the wood it grows from.
+    const buried = fork.parent.radiusAt(fork.s);
+    const start = buried < limb.length * 0.85 ? buried : 0;
+    const span = limb.length - start;
+    if (span <= 0) {
+      return;
+    }
+    const half = span * FADE_WIDTH * 0.5;
+    const travel = (performance.now() % FADE_MS) / FADE_MS;
+    const center = start - half + travel * (span + half * 2);
+    const minRadius = minimumRadius(camera);
+    const step = 8 / camera.scale;
+    const spots: { x: number; y: number; weight: number; radius: number }[] =
+      [];
+    for (let s = start; s <= limb.length; s += step) {
+      const weight = fadeWeight(s, center, half);
+      if (weight < 0.02) {
+        continue;
+      }
+      const p = limb.pointAt(s);
+      const at = camera.toScreen(p.x, p.y);
+      const wood = Math.max(limb.radiusAt(s), minRadius) * camera.scale;
+      spots.push({
+        x: at.x,
+        y: at.y,
+        weight,
+        radius: wood * 1.4 + FADE_FEATHER,
+      });
+    }
+    if (spots.length === 0) {
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const spot of spots) {
+      minX = Math.min(minX, spot.x - spot.radius);
+      minY = Math.min(minY, spot.y - spot.radius);
+      maxX = Math.max(maxX, spot.x + spot.radius);
+      maxY = Math.max(maxY, spot.y + spot.radius);
+    }
+    const x = Math.max(0, Math.floor(minX));
+    const y = Math.max(0, Math.floor(minY));
+    const w = Math.min(camera.width, Math.ceil(maxX)) - x;
+    const h = Math.min(camera.height, Math.ceil(maxY)) - y;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+    const dpr = camera.dpr;
+    const pw = Math.ceil(w * dpr);
+    const ph = Math.ceil(h * dpr);
+    if (this.fade.width < pw || this.fade.height < ph) {
+      this.fade.width = pw;
+      this.fade.height = ph;
+    }
+    const glow = this.fadeCtx;
+    glow.setTransform(1, 0, 0, 1, 0, 0);
+    glow.clearRect(0, 0, this.fade.width, this.fade.height);
+    glow.setTransform(dpr, 0, 0, dpr, 0, 0);
+    glow.globalCompositeOperation = "lighten";
+    for (const spot of spots) {
+      const g = glow.createRadialGradient(
+        spot.x - x,
+        spot.y - y,
+        0,
+        spot.x - x,
+        spot.y - y,
+        spot.radius,
+      );
+      g.addColorStop(0, fadeMask(spot.weight));
+      g.addColorStop(0.42, fadeMask(spot.weight * 0.45));
+      g.addColorStop(1, "rgb(0, 0, 0)");
+      glow.fillStyle = g;
+      glow.beginPath();
+      glow.arc(spot.x - x, spot.y - y, spot.radius, 0, Math.PI * 2);
+      glow.fill();
+    }
+    const image = glow.getImageData(0, 0, pw, ph);
+    const data = image.data;
+    const [gr, gg, gb] = FADE_GLOW;
+    for (let i = 0; i < data.length; i += 4) {
+      const red = data[i];
+      invariant(red !== undefined, "Missing a pixel of the branch light.");
+      const alpha = Math.round((red / 255) * FADE_PEAK * 255);
+      data[i] = gr;
+      data[i + 1] = gg;
+      data[i + 2] = gb;
+      data[i + 3] = alpha;
+    }
+    glow.setTransform(1, 0, 0, 1, 0, 0);
+    glow.putImageData(image, 0, 0);
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.drawImage(this.fade, 0, 0, pw, ph, x, y, w, h);
+    ctx.restore();
+  }
+
+  /**
    * Marks every fork with a small gauge: a ring whose dark wedge is the share of the flow its
    * spout sends into the offshoot.
    */
@@ -952,24 +1141,6 @@ export class Renderer {
     }
   }
 
-  /**
-   * The barn beside the tree, in ink like the tree and behind it, with its lines carved through
-   * the ink to the sky's color beneath.
-   */
-  private drawBarn(camera: Camera, world: DOMMatrix, light: SkyLight): void {
-    const outline = new Path2D();
-    outline.addPath(this.barn.outline, world);
-    this.fillInk(outline, 1);
-    const ctx = this.ctx;
-    ctx.setTransform(world);
-    ctx.strokeStyle = css(light.sky.middle, BARN_LINE_ALPHA);
-    ctx.lineWidth = Math.max(BARN_LINE, BARN_LINE_MIN_PX / camera.scale);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke(this.barn.lines);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-  }
-
   /** The fence on `level`, in meters, built once for each level that has one. */
   private fenceOf(level: Level): Path2D | undefined {
     if (level.fence === undefined) {
@@ -981,6 +1152,20 @@ export class Renderer {
       this.fences.set(level, shape);
     }
     return shape;
+  }
+
+  /** The village on the far shore of `level`'s sea, built once for each level that has one. */
+  private villageOf(level: Level): Village {
+    let village = this.villages.get(level);
+    if (village === undefined) {
+      invariant(
+        level.shore !== undefined,
+        `The ${level.name} level has a village but no sea for it to stand across.`,
+      );
+      village = new Village(level.shore);
+      this.villages.set(level, village);
+    }
+    return village;
   }
 
   /** Fills `path`, given in device pixels, with ink and its grain. */
@@ -1457,6 +1642,21 @@ export function pieceShapes(
   };
   visit(limb, cut);
   return shapes;
+}
+
+/** How strongly the traveling light shows at `s`, from 1 at its heart to 0 at its edges. */
+function fadeWeight(s: number, center: number, half: number): number {
+  const u = (s - center) / half;
+  if (u <= -1 || u >= 1) {
+    return 0;
+  }
+  return 0.5 + 0.5 * Math.cos(u * Math.PI);
+}
+
+/** White dimmed to `amount`, the mask the traveling light is cut from. */
+function fadeMask(amount: number): string {
+  const v = Math.round(255 * amount);
+  return `rgb(${v}, ${v}, ${v})`;
 }
 
 /** The part of an edge from distance `s` on, starting with a point exactly at `s`. */

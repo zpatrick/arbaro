@@ -111,6 +111,13 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A spout can give its branch everything, turn it off, or anything between.
 - [x] The flow shows as dots of energy that start large, split at each spout by its share, and
       travel out to the tips, where whatever arrives grows the tip in the direction it is steered.
+- [ ] In flow mode, steering a limb stakes its growth direction. Releasing the arrow key or
+      selecting another limb leaves that steering in place, so the limb continues to grow as if
+      the key were still held instead of drifting back toward its natural straight or upright
+      shape. To change or straighten it, the player selects it again and steers it the other way.
+      The circle at the tip shows the direction in which the limb is staked.
+- [ ] Staking applies only in flow mode. In steer-and-grow mode, an unsteered tip continues to
+      drift back toward its natural shape as it does now.
 - [x] How fast nutrients rise from the roots can be set in the debug panel.
 - _Open._ Water is the currency the flow is made of.
 - _Open._ A spout setting that holds its branch steady, taking in just what it loses to decay.
@@ -234,6 +241,13 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A dead flower falls off the tree onto the ground and slowly dissolves or fades away.
 - [ ] Flowers have weight, and their weight and the wind they catch load the limbs.
 
+## Fruit and seeds
+
+- [ ] Pollinated flowers become cherries or seed pods. Fruit adds weight to its limbs and attracts
+      birds and bears.
+- [ ] Seeds that survive become the player's score, or pass traits from the grown tree to the next
+      tree.
+
 ## Ground cover
 
 Grass and meadow flowers grow on the ground of the farm and the cliff. No one plants or cuts them:
@@ -248,7 +262,7 @@ Three kinds of grass, each after its photo:
       and on the beach after `beach-dune-grass.jpg`.
 
 - [x] The farm has all three kinds: wildflower meadow grass, meadow grass and beach/wheat grass.
-- [x] The cliff, the beach level, has beach/wheat grass on its land, in clumps with bare sand
+- [x] The sea level, the beach, has beach/wheat grass on its land, in clumps with bare sand
       between, their blades fanning out.
 - [x] The meadow has wildflower meadow grass and meadow grass, in long stretches in turn.
 - [x] Grass is drawn in the scene's ink language: fine strokes with tapered tips, in the ground's
@@ -313,7 +327,9 @@ Three kinds of grass, each after its photo:
       exist, a thicker trunk stands for better roots. An uprooted tree tips over on its base, root
       flare and all.
 - [x] When weight comes off a limb, the wood that carried it springs back.
-- [ ] Warn the player when the roots are struggling or a limb is close to snapping.
+- [ ] Warn the player when the roots are struggling or a limb is close to snapping through the
+      tree itself, without relying on meters: fine cracks, trembling joints, bowed limbs,
+      disturbed soil, falling petals or strained flow.
 
 ### Wind
 
@@ -324,36 +340,43 @@ Three kinds of grass, each after its photo:
 - [x] Wind slows toward the ground.
 - [ ] In play, the weather drives the wind. It varies in strength and direction with gusts, and
       starts gentle so a young tree has time to root.
+- [ ] Gale, drought, flood and heavy snow are forecast several days ahead. The player can prepare
+      by pruning, reinforcing roots, redirecting growth or sacrificing flowers.
+- [ ] Weather arrives visibly instead of changing at once: a cloud bank builds on the horizon, the
+      sea picks up and long limbs begin to work before the storm reaches the tree. The player has
+      time to see which branches are likely to suffer and prepare them.
 
 ## World and environment
 
 - [x] The meadow: a few long, gentle swells of land across it, so the tree stands in a shallow
-      dip with a rise to either side. Along the rise to its right stands a split-rail fence in ink
-      silhouette, after the reference photo, as though it kept to a path: three sections of rails
-      between leaning posts, a gap where the path runs through, and a small gate with a brace.
-      No barn stands there.
+      dip with a rise to either side. Along the rise to its right runs a long, weathered rail fence
+      in ink silhouette, as though it kept to a path, with a gate where the path runs through. No
+      barn stands there.
+- [x] A fence is drawn after the reference of horses beyond an old fence: rough posts about
+      1.1 m tall, most nearly upright and now and then one leaning, their tops cut on a slant just
+      above the upper rail. Two rails run between each post and the next, fixed to the posts where
+      they stand, running a little past them so the rails of neighboring bays cross, a little
+      uneven and sagging between. Now and then a lower rail has come away at one end and rests on
+      the ground. The gate is braced corner to corner.
 - [x] Every level has edges: to either side, a top in the sky and a floor in the ground. The view
       never zooms out wider or taller than the level, nor pans past its edges, so the ground runs
-      no deeper than the level's floor: 6 m down on the meadow, 8 m on the farm and 12 m on the
-      cliff. The tree grows no closer than 3 m to the level's sides or 5 m to its top; held up
+      no deeper than the level's floor: 6 m down on the meadow, 8 m on the farm and 12 m by the
+      sea. The tree grows no closer than 3 m to the level's sides or 5 m to its top; held up
       there, it says the edge of the level is in the way.
 - [ ] Levels with shaped terrain: hills, slopes, rocks underground and solid obstacles above.
-- [x] A second level, the cliff: a hill rolling down gently to the left that rolls off over a
-      rounded brink and falls steeply into the sea. The tree stands on the brink, where the land
+- [x] A second level, the sea: a hill rolling down gently to the left that rolls off over a
+      rounded brink and falls steeply into the sea. An old rail fence runs along the land behind
+      the tree. The tree stands on the brink, where the land
       falls away at 45 degrees, leaning out over the water. A ledge of rock at its foot
       bares at low water, and beyond it the seabed shelves away into deep water. High water all
       but reaches the top of the cliff, a meter below the tree, and the horizon lies above it, as
       seen from the hill. Bears come only from the left. No barn stands there, and no mountains
-      unless the debug panel puts them back.
-- [x] A third level, the farm: a level plain of dirt with the tree and the barn on it, and hills
-      rising out of it either way, with a good stretch of plain between each, after the sand
-      drawing of a tree on hills (reference 14). Where a hill rises out of the plain its top is
-      the top of the ground, and past its feet its top runs on down into the ground, so it stands
-      in front of the plain dirt around it. It is raked in contour lines that follow its top down,
-      nested like the ridges of a fingerprint, as close on screen however near the view. In their
-      colors the hills are warm sand, lit like the flowers through the day and night, turning
-      toward russet through the fall and grey-brown through the winter; without them, their lines
-      are carved into the ink as the barn's lines are. Bears come from either side.
+      unless the debug panel puts them back. A fishing village stands on the far shore to the
+      right.
+- [x] A third level, the farm: long, gentle swells of farmland like the meadow's, level through the
+      yard where the tree and the barn stand, with a rail fence along the rise beyond the barn and
+      mountains along the horizon. Wildflower and meadow grass grow toward the left, and wheat grass
+      beyond the barn. Bears come from either side.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
@@ -378,13 +401,46 @@ Three kinds of grass, each after its photo:
       melts into it, and its colors follow the light through the day and the night. Wood, hives
       and flowers falling into it splash, float, and bob on the waves, drifting with the water,
       before they fade.
+- [x] Across the sea, on the right of the sea level, a fishing village stands on the far shore: a
+      dense cluster of red and white houses around a rocky point, cabins and warehouses at the
+      water and houses in rows up the slope behind, some side on and some gable end on, turned
+      every way, in barn red, white, cream and ochre under slate, grey and red roofs; green hills
+      rising gently behind it, wooded in patches, with a few houses alone on them; and a low shore
+      far off to the left with a few more. Along the front of the village a harbor wall of dressed
+      stone, green with weed below high water, carries a cobbled walk with lamps and benches
+      facing the water; elsewhere its shore is bedrock carved in the mountains' manner, joints,
+      arêtes, ledges and creases parting it into faces that take the light their own ways, falling
+      into the water at the tip of each point, with the turf rolling over its top and the rock
+      breaking through the grass here and there. Its woods are birches and
+      rowans, each crown a ball of clustered leaves shaded away from the light and throwing its
+      shadow on the grass, gold and red in the fall and bare in winter, with bushes along the shore
+      and tufts in the grass; all of it comes into finer detail as the view closes in. Where land
+      rising from a coast hides the land behind it, it is drawn so, with nothing standing out past
+      its outline. Each house is lit by the sun or the moon as the hives are, its walls and
+      roofs turned from the light toned and hatched in the mountains' manner, so the shading swings
+      across the village through the day. Its windows light one by one as the evening comes on,
+      some going out late in the night and a few coming on again before dawn, and their light
+      shimmers on the water below. Its rock and harbor wall bare as the tide goes out, its hills turn
+      with the seasons, and lying snow whitens its roofs and hills. As the cold comes on the fires
+      are lit one by one, and smoke rises from the chimneys, thinning as it goes and bending with
+      the wind. The village, its hills and the
+      far shore stand at their own distances, smaller and nearer the horizon the farther off they
+      are, so they slide past one another and past the near land as the view pans. Sailboats work
+      back and forth on the water in front of it, coming about at either end, and boats lie at its
+      quay.
 - [ ] Soil holds moisture. Rain wets the top layer, and water drains down, spreads sideways and
       evaporates near the surface. Underground water pockets and a water table stay wet.
 - [x] A day and night cycle: the sun crosses the sky by day, the moon and stars come out at night,
       and the light on the sky, the wood and the flowers follows, warm at sunrise and sunset. A
       day takes three minutes at normal speed.
-- [x] The sun is a plain disc, after the minimal sun of reference 10. (Rays like reference 06 may
-      come later.)
+- [x] The days follow the season. In summer the sun rises early and sets late, about 3:50 to
+      20:10 at midsummer, and climbs high at noon; in winter it keeps short, low hours, about 8:10
+      to 15:50 at midwinter.
+- [x] The sun is a plain disc, after the minimal sun of reference 10.
+- [x] Rays of light stream from the sun by day and the moon by night, as shafts through the haze
+      that turn slowly, broken where the mountains, the barn, the wood and the ground stand against
+      the light. How strong they are is set in the debug panel, from none to very intense; at the
+      usual setting they are faint.
 - [x] A range of mountains on the horizon behind the tree, after reference 10: ridgelines up to
       sharp peaks, in a far row and a lower near row with a saddle behind the tree. Spurs, forks
       and creases carved down their fronts part each peak into faces, with narrow bands along the
@@ -394,9 +450,35 @@ Three kinds of grass, each after its photo:
       most densely, and faces turned toward a low sun glow warm, so the shading swings across the
       range from morning to evening. The moon shades them more softly by night. They darken into
       silhouettes against sunrise, sunset and the night sky, and their lines turn pale by night.
-- [x] On the farm, a small barn stands on the ground beside the tree, true to size (7 m wide, its
-      ridge at 5.8 m), so the tree's height can be judged by it. It is ink like the tree, behind it, with
-      its doors carved through to the sky's color.
+- [x] By day the mountains take their colors, after the painters of the northern fjords: green
+      lower slopes under a ragged treeline and warm rock above, the far range hazed blue, faces
+      turned from the sun cooled toward blue and faces turned toward it warmed. The colors fade
+      toward sunrise and sunset, leaving those to the glow and the silhouettes.
+- [x] The mountains carry on below their feet. Wherever the ground dips below the horizon, their
+      faces, spurs and ridges, their colors and their shading continue down behind it, so they
+      never stop short at a line over empty land.
+- [x] Snow lies on the peaks above a snowline that comes down the range as the year turns: a
+      little on the tallest peaks at midsummer, down over the upper half of the far range by
+      midwinter. It reaches farther down the hollow of each face than along the spurs beside it,
+      and is shaded and hatched as the rock is, blue in shade, warm with the glow of sunrise and
+      sunset, and pale by moonlight.
+- [ ] Rolling hills with wildflower meadows between the meadow and its mountains, sliding past at
+      their own distances as the view pans.
+- [x] A red barn stands on the farm beside the tree, true to size (7 m wide and 10 m long, its
+      ridge at 5.8 m), so the tree's height can be judged by it. It is drawn as the village's
+      houses are, seen from the ground: its gable end toward the view and its long side running
+      back to the right; board-and-batten walls in barn red on a stone foundation, under a gambrel
+      roof with a louvered cupola astride the ridge. White trim runs up its corners, round its
+      windows and sills and along the edges of its roof. Its great doors are framed and braced in
+      white X's and hung on iron strap hinges, with a hayloft door above them.
+- [x] The barn is lit by the sun or the moon as the village is: faces turned from the light are
+      toned and hatched, and the roof's overhang throws its shadow down the gable end and the long
+      side, following the light through the day. Its windows light one by one as the evening comes
+      on, and the lantern over its doors, hung on a bracket, lights and throws a pool of warm light
+      on them. Snow whitens its roof, and it stands against the rays of the sun and the moon.
+- [x] A weathervane stands on the barn's cupola: a rooster on an arrow over the arms of a compass
+      lettered N, E, S and W. It swings round to point into the wind, overshooting a little, wanders
+      in light air, and holds where it was when the air is calm.
 - [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
       by the wind, and stop at the ground.
 - [x] Every chunk of falling snow is a body of its own, carried by the wind, and settles on the
@@ -423,6 +505,11 @@ Three kinds of grass, each after its photo:
 - [x] Low cloud lies over the scene as fog, thickest over the distant mountains and the barn.
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
+- [ ] Branches shade one another. Flowers and leaves flourish in open light.
+- [ ] The tree casts a shadow that moves with the sun. At morning and evening the trunk and crown
+      stretch long shadows over the farm hills, barn or cliff, and the shadow swings through the
+      day.
+- [ ] On the cliff, calm water reflects the tree; waves break up the reflection as the sea rises.
 - [ ] Rain showers come and go.
 - [x] Limits on growth: level edges, solid obstacles, and a sky ceiling that caps height.
 
@@ -453,6 +540,7 @@ Three kinds of grass, each after its photo:
       wood in view thick enough to take them and level enough to stand on, clear of the other
       birds there. A bird sitting on a limb weighs on it, so a thin limb sags under it; it sits a
       while and flies off, and flies off at once if its limb is cut or breaks.
+- [ ] Birds build nests, and successful trees accumulate inhabitants over years.
 - [x] A hive draws a bear after a while. The bear is an ink silhouette ringed with a thin line of
       the sky's color so it stands out against the trunk: one drawn outline of a black bear in
       profile, its back level to a modest rise at the shoulders, a small rounded ear, a straight
@@ -480,6 +568,11 @@ Three kinds of grass, each after its photo:
       angers it: it rears and roars, and goes back at the hive longer and harder. A heavier one
       drives it off at a run. One heavy and fast enough kills it: it collapses where it stands,
       lies a while, and fades.
+
+## Sound
+
+- [ ] A procedural soundscape follows the simulation: wind through branches, individual creaks
+      under stress, waves, distant birds, bees, rain on leaves and snow-muted ambience.
 
 ## Game structure
 
@@ -525,13 +618,15 @@ _Open._ A button flips into a view of the roots:
       every setting back to its default.
 - [x] A plain black strip down the left of the scene, kept for tools.
 - [x] Time controls: pause the simulation, or run it at normal, double or quadruple speed.
-- [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed;
+- [x] Weather page: the time of day, set by hand or played on its own at the simulation's speed,
+      and how strongly rays of light stream from the sun and the moon, from off to very intense;
       the season; the wind: a compass whose arrow you drag to point where it blows toward, a
       strength slider, and a choice of wind model with a description of each; how hard it rains
       and snows, and how fast lying snow melts; and how much of the sky the clouds cover and how
       high they hang.
 - [x] Level page: which level the tree grows in, which plants a tree there afresh; whether
-      mountains line its horizon; and, on the farm, whether its hills are drawn in their colors.
+      mountains line its horizon; and whether the grass is drawn in its colors, and how tall it
+      grows.
 - [x] Sea page: how high and how long the swell is; how strongly the wind raises waves of its own;
       the sea's momentum, how long it takes to build or calm; the tide, set by hand or rising and
       falling with the day. A line reads out how high the waves stand now, by the Douglas sea scale.

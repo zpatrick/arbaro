@@ -34,14 +34,13 @@ const FLOWER_SIZE_RANGE = 5;
 const MAX_FLOW_RATE = 3;
 
 /** The panel's pages, each opened by its own tab down the panel's left edge. */
-type Tab = "level" | "weather" | "sea" | "tree" | "flowers" | "wildlife";
+type Tab = "level" | "weather" | "sea" | "tree" | "wildlife";
 
 const TABS: readonly { id: Tab; name: string }[] = [
   { id: "level", name: "Level" },
   { id: "weather", name: "Weather" },
   { id: "sea", name: "Sea" },
   { id: "tree", name: "Tree" },
-  { id: "flowers", name: "Flowers" },
   { id: "wildlife", name: "Wildlife" },
 ];
 
@@ -252,16 +251,16 @@ const HEADINGS = [
 ];
 
 /**
- * Where the tree grows: the level, whether mountains line its horizon, whether the hills and the
- * grass of a level with them are drawn in their colors, and how tall the grass grows, as a
- * multiple of its usual height.
+ * Where the tree grows: the level, whether mountains line its horizon, whether the grass is drawn
+ * in its colors, how tall the grass grows, as a multiple of its usual height, and how strongly rays
+ * of light stream from the sun and the moon, from none at 0 to their strongest at 1.
  */
 export interface WorldSettings {
   level: LevelId;
   mountains: boolean;
-  hillColors: boolean;
   grassColors: boolean;
   grassHeight: number;
+  rays: number;
 }
 
 /** What is planted: the species of every tree grown afresh. */
@@ -311,9 +310,9 @@ function defaults(): Settings {
     world: {
       level: "meadow",
       mountains: levelById("meadow").mountains,
-      hillColors: true,
       grassColors: false,
       grassHeight: 1,
+      rays: 0.25,
     },
     planting: { species: "cherry" },
     growth: { mode: "steer", flowRate: 1 },
@@ -398,11 +397,10 @@ function isSaved(saved: unknown): saved is Saved {
           LEVELS.some((level) => level.id === world.level)) &&
         (world.mountains === undefined ||
           typeof world.mountains === "boolean") &&
-        (world.hillColors === undefined ||
-          typeof world.hillColors === "boolean") &&
         (world.grassColors === undefined ||
           typeof world.grassColors === "boolean") &&
-        (world.grassHeight === undefined || isNumber(world.grassHeight)))) &&
+        (world.grassHeight === undefined || isNumber(world.grassHeight)) &&
+        (world.rays === undefined || isNumber(world.rays)))) &&
     (planting === undefined ||
       (isRecord(planting) &&
         (planting.species === undefined ||
@@ -461,6 +459,10 @@ function load(): Saved | undefined {
     return undefined;
   }
   const saved: unknown = JSON.parse(raw);
+  // The flowers once had a page of their own; they are on the tree's now.
+  if (isRecord(saved) && saved.tab === "flowers") {
+    saved.tab = "tree";
+  }
   invariant(
     isSaved(saved),
     `Saved debug settings under ${STORAGE_KEY} are malformed: ${raw}`,
@@ -527,11 +529,11 @@ export class DebugPanel {
   private readonly levels = new Map<LevelId, HTMLElement>();
   private readonly levelDescription: HTMLElement;
   private readonly mountainsToggle: HTMLElement;
-  private readonly hillColorsToggle: HTMLElement;
   private readonly grassSection: HTMLElement;
   private readonly grassColorsToggle: HTMLElement;
   private readonly grassHeight: Slider;
   private readonly timeOfDay: Slider;
+  private readonly rays: Slider;
   private readonly dayToggle: HTMLElement;
   private readonly season: Slider;
   private readonly arrow: SVGPathElement;
@@ -642,9 +644,6 @@ export class DebugPanel {
       "Mountains on the horizon",
       () => this.setWorld({ mountains: !this.world.mountains }),
     );
-    this.hillColorsToggle = this.toggleRow(where, "Colors in the hills", () =>
-      this.setWorld({ hillColors: !this.world.hillColors }),
-    );
     this.grassSection = element("section", "debug-section", levelPage);
     element("h2", "debug-title", this.grassSection, "Grass");
     this.grassColorsToggle = this.toggleRow(
@@ -664,6 +663,9 @@ export class DebugPanel {
     );
     this.dayToggle = this.toggleRow(day, "Play the day", () =>
       this.setTime({ dayRunning: !this.time.dayRunning }),
+    );
+    this.rays = new Slider(day, "Rays of light", (value) =>
+      this.setWorld({ rays: value }),
     );
     const year = element("section", "debug-section", weather);
     element("h2", "debug-title", year, "Season");
@@ -824,8 +826,7 @@ export class DebugPanel {
       this.save();
     });
 
-    const flowerPage = this.page("flowers", card);
-    const flowers = element("section", "debug-section", flowerPage);
+    const flowers = element("section", "debug-section", tree);
     this.flowerTitle = element("h2", "debug-title", flowers);
     this.flowerDescription = element("p", "model-description", flowers);
     const placements = element("div", "models", flowers);
@@ -1143,9 +1144,6 @@ export class DebugPanel {
     }
     this.levelDescription.textContent = levelById(this.world.level).description;
     this.mountainsToggle.classList.toggle("selected", this.world.mountains);
-    this.hillColorsToggle.hidden =
-      levelById(this.world.level).hills.length === 0;
-    this.hillColorsToggle.classList.toggle("selected", this.world.hillColors);
     this.grassSection.hidden = levelById(this.world.level).grass.length === 0;
     this.grassColorsToggle.classList.toggle("selected", this.world.grassColors);
     this.grassHeight.show(
@@ -1155,6 +1153,10 @@ export class DebugPanel {
 
     this.showTimeOfDay();
     this.dayToggle.classList.toggle("selected", this.time.dayRunning);
+    this.rays.show(
+      this.world.rays,
+      this.world.rays === 0 ? "Off" : `${Math.round(this.world.rays * 100)}%`,
+    );
     const { season } = this.time;
     this.season.show(season, seasonName(season));
 
