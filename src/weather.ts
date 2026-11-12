@@ -601,7 +601,7 @@ export class SnowCover {
         return barnTopAt(x);
       }
       if (level.farmhouse && x > house.left && x < house.right) {
-        return farmhouseTopAt(x);
+        return Math.max(farmhouseTopAt(x), level.groundAt(x));
       }
       return level.groundAt(x);
     });

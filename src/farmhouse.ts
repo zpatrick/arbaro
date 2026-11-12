@@ -1,5 +1,6 @@
 import { aheadOf, box, disc, line, onPage, RECEDE, topOf } from "./building";
 import type { Camera } from "./camera";
+import { levelById } from "./level";
 import { css, lit, mix, type Rgb, type SkyLight } from "./sky";
 import { at, invariant, lerp, Rng, smoothstep } from "./util";
 import {
@@ -23,22 +24,22 @@ import {
 
 /**
  * A white farmhouse standing on the farm to the left of the tree, true to size, after the modern
- * farmhouses of the references: board and batten under steep roofs, a stone wing gabled toward the
- * view at its left end, a deep porch along the rest of its front on cedar posts and stone piers,
- * with a gable over its steps, two dormers in its roof and a stone chimney by its ridge. It is drawn
- * as the barn is, seen from the ground: its front toward the view and its right gable end running
- * back to the right, its faces lit and shaded by the sun or the moon.
+ * farmhouses of the references: board and batten under steep roofs; a stone wing gabled toward the
+ * view; a deep porch along the front and round the right end, on cedar posts and stone piers, with
+ * a gable over its steps; three dormers in its roof and a stone chimney by its ridge; and a
+ * three-car garage standing apart to its left. It is drawn as the barn is, seen from the ground: its front
+ * toward the view and its right gable end running back to the right, its faces lit and shaded by
+ * the sun or the moon.
  *
- * Its main block: where its left and right ends stand along the ground, how deep it runs back, the
- * height of its walls under the eaves, and the pitch all its roofs share, as rise over run; how
- * thick the roofs are, square to their pitch; how far the eaves reach out past the front wall, and
- * the roof past the right gable end; the height of its floor, which the porch's floor is level
- * with; and how far its walls run down into the ground. All in meters, x from the tree's roots and z
- * back from the main block's front wall.
+ * Its main block: where its right end stands along the ground, how deep it runs back, the height
+ * of its walls under the eaves, and the pitch all its roofs share, as rise over run; how thick the
+ * roofs are, square to their pitch; how far the eaves reach out past the front wall, and the roof
+ * past the gable ends; the height of its floor, which the porch's floor is level with; and how far
+ * its walls run down into the ground. All in meters, x from the tree's roots, heights up from the
+ * ground the house stands on, and z back from the main block's front wall.
  */
 const HOUSE = {
-  left: -20.8,
-  right: -9,
+  right: -24.5,
   deep: 7,
   eaves: 3.7,
   pitch: 1,
@@ -50,24 +51,80 @@ const HOUSE = {
 } as const;
 
 /**
- * The stone wing at the left end, gabled toward the view: how wide it is along the front, and how
- * far it stands out in front of the main block; how far its eaves reach past its right wall, and
- * its roof out over its gable.
+ * The stone wing gabled toward the view: how wide it is along the front, and how far it stands out
+ * in front of the main block; how far its eaves reach past its right wall, and its roof out over
+ * its gable.
  */
 const WING = { width: 4.4, out: 2.2, overhang: 0.35, verge: 0.3 } as const;
 
+/** The boarded stretch of the main block left of the wing, with a shuttered window: how wide it is along the front. */
+const LINK = { width: 3.4 } as const;
+
 /**
- * The porch along the rest of the front, as deep as the wing stands out: the foot and the top of
- * the cedar beam along its front; its metal roof, the height of its top at the beam and how much it
- * rises for every meter back to the wall, passing under the eaves; how far its beam and roof run on
- * past the right end of the house; how thick its cedar posts are, and how far in from either end
- * the end posts stand; and the stone piers they stand on, how wide and how high, and the cap stone
- * on each, how thick and how far it reaches past the pier.
+ * The three-car garage standing apart to the left of the main block, its front in line with the
+ * main block's and its roof lower: how far its right end stands from the main block's left end; how
+ * wide it is along the front and how deep it runs back, and the height of its walls under the
+ * eaves; how far its eaves reach out past its front and back, and its roof past its ends; how high
+ * its floor stands; its doors, how many, how wide and how tall; how wide the walls between and
+ * beside them are, and how high the stone at their foot; and the gable over its middle door, how
+ * far its walls stand either side of the door's middle, and how far its eaves and its roof reach
+ * past them.
+ */
+const GARAGE = {
+  apart: 5,
+  width: 9,
+  deep: 6.6,
+  eaves: 3,
+  overhang: 0.35,
+  verge: 0.3,
+  floor: 0.15,
+  doors: { count: 3, width: 2.4, height: 2.25 },
+  pier: 0.45,
+  stone: 0.75,
+  gable: { half: 1.75, overhang: 0.25, verge: 0.22 },
+} as const;
+
+/**
+ * The garage's carriage doors, of stained wood: how far apart the grooves between their boards
+ * stand, and how deep the rail across under their windows and the stile down their middle are;
+ * their windows across the top, how many, how far down from the top and in from the sides they
+ * start, how tall they are and how far apart, and how thick the bars crossing each; the white
+ * casing round each door; the black pulls either side of the middle, how tall and wide, how far
+ * either side of it and how high; and the strap hinges along the outer edges, how long and deep,
+ * and how far from the top and the foot.
+ */
+const CARRIAGE = {
+  boards: 0.15,
+  rail: 0.08,
+  stile: 0.05,
+  windows: {
+    count: 4,
+    from: 0.16,
+    edge: 0.12,
+    tall: 0.42,
+    gap: 0.08,
+    bar: 0.024,
+  },
+  casing: 0.12,
+  pull: { tall: 0.34, wide: 0.026, apart: 0.12, at: 1.1 },
+  hinge: { long: 0.5, deep: 0.055, from: 0.35 },
+} as const;
+
+/**
+ * The porch along the front from the wing and round the house's right end, as deep as the wing
+ * stands out: the foot and the top of the cedar beam along its edge; its metal roof, the height of
+ * its top at the beam and how much it rises for every meter in to the wall, passing under the
+ * eaves; how wide its bays either side of its gable are, from the gable's posts to the wing on the
+ * left and to the house's right end; how far back along the right end it runs, and where the posts
+ * along there stand, back from the front wall; how thick its cedar posts are, and how far in from
+ * the wing the post at that end stands; and the stone piers they stand on, how wide and how high,
+ * and the cap stone on each, how thick and how far it reaches past the pier.
  */
 const PORCH = {
   beam: { low: 2.6, high: 2.94 },
   roof: { front: 2.98, rise: 0.16 },
-  past: 0.1,
+  bays: { left: 4.4, right: 3.2 },
+  side: { back: 6.4, posts: [6.25, 3.6, 0.9] },
   post: 0.26,
   endPost: 0.3,
   pier: { wide: 0.5, high: 1.15, cap: 0.07, capPast: 0.04 },
@@ -84,13 +141,11 @@ const ENTRY = { half: 1.6, overhang: 0.25, verge: 0.2 } as const;
 const STEPS = { count: 3, tread: 0.32, half: 1.2 } as const;
 
 /**
- * The dormers in the roof over the porch: how far either side of the porch gable they stand, as
- * they show on the page; how far back from the front wall their faces stand; how far their walls
+ * The dormers in the roof: how far back from the front wall their faces stand; how far their walls
  * stand either side of their middles, and the height of their eaves; and how far their eaves reach
  * past their walls, and their roofs out in front.
  */
 const DORMER = {
-  apart: 2.35,
   back: 1,
   half: 0.7,
   eaves: 6,
@@ -128,6 +183,8 @@ const PAINT = {
   foundation: [156, 152, 144] as Rgb,
   frames: [34, 34, 36] as Rgb,
   iron: [40, 40, 42] as Rgb,
+  door: [150, 98, 60] as Rgb,
+  shutters: [92, 90, 88] as Rgb,
 } as const;
 
 type PaintName = keyof typeof PAINT;
@@ -192,13 +249,18 @@ const HEADER = {
   sillPast: 0.12,
 } as const;
 
+/** The shutters either side of a window: how far out from its casing they hang, and how deep the battens across them are. */
+const SHUTTER = { gap: 0.04, batten: 0.07 } as const;
+
 /**
  * The cedar trusses in the gables of the wing and of the porch: how far they stand out from the
  * gable's boards, under the roof's edge; how far below the tie the king post drops to a point, in
  * timbers' thicknesses; how far up toward the peak the struts reach, as a share of the way from the
- * tie; the black steel plate over the joint at the king post's foot, how far it reaches past the
- * king post either side, below the tie and above it, and its bolts, how big and how far in from
- * its edges, all in timbers' thicknesses; the light catching the timbers' edges and the shade along
+ * tie; the black steel strap over the joint at the king post's foot, an upside-down T, how wide
+ * it is, how far it runs along the tie either side of the king post's middle and up the king post
+ * above the tie, how big its bolts are, and how far out along the tie and up the king post they
+ * stand, besides the one through the middle of the joint, all in timbers' thicknesses; the light
+ * catching the timbers' edges and the shade along
  * the edges turned away, and the deeper shade of their sides; and the lines of their grain, each
  * where it starts across the timber and how far it wanders by the far end, in thicknesses, and how
  * many CSS pixels wide a timber must show before its grain does.
@@ -207,8 +269,14 @@ const TRUSS = {
   out: 0.16,
   drop: 1.1,
   reach: 0.55,
-  plate: { past: 0.5, below: 0.16, above: 0.75 },
-  bolt: { radius: 0.09, inset: 0.24 },
+  strap: {
+    wide: 0.5,
+    along: 1.65,
+    up: 1.3,
+    bolt: 0.075,
+    alongTie: [0.95, 1.42],
+    upPost: [0.42, 0.98],
+  },
   lit: 0.3,
   shade: 0.3,
   side: 0.45,
@@ -250,8 +318,11 @@ const LIGHTS = {
   hall: { wakes: 0.4, sleeps: 0.62, rises: 0.88 },
   study: { wakes: 0.46, sleeps: 0.33, rises: 2 },
   back: { wakes: 0.52, sleeps: 0.45, rises: 2 },
+  office: { wakes: 0.42, sleeps: 0.28, rises: 2 },
   bedroom: { wakes: 0.55, sleeps: 0.3, rises: 0.9 },
+  guest: { wakes: 0.6, sleeps: 0.26, rises: 2 },
   nursery: { wakes: 0.62, sleeps: 0.22, rises: 2 },
+  workshop: { wakes: 0.45, sleeps: 0.12, rises: 2 },
   attic: { wakes: 2, sleeps: 2, rises: 2 },
 } as const;
 
@@ -276,8 +347,12 @@ const SCONCE = {
 /** The glow about a lit window, as wide as so many of its heights, and how strong. */
 const WINDOW_GLOW = { reach: 1.3, alpha: 0.5 } as const;
 
-/** The rocking chairs on the porch, one before each window: how far back from the porch's front they stand. */
-const CHAIRS = { back: 1.15 } as const;
+/**
+ * The rocking chairs on the porch, two either side of a little table before the living room's
+ * window and one before the dining room's: how far back from the porch's front they stand, and how
+ * far either side of the window the two stand.
+ */
+const CHAIRS = { back: 1.15, apart: 0.48 } as const;
 
 /**
  * Shadows: how dark the shadows thrown on the walls are, and at most how far down a wall the shadow
@@ -293,23 +368,37 @@ const SHADOW = {
   foot: { up: 0.25, alpha: 0.1 },
 } as const;
 
+/** How dark the undersides of the roofs are, shaded evenly, lit only by what the ground throws back up. */
+const UNDERSIDE = { tone: 0.24 } as const;
+
 /** Width of the lines drawn on the house, at least, in meters. */
 const LEAST_LINE = 0.012;
 
-const ML = HOUSE.left;
 const MR = HOUSE.right;
 const MD = HOUSE.deep;
 const S = HOUSE.pitch;
 const FOOT = -HOUSE.sunk;
 /** How thick the roofs are, plumb. */
 const PLUMB = HOUSE.thick * Math.hypot(1, S);
-const WL = ML;
-const WR = ML + WING.width;
-const WC = (WL + WR) / 2;
 /** How far in front of the front wall the porch and the wing's gable stand. */
 const OUT = -WING.out;
-/** The middle of the porch, under its gable. */
-const DC = (WR + MR) / 2;
+/** The middle of the porch's gable. */
+const DC = MR - PORCH.bays.right - ENTRY.half;
+/** The wing's right and left ends, and its middle. */
+const WR = DC - ENTRY.half - PORCH.bays.left;
+const WL = WR - WING.width;
+const WC = (WL + WR) / 2;
+/** The main block's left end; the garage's right end, apart from it, and its left end; and how deep the garage runs back. */
+const ML = WL - LINK.width;
+const GR = ML - GARAGE.apart;
+const GL = GR - GARAGE.width;
+const GD = GARAGE.deep;
+/** The porch's outer edge along the house's right end, and how far back it runs there. */
+const PX = MR - OUT;
+const PZ = PORCH.side.back;
+
+/** Height of the ground the house stands on, on the rise at the farm's left. */
+const GROUND = levelById("farm").groundAt(MR);
 
 /** Height of the main roof's underside `z` back from the front wall, over its front or back pitch. */
 function mainUnder(z: number): number {
@@ -335,23 +424,92 @@ function intoMainRoof(y: number): number {
   return y < EAVE_TOP ? -HOUSE.overhang : (y - HOUSE.eaves - PLUMB) / S;
 }
 
-/** Height of the porch roof's top `z` back from the front wall. */
+/** The garage roof's underside and top along its eaves, and its ridge's top. */
+const GARAGE_EAVE_UNDER = GARAGE.eaves - S * GARAGE.overhang;
+const GARAGE_EAVE_TOP = GARAGE_EAVE_UNDER + PLUMB;
+const GARAGE_RIDGE_TOP = GARAGE.eaves + (S * GD) / 2 + PLUMB;
+
+/** Height of the garage roof's underside `z` back from its front, over its front or back pitch. */
+function garageUnder(z: number): number {
+  return GARAGE.eaves + S * Math.min(z, GD - z);
+}
+
+/**
+ * How far back a roof running into the garage roof's front pitch reaches at height `y`: to the
+ * board along the eaves below the garage roof's top there, and up the pitch above it.
+ */
+function intoGarageRoof(y: number): number {
+  return y < GARAGE_EAVE_TOP
+    ? -GARAGE.overhang
+    : (y - GARAGE.eaves - PLUMB) / S;
+}
+
+/**
+ * A gable end running back to the right: where it stands along the ground and how deep it runs
+ * back; the height of its floor, and of its walls under the eaves; how far the roof over it reaches
+ * past it, and out past the front and back walls; and the height of the roof's underside `z` back.
+ */
+interface GableEnd {
+  x: number;
+  deep: number;
+  floor: number;
+  eaves: number;
+  verge: number;
+  overhang: number;
+  under: (z: number) => number;
+}
+
+/** The main block's right end, and the garage's. */
+const MAIN_END: GableEnd = {
+  x: MR,
+  deep: MD,
+  floor: HOUSE.floor,
+  eaves: HOUSE.eaves,
+  verge: HOUSE.verge,
+  overhang: HOUSE.overhang,
+  under: mainUnder,
+};
+const GARAGE_END: GableEnd = {
+  x: GR,
+  deep: GD,
+  floor: GARAGE.floor,
+  eaves: GARAGE.eaves,
+  verge: GARAGE.verge,
+  overhang: GARAGE.overhang,
+  under: garageUnder,
+};
+
+/** Height of the porch roof's top `z` back from the front wall, along the front. */
 function porchTop(z: number): number {
   return PORCH.roof.front + PORCH.roof.rise * (z - OUT);
+}
+
+/** Height of the porch roof's top `x` along the ground, along the house's right end. */
+function sideTop(x: number): number {
+  return PORCH.roof.front + PORCH.roof.rise * (PX - x);
 }
 
 /** Height of the porch gable's walls either side of its gable, where its eaves just clear the porch roof under the main eaves. */
 const ENTRY_EAVES = porchTop(-HOUSE.overhang) + S * ENTRY.overhang + 0.01;
 
-/** Where the posts stand along the porch's front: at either end, and either side of its gable. */
+/**
+ * How far back the middle of each post and pier along the front stands, and how far along the
+ * ground the middle of each along the right end stands.
+ */
+const POST_Z = OUT + PORCH.post / 2;
+const POST_X = PX - PORCH.post / 2;
+
+/**
+ * Where the posts stand along the porch's front: by the wing, either side of the gable, halfway
+ * from there to the corner, and at the corner.
+ */
 const POSTS: readonly number[] = [
   WR + PORCH.endPost,
   DC - ENTRY.half + PORCH.post / 2,
   DC + ENTRY.half - PORCH.post / 2,
-  MR - PORCH.endPost,
+  (DC + ENTRY.half + PX - PORCH.post) / 2,
+  POST_X,
 ];
-/** How far back the middle of each post and pier stands. */
-const POST_Z = OUT + PORCH.post / 2;
 
 /**
  * Something set back in the wall behind the porch shows between the porch posts as though it stood
@@ -360,14 +518,21 @@ const POST_Z = OUT + PORCH.post / 2;
  */
 const BEHIND_POSTS = RECEDE * POST_Z;
 const DOOR_X = DC + BEHIND_POSTS;
+/**
+ * The windows behind the porch, each where it shows halfway between the posts either side of it:
+ * the living room's in the left bay and the dining room's in the right.
+ */
 const PORCH_WINDOWS: readonly number[] = [
   (at(POSTS, 0) + at(POSTS, 1)) / 2 + BEHIND_POSTS,
   (at(POSTS, 2) + at(POSTS, 3)) / 2 + BEHIND_POSTS,
 ];
 
-/** The dormers' middles along the ground, either side of the porch gable as they show on the page. */
-const DORMERS: readonly number[] = [-1, 1].map(
-  (side) => DC + RECEDE * (OUT - DORMER.back) + side * DORMER.apart,
+/** The window in the boarded stretch left of the wing, in the middle of what shows of it beside the wing. */
+const LINK_WINDOW = (ML + WL + RECEDE * OUT) / 2;
+
+/** The dormers' middles along the ground, each over one of the windows below it as it shows on the page. */
+const DORMERS: readonly number[] = [LINK_WINDOW, ...PORCH_WINDOWS].map(
+  (x) => x - RECEDE * DORMER.back,
 );
 
 const CX1 = MR - CHIMNEY.inset;
@@ -375,21 +540,46 @@ const CX0 = CX1 - CHIMNEY.wide;
 const CZ0 = CHIMNEY.back;
 const CZ1 = CZ0 + CHIMNEY.deep;
 
-/** Where the smoke rises from the chimney, under its cap, on the page. */
-export const FLUE: Point = onPage(
+/** Where the smoke rises from the chimney, under its cap, on the page above the house's ground. */
+const SMOKE_FROM: Point = onPage(
   (CX0 + CX1) / 2,
   CHIMNEY.top + CHIMNEY.crown.thick + CHIMNEY.cap.lift / 2,
   (CZ0 + CZ1) / 2,
 );
 
+/** Where the smoke rises from the chimney, in the world. */
+export const FLUE: Point = { x: SMOKE_FROM.x, y: SMOKE_FROM.y + GROUND };
+
 /** When in the cold of the year the chimney's fire is lit, as the village's are. */
 const FIRE_PHASE = 0.15;
 
-/** A face of the house: what it is painted, whether snow lies on it, and the stones laid over it, in each tone, if it is of stone. */
+/**
+ * A face of the house: what it is painted, whether snow lies on it, and the stones laid over it,
+ * in each tone, if it is of stone; and whether it is the underside of a roof, which is shaded
+ * evenly rather than as the light falls on it.
+ */
 interface Face extends Shaded {
   paint: PaintName;
   snowy: boolean;
   stones: Path2D[] | undefined;
+  under: boolean;
+}
+
+/** Makes a face from its outline on the page, the way it faces, what it is painted, and whether snow lies on it. */
+type FaceMaker = (
+  points: Point[],
+  normal: Vec3,
+  paint: PaintName,
+  snowy?: boolean,
+) => Face;
+
+/** A gable end as it shows on the page: its wall, the foundation along its foot, its battens, the boards up its corners, and its windows. */
+interface EndParts {
+  wall: Face;
+  foundation: Face;
+  battens: Path2D;
+  trim: Path2D;
+  openings: Openings;
 }
 
 /** A lamp behind a window or a door: its glass and the black frame barring it, the middle and height of its glass, and when it is lit. */
@@ -405,14 +595,17 @@ interface Lamp {
 
 /**
  * What is set into a wall: the white casings round its windows and doors, their sills and the
- * shadows under them; cedar headers and stone sills where it is of stone; its glass, the black
- * frames and bars over it, and the iron pulls on its doors; and the lamps behind it.
+ * shadows under them; cedar headers and stone sills where it is of stone; its shutters and the
+ * battens across them; its glass, the black frames and bars over it, and the iron pulls on its
+ * doors; and the lamps behind it.
  */
 interface Openings {
   trim: Path2D;
   sills: Path2D;
   cedar: Path2D;
   stone: Path2D;
+  shutters: Path2D;
+  battens: Path2D;
   glass: Path2D;
   frames: Path2D;
   iron: Path2D;
@@ -456,13 +649,13 @@ interface Timber {
 
 /**
  * A cedar truss standing out from a gable, built: how far back its face stands; its timbers, in the
- * order they are drawn, each over the last; and on the page the steel plate over the joint at the
+ * order they are drawn, each over the last; and on the page the steel strap over the joint at the
  * king post's foot, and the bolts through it.
  */
 interface Truss {
   z: number;
   timbers: Timber[];
-  plate: Path2D;
+  strap: Path2D;
   bolts: Path2D;
 }
 
@@ -474,98 +667,52 @@ interface Sconce {
   middle: Point;
 }
 
-type PlantKind = "boxwood" | "hydrangea" | "lavender" | "grass";
-
-/** A plant at the foot of the house: what it is, where it stands along the ground and back from the front wall, and how wide it grows, in meters. */
-interface PlantSpec {
-  kind: PlantKind;
-  x: number;
-  z: number;
-  size: number;
+/** The garage's carriage doors on the page: their wood, the grooves between its boards, the rails and stiles over it, the glass of their windows and the bars across it, their iron, and the casing round them, each as one shape. */
+interface Doors {
+  wood: Path2D;
+  grooves: Path2D;
+  rails: Path2D;
+  glass: Path2D;
+  bars: Path2D;
+  iron: Path2D;
+  trim: Path2D;
 }
-
-/**
- * A plant, built: what it is, where its foot is on the page and how big it is; the lobes of its
- * leaves and the blooms over them, about its foot with its size as the unit; and its stems, each
- * from its foot to its tip, with how far it bows.
- */
-interface Plant {
-  kind: PlantKind;
-  foot: Point;
-  size: number;
-  lobes: { x: number; y: number; r: number }[];
-  blooms: { x: number; y: number; r: number }[];
-  stems: { x: number; y: number; bow: number }[];
-}
-
-/**
- * The plants along the foot of the house: boxwood, lavender and hydrangeas before the wing and the
- * porch, ornamental grass by the steps, and boxwood along the gable end.
- */
-const PLANTS: readonly PlantSpec[] = [
-  { kind: "boxwood", x: WL + 0.45, z: OUT - 0.55, size: 0.42 },
-  { kind: "lavender", x: WL + 1.3, z: OUT - 0.5, size: 0.38 },
-  { kind: "hydrangea", x: WC, z: OUT - 0.6, size: 0.55 },
-  { kind: "lavender", x: WR - 1.3, z: OUT - 0.5, size: 0.38 },
-  { kind: "boxwood", x: WR - 0.45, z: OUT - 0.55, size: 0.42 },
-  { kind: "hydrangea", x: at(POSTS, 0) + 0.85, z: OUT - 0.6, size: 0.52 },
-  { kind: "boxwood", x: at(POSTS, 1) - 0.62, z: OUT - 0.5, size: 0.34 },
-  { kind: "boxwood", x: at(POSTS, 2) + 0.62, z: OUT - 0.5, size: 0.34 },
-  {
-    kind: "grass",
-    x: (at(POSTS, 2) + at(POSTS, 3)) / 2 + 0.3,
-    z: OUT - 0.55,
-    size: 0.5,
-  },
-  { kind: "hydrangea", x: at(POSTS, 3) - 0.05, z: OUT - 0.6, size: 0.5 },
-  { kind: "boxwood", x: MR + 0.55, z: 1.6, size: 0.4 },
-  { kind: "lavender", x: MR + 0.5, z: 3.4, size: 0.36 },
-  { kind: "boxwood", x: MR + 0.55, z: 5.3, size: 0.4 },
-];
-
-/**
- * The plants' colors through the year: boxwood, green all year and bronzing a little in winter;
- * hydrangea leaves, turning in the fall and gone in winter, its stems, and its blooms, white in
- * summer, blushing as they dry in the fall and brown in winter; lavender, grey-green under purple
- * spikes in summer; and ornamental grass, green in summer and straw after, with pale plumes.
- */
-const GREENS = {
-  boxwood: { summer: [62, 90, 56] as Rgb, winter: [78, 86, 58] as Rgb },
-  hydrangea: {
-    summer: [96, 128, 76] as Rgb,
-    fall: [150, 132, 74] as Rgb,
-    stems: [112, 96, 80] as Rgb,
-    bloom: [238, 238, 226] as Rgb,
-    dried: [210, 178, 160] as Rgb,
-    dead: [168, 142, 112] as Rgb,
-  },
-  lavender: {
-    leaves: [138, 150, 126] as Rgb,
-    winter: [126, 128, 114] as Rgb,
-    spikes: [132, 106, 176] as Rgb,
-  },
-  grass: {
-    summer: [126, 148, 90] as Rgb,
-    fall: [196, 170, 112] as Rgb,
-    winter: [200, 184, 146] as Rgb,
-    plumes: [232, 224, 202] as Rgb,
-  },
-} as const;
-
-/** How far into the year the lavender's spikes fade, from midsummer at 0 to midwinter at 1. */
-const LAVENDER_FADES = [0.22, 0.42] as const;
 
 /** The house, built once and drawn every frame, its parts in the order they are drawn. */
 interface Built {
+  /**
+   * The garage: its front wall and battens, its doors, the stone at the foot of its walls, the
+   * boards up its corners, its lanterns; its gable end, the underside of its roof's back pitch and
+   * the boards along its edges over it; its roof and the courses and joints of its shingles, the
+   * board along its eaves either side of the gable over its middle door, and that gable.
+   */
+  garageWall: Face;
+  garageBattens: Path2D;
+  garageDoors: Doors;
+  garageStone: Face[];
+  garageTrim: Path2D;
+  garageSconces: Sconce[];
+  garageEnd: EndParts;
+  garageSoffit: Face;
+  garageVerges: Face[];
+  garageRoof: Face;
+  garageCourses: Path2D;
+  garageShingles: Path2D;
+  garageFascia: Face[];
+  garageGable: Gable;
   /** The right gable end, its foundation, its battens and corner boards, and its windows. */
   gableEnd: Face;
   gableFoundation: Face;
   gableBattens: Path2D;
   gableTrim: Path2D;
   gableOpenings: Openings;
-  /** The front wall behind the porch, its battens and corner board, its door and windows. */
+  /**
+   * The front wall from end to end, its battens, the foundation under its boarded
+   * stretch, the boards up its corners, its door and windows, and the lanterns by the door.
+   */
   wall: Face;
   wallBattens: Path2D;
+  wallFoundation: Face;
   wallTrim: Path2D;
   wallOpenings: Openings;
   sconces: Sconce[];
@@ -592,13 +739,16 @@ interface Built {
   wingFrieze: Path2D;
   wingOpenings: Openings;
   wingTruss: Truss;
-  /** The porch roof and its seams, and the drip along its front. */
-  porchRoof: Face;
-  seams: Path2D;
-  drip: Face;
-  /** The porch's stone skirt, the chairs on it, its piers, posts and beam. */
+  /** The porch roof along the right end and along the front, the seams down each, and the drips along their edges. */
+  porchRoof: Face[];
+  seams: Path2D[];
+  drip: Face[];
+  /**
+   * The porch's stone skirts and the nosings along its floor, the chairs on it, and its piers,
+   * posts and beams, those along the right end before those along the front.
+   */
   skirt: Face[];
-  nosing: Face;
+  nosing: Face[];
   chairs: { thick: Path2D; thin: Path2D };
   piers: Face[];
   posts: Face[];
@@ -607,18 +757,17 @@ interface Built {
   entry: Gable;
   entryTruss: Truss;
   steps: Face[];
-  plants: Plant[];
 }
 
 let built: Built | undefined;
 
 /**
- * Draws the farmhouse in world meters placed by `world`, lit by `light` in `season`, from
+ * Draws the farmhouse on its ground, in world meters placed by `world`, lit by `light` in `season`, from
  * midsummer at 0 to midwinter at 1, with snow lying `snow` meters deep, `clock` seconds in, with the
  * wind blowing `draft` meters a second past its chimney. It is drawn from the back to the front,
- * each part outlined as it is drawn so the nearer parts hide the lines behind them: its gable end,
- * its front wall behind the porch, its roof with the chimney and dormers, the wing, the porch and the
- * gable over its steps, and the plants along its foot. Each wall is shaded as far as it turns from
+ * each part outlined as it is drawn so the nearer parts hide the lines behind them: the garage, the
+ * gable end, the front wall, the roof with the chimney and dormers, the wing, the porch and the
+ * gable over its steps. Each wall is shaded as far as it turns from
  * the light and in the shadows the roofs and the porch throw on it; its windows light one by one as
  * the evening comes on, and go dark again late in the night; and smoke rises from its chimney once
  * the cold comes on.
@@ -643,8 +792,9 @@ export function drawFarmhouse(
   const thin = Math.max(LEAST_LINE, 0.6 * px);
   const stonesShow = at(STONE.long, 0) * k >= STONE.leastPx;
   const glows: { middle: Point; reach: number; alpha: number }[] = [];
+  const onGround = world.translate(0, GROUND);
   ctx.save();
-  ctx.setTransform(world);
+  ctx.setTransform(onGround);
   ctx.lineJoin = "round";
 
   const fill = (face: Face): void => {
@@ -664,6 +814,11 @@ export function drawFarmhouse(
     } else {
       ctx.fillStyle = css(paint(color));
       ctx.fill(face.path);
+    }
+    if (face.under) {
+      ctx.fillStyle = css(look.ink, UNDERSIDE.tone);
+      ctx.fill(face.path);
+      return;
     }
     ctx.lineWidth = SHADE.widthPx * px;
     ctx.lineCap = "butt";
@@ -729,6 +884,10 @@ export function drawFarmhouse(
     ctx.fill(o.stone);
     ctx.fillStyle = css(look.ink, SHADOW.sill);
     ctx.fill(o.sills);
+    ctx.fillStyle = css(paint(PAINT.shutters));
+    ctx.fill(o.shutters);
+    ctx.fillStyle = css(paint(mix(PAINT.shutters, look.ink, 0.3)));
+    ctx.fill(o.battens);
     ctx.fillStyle = css(paint(mix(PANE.day, PANE.night, look.darkness)));
     ctx.fill(o.glass);
     ctx.fillStyle = css(paint(PAINT.frames));
@@ -777,8 +936,111 @@ export function drawFarmhouse(
     }
   };
   const lanterns = smoothstep(SCONCE.wakes, SCONCE.wakes + 0.1, look.darkness);
+  // Lanterns on a wall: their iron by day, the pool of their light on the wall once lit, and the
+  // lanterns themselves alight over it.
+  const lanternIron = (sconces: readonly Sconce[]): void => {
+    ctx.fillStyle = css(paint(PAINT.iron));
+    for (const sconce of sconces) {
+      ctx.fill(sconce.iron);
+    }
+  };
+  const lanternLight = (wall: Face, sconces: readonly Sconce[]): void => {
+    if (lanterns > 0) {
+      for (const sconce of sconces) {
+        drawPool(ctx, wall, sconce, lanterns * look.darkness);
+      }
+    }
+  };
+  const lanternsLit = (sconces: readonly Sconce[]): void => {
+    for (const sconce of sconces) {
+      drawSconce(ctx, sconce, look, paint, lanterns);
+      if (lanterns > 0) {
+        glows.push({
+          middle: sconce.middle,
+          reach: SCONCE.glow.reach,
+          alpha: SCONCE.glow.alpha * lanterns,
+        });
+      }
+    }
+  };
+  // Carriage doors: their wood and the grooves between its boards, the rails and stile over it, the
+  // glass of their windows and the bars across it, their iron, and the casing round them.
+  const carriageDoors = (doors: Doors): void => {
+    ctx.fillStyle = css(paint(PAINT.door));
+    ctx.fill(doors.wood);
+    faint(doors.grooves, CARRIAGE.boards);
+    ctx.fillStyle = css(paint(mix(PAINT.door, look.ink, 0.15)));
+    ctx.fill(doors.rails);
+    ctx.fillStyle = css(paint(mix(PANE.day, PANE.night, look.darkness)));
+    ctx.fill(doors.glass);
+    ctx.fillStyle = css(paint(mix(PAINT.door, look.ink, 0.3)));
+    ctx.fill(doors.bars);
+    ctx.fillStyle = css(paint(PAINT.iron));
+    ctx.fill(doors.iron);
+    ctx.fillStyle = css(paint(PAINT.trim));
+    ctx.fill(doors.trim);
+    outline(doors.wood);
+  };
+  const flat = (u: number, v: number): Point => ({ x: u, y: v });
 
-  // The gable end, running back to the right, in the shadow of the roof's edge over it.
+  // The garage: its wall, its doors and the stone at the foot of its walls, and its lanterns, in
+  // the shadow of its eaves; its gable end, running back to the right in the shadow of its roof's
+  // edge; its roof, the board along its eaves either side of the gable over its middle door, and
+  // that gable.
+  fill(house.garageWall);
+  faint(house.garageBattens, GRAIN.battens);
+  carriageDoors(house.garageDoors);
+  for (const face of house.garageStone) {
+    drawn(face);
+  }
+  ctx.fillStyle = css(paint(PAINT.trim));
+  ctx.fill(house.garageTrim);
+  lanternIron(house.garageSconces);
+  foot(house.garageWall, flat, GL, GR);
+  drawEavesShadow(
+    ctx,
+    house.garageWall,
+    GL - GARAGE.verge,
+    GR + GARAGE.verge,
+    GARAGE_EAVE_UNDER,
+    GARAGE.overhang,
+    look,
+  );
+  lanternLight(house.garageWall, house.garageSconces);
+  lanternsLit(house.garageSconces);
+  outline(house.garageWall.path);
+  outline(house.garageDoors.trim);
+  outline(house.garageTrim);
+  const garageEnd = house.garageEnd;
+  const garageSideOn = (u: number, v: number): Point => onPage(GR, v, u);
+  fill(garageEnd.wall);
+  faint(garageEnd.battens, GRAIN.sideBattens * RECEDE);
+  drawn(garageEnd.foundation);
+  openings(garageEnd.openings);
+  ctx.fillStyle = css(paint(PAINT.trim));
+  ctx.fill(garageEnd.trim);
+  foot(garageEnd.wall, garageSideOn, 0, GD);
+  drawGableEndShadow(ctx, garageEnd.wall, GARAGE_END, look);
+  lamps(garageEnd.openings);
+  outline(garageEnd.wall.path);
+  outline(garageEnd.trim);
+  drawn(house.garageSoffit);
+  for (const face of house.garageVerges) {
+    drawn(face);
+  }
+  fill(house.garageRoof);
+  sheen(house.garageCourses, GRAIN.courses);
+  sheen(house.garageShingles, GRAIN.courses, GRAIN.shinglesPx, GRAIN.joints);
+  outline(house.garageRoof.path);
+  for (const face of house.garageFascia) {
+    drawn(face);
+  }
+  drawGable(house.garageGable, undefined, () => {
+    drawGableShadow(ctx, house.garageGable, undefined, look);
+  });
+
+  // The gable end, running back to the right, in the shadow of the roof's edge over it and of the
+  // porch along it.
   const sideOn = (u: number, v: number): Point => onPage(MR, v, u);
   fill(house.gableEnd);
   faint(house.gableBattens, GRAIN.sideBattens * RECEDE);
@@ -787,40 +1049,38 @@ export function drawFarmhouse(
   ctx.fillStyle = css(paint(PAINT.trim));
   ctx.fill(house.gableTrim);
   foot(house.gableEnd, sideOn, 0, MD);
-  drawGableEndShadow(ctx, house.gableEnd, look);
+  drawGableEndShadow(ctx, house.gableEnd, MAIN_END, look);
+  drawSidePorchShadow(ctx, house.gableEnd, look);
   lamps(house.gableOpenings);
   outline(house.gableEnd.path);
   outline(house.gableTrim);
 
-  // The front wall behind the porch, its door and windows, in the shadow of the porch.
+  // The front wall from end to end: the boarded stretch left of the wing, its
+  // shuttered window under the shadow of the eaves; and behind the porch, in the porch's shadow, the
+  // door with a lantern either side and the windows either side of it.
   fill(house.wall);
   faint(house.wallBattens, GRAIN.battens);
+  drawn(house.wallFoundation);
   ctx.fillStyle = css(paint(PAINT.trim));
   ctx.fill(house.wallTrim);
   openings(house.wallOpenings);
-  for (const sconce of house.sconces) {
-    ctx.fillStyle = css(paint(PAINT.iron));
-    ctx.fill(sconce.iron);
-  }
+  lanternIron(house.sconces);
+  drawEavesShadow(
+    ctx,
+    house.wall,
+    ML - HOUSE.verge,
+    WL,
+    EAVE_UNDER,
+    HOUSE.overhang,
+    look,
+  );
   drawPorchShadow(ctx, house.wall, look);
-  if (lanterns > 0) {
-    for (const sconce of house.sconces) {
-      drawPool(ctx, house.wall, sconce, lanterns * look.darkness);
-    }
-  }
+  lanternLight(house.wall, house.sconces);
   lamps(house.wallOpenings);
-  for (const sconce of house.sconces) {
-    drawSconce(ctx, sconce, look, paint, lanterns);
-    if (lanterns > 0) {
-      glows.push({
-        middle: sconce.middle,
-        reach: SCONCE.glow.reach,
-        alpha: SCONCE.glow.alpha * lanterns,
-      });
-    }
-  }
+  lanternsLit(house.sconces);
   outline(house.wall.path);
   outline(house.wallOpenings.trim);
+  outline(house.wallTrim);
 
   // The main roof, the board along its eaves, and the boards along its edges over the gable end
   // with the underside of its back pitch between them.
@@ -834,6 +1094,7 @@ export function drawFarmhouse(
   outline(house.roof.path);
   drawn(house.fascia);
   ctx.lineCap = "butt";
+  ctx.lineJoin = "round";
   ctx.lineWidth = 0.08;
   ctx.strokeStyle = css(paint(PAINT.iron));
   ctx.stroke(house.downspout);
@@ -880,17 +1141,25 @@ export function drawFarmhouse(
   outline(house.wingFrieze);
   outline(house.wingOpenings.cedar);
 
-  // The porch roof, then the wing's roof over it.
-  fill(house.porchRoof);
-  sheen(house.seams, GRAIN.seams);
-  outline(house.porchRoof.path);
+  // The porch roof, along the right end and along the front, then the wing's roof over it.
+  house.porchRoof.forEach((face, i) => {
+    fill(face);
+    ctx.save();
+    ctx.clip(face.path);
+    sheen(at(house.seams, i), GRAIN.seams);
+    ctx.restore();
+    outline(face.path);
+  });
   drawRoofOf(house.wing, house.wingTruss);
 
-  // The porch: its skirt, the chairs on it, its piers, posts and beam.
+  // The porch: its stone skirts, the chairs on it, its piers, posts and beams, and the drips along
+  // its roof's edges.
   for (const face of house.skirt) {
     drawn(face);
   }
-  drawn(house.nosing);
+  for (const face of house.nosing) {
+    drawn(face);
+  }
   ctx.strokeStyle = css(paint(PAINT.iron));
   ctx.lineCap = "round";
   ctx.lineWidth = 0.045;
@@ -906,7 +1175,9 @@ export function drawFarmhouse(
   for (const face of house.beam) {
     drawn(face);
   }
-  drawn(house.drip);
+  for (const face of house.drip) {
+    drawn(face);
+  }
 
   // The gable over the steps, the truss in it, and the steps.
   drawGable(house.entry, house.entryTruss, () => {
@@ -916,14 +1187,8 @@ export function drawFarmhouse(
     drawn(face);
   }
 
-  const flowering =
-    1 - smoothstep(LAVENDER_FADES[0], LAVENDER_FADES[1], season);
-  for (const plant of house.plants) {
-    drawPlant(ctx, plant, look, paint, flowering, px);
-  }
-
   if (look.fires > 0) {
-    drawSmoke(ctx, { top: FLUE, phase: FIRE_PHASE }, look, paint);
+    drawSmoke(ctx, { top: SMOKE_FROM, phase: FIRE_PHASE }, look, paint);
   }
 
   if (glows.length > 0) {
@@ -932,7 +1197,7 @@ export function drawFarmhouse(
     for (const glow of glows) {
       layGlow(
         ctx,
-        world,
+        onGround,
         camera.dpr,
         camera.scale,
         glow.middle,
@@ -946,7 +1211,11 @@ export function drawFarmhouse(
 
   // A gable toward the view: its face, what `inside` lays on it, and the roof over it with the
   // truss under it, if it has one.
-  function drawGable(gable: Gable, truss: Truss | undefined, inside: () => void): void {
+  function drawGable(
+    gable: Gable,
+    truss: Truss | undefined,
+    inside: () => void,
+  ): void {
     fill(gable.face);
     faint(gable.battens, GRAIN.battens);
     inside();
@@ -976,7 +1245,7 @@ export function drawFarmhouse(
 
   // A truss standing out from its gable: the sides of its timbers running back to the gable; each
   // timber's face catching the light along one edge and shaded along the other, toned and hatched
-  // as the gable is, with its grain; the steel plate over the joint and its bolts; and the shade of
+  // as the gable is, with its grain; the steel strap over the joint and its bolts; and the shade of
   // the roof's edge reaching out over it all.
   function drawTruss(gable: Gable, truss: Truss): void {
     const cedar = paint(PAINT.cedar);
@@ -991,7 +1260,10 @@ export function drawFarmhouse(
       outline(timber.sides);
       const { from, to, width } = timber;
       const length = Math.hypot(to.x - from.x, to.y - from.y);
-      const across = { x: -(to.y - from.y) / length, y: (to.x - from.x) / length };
+      const across = {
+        x: -(to.y - from.y) / length,
+        y: (to.x - from.x) / length,
+      };
       // From the edge the light falls on, across to the edge turned away from it.
       const toward = across.x * key.x + across.y * key.y >= 0 ? 1 : -1;
       const middle = onPage((from.x + to.x) / 2, (from.y + to.y) / 2, truss.z);
@@ -1002,7 +1274,10 @@ export function drawFarmhouse(
         middle.x - across.x * reach,
         middle.y - across.y * reach,
       );
-      bevel.addColorStop(0, css(mix(cedar, paint(look.light.sunColor), TRUSS.lit * keyStrength)));
+      bevel.addColorStop(
+        0,
+        css(mix(cedar, paint(look.light.sunColor), TRUSS.lit * keyStrength)),
+      );
       bevel.addColorStop(0.35, css(cedar));
       bevel.addColorStop(1, css(mix(cedar, look.ink, TRUSS.shade)));
       ctx.fillStyle = bevel;
@@ -1017,15 +1292,23 @@ export function drawFarmhouse(
         ctx.restore();
       }
       ctx.lineWidth = SHADE.widthPx * px;
-      shadeFace(ctx, timber.face, look, gap, SHADE.tone, SHADE.strength, undefined);
+      shadeFace(
+        ctx,
+        timber.face,
+        look,
+        gap,
+        SHADE.tone,
+        SHADE.strength,
+        undefined,
+      );
       outline(timber.face.path);
     }
     ctx.fillStyle = css(paint(PAINT.iron));
-    ctx.fill(truss.plate);
-    outline(truss.plate);
+    ctx.fill(truss.strap);
+    outline(truss.strap);
     ctx.fillStyle = css(paint(mix(PAINT.iron, PAINT.trim, 0.35)));
     ctx.fill(truss.bolts);
-    whole.addPath(truss.plate);
+    whole.addPath(truss.strap);
     if (keyStrength >= 0.02 && key.z > 0.02 && key.y > 0) {
       const verge = gable.z - gable.verge;
       ctx.save();
@@ -1114,36 +1397,35 @@ function rakeShadow(gable: Gable, z: number, reach: number, key: Vec3): Path2D {
 }
 
 /**
- * The shadow the roof's edge throws down the gable end while the light falls on it from the right:
- * the foot of the boards along the edge cast back onto the wall along the light, so a band of shade
- * runs down under both pitches, deeper the higher the light and the more it skims the wall.
+ * The shadow a roof's edge throws down the gable end `end` while the light falls on it from the
+ * right: the foot of the boards along the edge cast back onto the wall along the light, so a band
+ * of shade runs down under both pitches, deeper the higher the light and the more it skims the wall.
  */
 function drawGableEndShadow(
   ctx: CanvasRenderingContext2D,
   wall: Face,
+  end: GableEnd,
   look: Look,
 ): void {
   const { key, keyStrength } = look;
   if (keyStrength < 0.02 || key.x <= 0.02 || key.y <= 0) {
     return;
   }
-  const t = Math.min(
-    HOUSE.verge / key.x,
-    (SHADOW.deepest * HOUSE.eaves) / key.y,
-  );
+  const t = Math.min(end.verge / key.x, (SHADOW.deepest * end.eaves) / key.y);
   const drop = t * key.y;
   const back = t * key.z;
-  const cast = [-HOUSE.overhang, MD / 2, MD + HOUSE.overhang].map((z) =>
-    onPage(MR, mainUnder(z) - drop, z + back),
+  const cast = [-end.overhang, end.deep / 2, end.deep + end.overhang].map((z) =>
+    onPage(end.x, end.under(z) - drop, z + back),
   );
   const first = at(cast, 0);
   const last = at(cast, cast.length - 1);
+  const top = end.under(end.deep / 2) + PLUMB + 1;
   const shadow = shapeOf([
     { x: first.x - 1, y: first.y },
     ...cast,
     { x: last.x + 1, y: last.y },
-    { x: last.x + 1, y: RIDGE_TOP + 1 },
-    { x: first.x - 1, y: RIDGE_TOP + 1 },
+    { x: last.x + 1, y: top },
+    { x: first.x - 1, y: top },
   ]);
   ctx.save();
   ctx.clip(wall.path);
@@ -1182,7 +1464,7 @@ function drawWingSideShadow(
 
 /**
  * The shadow the porch throws on the wall behind it: its roof from the foot of the beam along its
- * front, the wing standing out at its left end, and its posts and piers, each cast back onto the
+ * front and round the corner, the wing standing out at its left end, and its posts and piers, each cast back onto the
  * wall along the light. With the sun high the wall is in shade to the floor; as the sun sinks the
  * light reaches in under the beam, the posts striping the wall, and swings along it through the day.
  */
@@ -1207,8 +1489,9 @@ function drawPorchShadow(
   shadow.addPath(
     shapeOf([
       cast(WR, PORCH.beam.low, out),
-      cast(MR + PORCH.past, PORCH.beam.low, out),
-      { x: MR + PORCH.past, y: top },
+      cast(PX, PORCH.beam.low, out),
+      { x: PX, y: PORCH.beam.low },
+      { x: PX, y: top },
       { x: WR, y: top },
     ]),
   );
@@ -1242,6 +1525,102 @@ function drawPorchShadow(
       shadow.addPath(shapeOf(hull(corners)));
     }
   }
+  ctx.save();
+  ctx.clip(wall.path);
+  ctx.fillStyle = css(look.ink, SHADOW.alpha * keyStrength);
+  ctx.fill(shadow);
+  ctx.restore();
+}
+
+/**
+ * The shadow the porch along the right end throws on the gable end while the light falls on it from
+ * the right: its roof, from the foot of the beam along its edge to where it ends at the back, and
+ * its posts and piers, each cast in onto the wall along the light, so the shade comes down the wall
+ * as the sun climbs.
+ */
+function drawSidePorchShadow(
+  ctx: CanvasRenderingContext2D,
+  wall: Face,
+  look: Look,
+): void {
+  const { key, keyStrength } = look;
+  if (keyStrength < 0.02 || key.x <= 0.02 || key.y <= 0) {
+    return;
+  }
+  const along = Math.min(1 / key.x, SHADOW.reach / (PX - MR));
+  // Where a point `x` along the ground, `y` up and `z` back falls on the wall, cast in along the light.
+  const cast = (x: number, y: number, z: number): Point => {
+    const t = (x - MR) * along;
+    return onPage(MR, y - t * key.y, z + t * key.z);
+  };
+  const low = PORCH.beam.low;
+  const top = sideTop(MR);
+  const shadow = new Path2D();
+  shadow.addPath(
+    shapeOf([
+      onPage(MR, low, OUT),
+      cast(PX, low, OUT),
+      cast(PX, low, PZ),
+      onPage(MR, top, PZ),
+      onPage(MR, top, OUT),
+    ]),
+  );
+  // Each post and pier along the right end, as the outline of the shadows of its corners.
+  const half = PORCH.post / 2;
+  const pier = PORCH.pier.wide / 2;
+  for (const z of [POST_Z, ...PORCH.side.posts]) {
+    for (const [w, foot, head] of [
+      [half, PORCH.pier.high, PORCH.beam.low],
+      [pier, FOOT, PORCH.pier.high],
+    ] as const) {
+      const corners: Point[] = [];
+      for (const x of [POST_X - w, POST_X + w]) {
+        for (const [dz, y] of [
+          [-w, foot],
+          [w, foot],
+          [w, head],
+          [-w, head],
+        ] as const) {
+          corners.push(cast(x, y, z + dz));
+        }
+      }
+      shadow.addPath(shapeOf(hull(corners)));
+    }
+  }
+  ctx.save();
+  ctx.clip(wall.path);
+  ctx.fillStyle = css(look.ink, SHADOW.alpha * keyStrength);
+  ctx.fill(shadow);
+  ctx.restore();
+}
+
+/**
+ * The shadow eaves throw down a front wall while the light falls on it: the foot of the board along
+ * them, `low` high and `out` in front of the wall, from `x0` to `x1` along the ground, cast back onto
+ * the wall along the light, and everything above it in shade.
+ */
+function drawEavesShadow(
+  ctx: CanvasRenderingContext2D,
+  wall: Face,
+  x0: number,
+  x1: number,
+  low: number,
+  out: number,
+  look: Look,
+): void {
+  const { key, keyStrength } = look;
+  if (keyStrength < 0.02 || key.z <= 0.02 || key.y <= 0) {
+    return;
+  }
+  const t = Math.min(out / key.z, (SHADOW.deepest * HOUSE.eaves) / key.y);
+  const dx = -t * key.x;
+  const dy = -t * key.y;
+  const shadow = shapeOf([
+    { x: x0 + dx, y: low + dy },
+    { x: x1 + dx, y: low + dy },
+    { x: x1 + dx, y: low + 2 },
+    { x: x0 + dx, y: low + 2 },
+  ]);
   ctx.save();
   ctx.clip(wall.path);
   ctx.fillStyle = css(look.ink, SHADOW.alpha * keyStrength);
@@ -1312,150 +1691,15 @@ function drawSconce(
   ctx.fill(sconce.iron);
 }
 
-/**
- * A plant at the foot of the house in its colors for the time of year, lit from the side the light
- * comes from and whitened by lying snow: boxwood a dense ball of leaves; a hydrangea a looser mound
- * under its blooms, bare stems and dried heads in winter; lavender a grey mound under purple
- * spikes while it is `flowering`, from 0 to 1; and ornamental grass a fountain of blades with
- * plumes at their tips.
- */
-function drawPlant(
-  ctx: CanvasRenderingContext2D,
-  plant: Plant,
-  look: Look,
-  paint: (color: Rgb) => Rgb,
-  flowering: number,
-  px: number,
-): void {
-  const { foot, size } = plant;
-  const toward = look.key.x >= 0 ? 1 : -1;
-  const snowy = SNOW_COVERS.scrub * look.snowy;
-  const ink = css(look.ink, 0.5);
-  const lobes = (
-    shapes: readonly { x: number; y: number; r: number }[],
-    scale: number,
-    shift: number,
-  ): Path2D => {
-    const path = new Path2D();
-    for (const { x, y, r } of shapes) {
-      const cx = foot.x + (x + shift * toward * r) * size;
-      const cy = foot.y + (y + shift * r) * size;
-      path.moveTo(cx + r * scale * size, cy);
-      path.arc(cx, cy, r * scale * size, 0, Math.PI * 2);
-    }
-    return path;
-  };
-  // A mass of leaves: its outline in ink, the mass, and its lit side, whitened on top by snow.
-  const mass = (color: Rgb): void => {
-    const whole = lobes(plant.lobes, 1, 0);
-    ctx.lineWidth = Math.max(0.03, 1.4 * px);
-    ctx.strokeStyle = ink;
-    ctx.stroke(whole);
-    ctx.fillStyle = css(paint(mix(color, look.ink, 0.25)));
-    ctx.fill(whole);
-    const sunlit = mix(color, look.light.sunColor, 0.12 * look.keyStrength);
-    ctx.fillStyle = css(paint(mix(sunlit, look.snow, snowy)));
-    ctx.fill(lobes(plant.lobes, 0.7, 0.18));
-  };
-  const stems = (
-    color: Rgb,
-    width: number,
-    tips: Rgb | undefined,
-    tipLength: number,
-  ): void => {
-    ctx.lineCap = "round";
-    ctx.strokeStyle = css(paint(color));
-    ctx.lineWidth = width;
-    const path = new Path2D();
-    const heads = new Path2D();
-    for (const stem of plant.stems) {
-      const tx = foot.x + stem.x * size;
-      const ty = foot.y + stem.y * size;
-      const mx = foot.x + (stem.x / 2 + stem.bow) * size;
-      const my = foot.y + (stem.y / 2) * size;
-      path.moveTo(foot.x, foot.y);
-      path.quadraticCurveTo(mx, my, tx, ty);
-      if (tips !== undefined) {
-        // The tip, along the last of the stem.
-        const dx = tx - mx;
-        const dy = ty - my;
-        const length = Math.hypot(dx, dy);
-        heads.moveTo(
-          tx - (dx / length) * tipLength * size,
-          ty - (dy / length) * tipLength * size,
-        );
-        heads.lineTo(tx, ty);
-      }
-    }
-    ctx.stroke(path);
-    if (tips !== undefined) {
-      ctx.strokeStyle = css(paint(tips));
-      ctx.lineWidth = width * 2.4;
-      ctx.stroke(heads);
-    }
-  };
-  // Heads of bloom, shaded away from the light.
-  const blooms = (color: Rgb): void => {
-    const path = lobes(plant.blooms, 1, 0);
-    ctx.lineWidth = Math.max(0.015, 0.8 * px);
-    ctx.strokeStyle = css(look.ink, 0.35);
-    ctx.stroke(path);
-    ctx.fillStyle = css(
-      paint(mix(mix(color, look.ink, 0.2), look.snow, snowy)),
-    );
-    ctx.fill(path);
-    ctx.fillStyle = css(paint(mix(color, look.snow, snowy)));
-    ctx.fill(lobes(plant.blooms, 0.7, 0.14));
-  };
-
-  switch (plant.kind) {
-    case "boxwood": {
-      const { summer, winter } = GREENS.boxwood;
-      mass(mix(summer, winter, look.winter));
-      break;
-    }
-    case "hydrangea": {
-      const h = GREENS.hydrangea;
-      const head = mix(mix(h.bloom, h.dried, look.fall), h.dead, look.winter);
-      if (look.winter < 0.6) {
-        mass(mix(h.summer, h.fall, look.fall));
-      } else {
-        stems(h.stems, 0.018, undefined, 0);
-      }
-      blooms(head);
-      break;
-    }
-    case "lavender": {
-      const l = GREENS.lavender;
-      const leaves = mix(l.leaves, l.winter, look.winter);
-      stems(
-        leaves,
-        0.012,
-        flowering > 0.05 ? mix(leaves, l.spikes, flowering) : undefined,
-        0.18,
-      );
-      mass(leaves);
-      break;
-    }
-    case "grass": {
-      const g = GREENS.grass;
-      const blades = mix(
-        mix(g.summer, g.fall, look.fall),
-        g.winter,
-        look.winter,
-      );
-      stems(blades, 0.016, mix(g.plumes, look.snow, snowy), 0.16);
-      break;
-    }
-    default: {
-      const unknown: never = plant.kind;
-      throw new Error(`Unknown plant ${String(unknown)}.`);
-    }
-  }
-}
-
-/** Builds the house's walls, roofs, trim, windows, porch, chimney and plants on the page, once. */
+/** Builds the house's walls, roofs, trim, windows, porch, chimney and garage on the page, once. */
 function buildHouse(): Built {
+  const farm = levelById("farm");
+  for (let x = GL - GARAGE.verge - 1; x <= PX + RECEDE * PZ + 1; x += 0.25) {
+    invariant(
+      Math.abs(farm.groundAt(x) - GROUND) < 1e-6,
+      `The farmhouse needs level ground under it, but at ${x.toFixed(2)} m it lies at ${farm.groundAt(x).toFixed(3)} m rather than ${GROUND.toFixed(3)} m.`,
+    );
+  }
   const rng = new Rng(0xfa53);
   const face = (
     points: Point[],
@@ -1470,6 +1714,7 @@ function buildHouse(): Built {
     paint,
     snowy,
     stones: undefined,
+    under: false,
   });
   const stone = (
     points: Point[],
@@ -1485,43 +1730,160 @@ function buildHouse(): Built {
   });
   const toward = unit(0, 0, 1);
   const right = unit(1, 0, 0);
+  const corner = CASING.width + 0.04;
+  const flat = (u: number, v: number): Point => ({ x: u, y: v });
+
+  // The garage: its front wall and battens, its carriage doors, the stone at the foot of the walls
+  // beside and between them standing a little proud under a cap, the boards up its corners, a
+  // lantern over each wall between the doors, its roof, the board along its eaves either side of
+  // the gable over its middle door, and that gable.
+  const garageWall = face(
+    box(flat, GL, FOOT, GR, GARAGE.eaves),
+    toward,
+    "walls",
+  );
+  const garageBattens = new Path2D();
+  for (let x = GL + GRAIN.battens; x < GR - 0.05; x += GRAIN.battens) {
+    line(garageBattens, flat(x, 0), flat(x, GARAGE.eaves));
+  }
+  const { doors, pier } = GARAGE;
+  const doorAt = (i: number): number => GL + pier + i * (doors.width + pier);
+  const garageDoors = emptyDoors();
+  for (let i = 0; i < doors.count; i += 1) {
+    carriageDoorIn(garageDoors, flat, doorAt(i), doors.height);
+  }
+  const garageStone: Face[] = [];
+  const stoneOn = (u: number, v: number): Point => onPage(u, v, -0.03);
+  const capped = GARAGE.stone - PORCH.pier.cap;
+  for (let i = 0; i <= doors.count; i += 1) {
+    const x0 = i === 0 ? GL : doorAt(i - 1) + doors.width;
+    const x1 = i === doors.count ? GR : doorAt(i);
+    garageStone.push(
+      stone(
+        box(stoneOn, x0, FOOT, x1, capped),
+        toward,
+        stoneOn,
+        x0,
+        FOOT,
+        x1,
+        capped,
+      ),
+      face(
+        box(
+          (u, v) => onPage(u, v, -0.05),
+          x0 - 0.02,
+          capped,
+          x1 + 0.02,
+          GARAGE.stone,
+        ),
+        toward,
+        "capstone",
+        true,
+      ),
+    );
+  }
+  const garageTrim = new Path2D();
+  quadInto(garageTrim, box(flat, GL, GARAGE.stone, GL + corner, GARAGE.eaves));
+  quadInto(garageTrim, box(flat, GR - corner, GARAGE.stone, GR, GARAGE.eaves));
+  const garageSconces = [1, 2].map((i) =>
+    buildSconce(doorAt(i) - pier / 2, doors.height + 0.05),
+  );
+  // Its gable end, with a window to the workshop inside and one up in the gable, and the edge of its
+  // roof over it.
+  const garageEndOn = (u: number, v: number): Point => onPage(GR, v, u);
+  const garageEndOpenings = emptyOpenings();
+  for (const [u, sill, width, height, lamp] of [
+    [GD * 0.35, 1, 0.8, 1.2, LIGHTS.workshop],
+    [GD / 2, GARAGE.eaves + 1.3, 0.55, 0.6, LIGHTS.attic],
+  ] as const) {
+    windowIn(garageEndOpenings, garageEndOn, {
+      u,
+      sill,
+      width,
+      height,
+      sashes: 1,
+      across: 2,
+      up: 2,
+      transom: 0,
+      stone: false,
+      shutters: false,
+      lamp,
+    });
+  }
+  const garageEnd = {
+    ...buildGableEnd(GARAGE_END, face),
+    openings: garageEndOpenings,
+  };
+  const { verges: garageVerges, soffit: garageSoffit } = buildRoofEdge(
+    GARAGE_END,
+    face,
+  );
+  const garageEave = -GARAGE.overhang;
+  const garageLeft = GL - GARAGE.verge;
+  const garageRight = GR + GARAGE.verge;
+  const garageRoof = face(
+    [
+      onPage(garageLeft, GARAGE_EAVE_TOP, garageEave),
+      onPage(garageRight, GARAGE_EAVE_TOP, garageEave),
+      onPage(garageRight, GARAGE_RIDGE_TOP, GD / 2),
+      onPage(garageLeft, GARAGE_RIDGE_TOP, GD / 2),
+    ],
+    unit(0, 1, S),
+    "roof",
+    true,
+  );
+  const [garageCourses, garageShingles] = shingled(
+    garageLeft,
+    garageRight,
+    GARAGE_EAVE_TOP,
+    GARAGE_RIDGE_TOP,
+    garageEave,
+    rng,
+  );
+  const middleDoor = doorAt(1) + doors.width / 2;
+  const gableReach = GARAGE.gable.half + GARAGE.gable.overhang;
+  const garageFascia = (
+    [
+      [garageLeft, middleDoor - gableReach],
+      [middleDoor + gableReach, garageRight],
+    ] as const
+  ).map(([x0, x1]) =>
+    face(
+      box(
+        (u, v) => onPage(u, v, garageEave),
+        x0,
+        GARAGE_EAVE_UNDER,
+        x1,
+        GARAGE_EAVE_TOP,
+      ),
+      toward,
+      "trim",
+    ),
+  );
+  const garageGable = buildGable(
+    {
+      middle: middleDoor,
+      half: GARAGE.gable.half,
+      eaves: GARAGE.eaves,
+      base: GARAGE.eaves - 0.02,
+      z: 0,
+      overhang: GARAGE.gable.overhang,
+      verge: GARAGE.gable.verge,
+      back: intoGarageRoof,
+      roof: "roof",
+      sidingFrom: GARAGE.eaves - 0.02,
+    },
+    face,
+  );
 
   // The gable end, `u` meters back from the front corner.
   const sideOn = (u: number, v: number): Point => onPage(MR, v, u);
-  const gableEnd = face(
-    [
-      sideOn(0, FOOT),
-      sideOn(MD, FOOT),
-      sideOn(MD, HOUSE.eaves),
-      sideOn(MD / 2, RIDGE_UNDER),
-      sideOn(0, HOUSE.eaves),
-    ],
-    right,
-    "walls",
-  );
-  const gableFoundation = face(
-    box(sideOn, 0, FOOT, MD, HOUSE.floor),
-    right,
-    "foundation",
-  );
-  const gableBattens = new Path2D();
-  for (let u = GRAIN.sideBattens; u < MD - 0.05; u += GRAIN.sideBattens) {
-    line(gableBattens, sideOn(u, HOUSE.floor), sideOn(u, mainUnder(u)));
-  }
-  const corner = CASING.width + 0.04;
-  const gableTrim = new Path2D();
-  quadInto(gableTrim, [
-    sideOn(0, HOUSE.floor),
-    sideOn(corner, HOUSE.floor),
-    sideOn(corner, mainUnder(corner)),
-    sideOn(0, HOUSE.eaves),
-  ]);
-  quadInto(gableTrim, [
-    sideOn(MD - corner, HOUSE.floor),
-    sideOn(MD, HOUSE.floor),
-    sideOn(MD, HOUSE.eaves),
-    sideOn(MD - corner, mainUnder(MD - corner)),
-  ]);
+  const {
+    wall: gableEnd,
+    foundation: gableFoundation,
+    battens: gableBattens,
+    trim: gableTrim,
+  } = buildGableEnd(MAIN_END, face);
   const gableOpenings = emptyOpenings();
   for (const [u, lamp] of [
     [2, LIGHTS.study],
@@ -1537,6 +1899,7 @@ function buildHouse(): Built {
       up: 2,
       transom: 0,
       stone: false,
+      shutters: false,
       lamp,
     });
   }
@@ -1550,34 +1913,52 @@ function buildHouse(): Built {
     up: 2,
     transom: 0,
     stone: false,
+    shutters: false,
     lamp: LIGHTS.attic,
   });
 
-  // The front wall behind the porch, its door and windows, and the lanterns by the door.
-  const frontOn = (u: number, v: number): Point => ({ x: u, y: v });
-  const wall = face(box(frontOn, WR, FOOT, MR, HOUSE.eaves), toward, "walls");
+  // The front wall from end to end: its battens, the foundation under its boarded
+  // stretch left of the wing, the boards up its corners, the shuttered window in that stretch, the
+  // door and windows behind the porch, and the lanterns by the door.
+  const wall = face(box(flat, ML, FOOT, MR, HOUSE.eaves), toward, "walls");
   const wallBattens = new Path2D();
-  for (let x = WR + GRAIN.battens; x < MR - 0.05; x += GRAIN.battens) {
-    line(wallBattens, frontOn(x, HOUSE.floor), frontOn(x, HOUSE.eaves));
+  for (let x = ML + GRAIN.battens; x < MR - 0.05; x += GRAIN.battens) {
+    line(wallBattens, flat(x, HOUSE.floor), flat(x, HOUSE.eaves));
   }
+  const wallFoundation = face(
+    box(flat, ML, FOOT, WL, HOUSE.floor),
+    toward,
+    "foundation",
+  );
   const wallTrim = new Path2D();
-  quadInto(wallTrim, box(frontOn, MR - corner, HOUSE.floor, MR, HOUSE.eaves));
+  quadInto(wallTrim, box(flat, ML, HOUSE.floor, ML + corner, HOUSE.eaves));
+  quadInto(wallTrim, box(flat, MR - corner, HOUSE.floor, MR, HOUSE.eaves));
   const wallOpenings = emptyOpenings();
+  const sashed = {
+    sill: HOUSE.floor + 0.62,
+    width: 0.95,
+    height: 1.6,
+    sashes: 1,
+    across: 2,
+    up: 2,
+    transom: 0,
+    stone: false,
+  };
+  windowIn(wallOpenings, flat, {
+    ...sashed,
+    u: LINK_WINDOW,
+    shutters: true,
+    lamp: LIGHTS.office,
+  });
   PORCH_WINDOWS.forEach((u, i) => {
-    windowIn(wallOpenings, frontOn, {
+    windowIn(wallOpenings, flat, {
+      ...sashed,
       u,
-      sill: HOUSE.floor + 0.62,
-      width: 0.95,
-      height: 1.6,
-      sashes: 1,
-      across: 2,
-      up: 2,
-      transom: 0,
-      stone: false,
+      shutters: i === 0,
       lamp: i === 0 ? LIGHTS.living : LIGHTS.dining,
     });
   });
-  doorIn(wallOpenings, frontOn, DOOR_X, LIGHTS.hall);
+  doorIn(wallOpenings, flat, DOOR_X, LIGHTS.hall);
   const sconces = [-1, 1].map((side) =>
     buildSconce(
       DOOR_X + side * (DOOR.width / 2 + DOOR.casing + SCONCE.beside),
@@ -1587,7 +1968,7 @@ function buildHouse(): Built {
 
   // The main roof: its front pitch, the shingles' courses and the joints along them, the board
   // along its eaves, and over the gable end the boards along its edges, the underside of its back
-  // pitch between them, and a downspout down the back corner.
+  // pitch between them, and a downspout from the gutter along the back eaves down the back corner.
   const left = ML - HOUSE.verge;
   const rightEdge = MR + HOUSE.verge;
   const eaveZ = -HOUSE.overhang;
@@ -1602,26 +1983,14 @@ function buildHouse(): Built {
     "roof",
     true,
   );
-  const courses = new Path2D();
-  const shingles = new Path2D();
-  const backOf = (y: number): number => (y - EAVE_TOP) / S + eaveZ;
-  let below = EAVE_TOP;
-  for (
-    let y = EAVE_TOP + GRAIN.courses;
-    y < RIDGE_TOP - 0.05;
-    y += GRAIN.courses
-  ) {
-    line(courses, onPage(left, y, backOf(y)), onPage(rightEdge, y, backOf(y)));
-    const shift = rng.next() * GRAIN.shingles;
-    for (
-      let x = left + shift;
-      x < rightEdge;
-      x += GRAIN.shingles * (0.7 + 0.6 * rng.next())
-    ) {
-      line(shingles, onPage(x, below, backOf(below)), onPage(x, y, backOf(y)));
-    }
-    below = y;
-  }
+  const [courses, shingles] = shingled(
+    left,
+    rightEdge,
+    EAVE_TOP,
+    RIDGE_TOP,
+    eaveZ,
+    rng,
+  );
   const fascia = face(
     [
       onPage(left, EAVE_UNDER, eaveZ),
@@ -1632,46 +2001,18 @@ function buildHouse(): Built {
     toward,
     "trim",
   );
-  const verges = [
-    face(
-      [
-        onPage(rightEdge, EAVE_TOP, eaveZ),
-        onPage(rightEdge, RIDGE_TOP, MD / 2),
-        onPage(rightEdge, RIDGE_UNDER, MD / 2),
-        onPage(rightEdge, EAVE_UNDER, eaveZ),
-      ],
-      right,
-      "trim",
-    ),
-    face(
-      [
-        onPage(rightEdge, RIDGE_TOP, MD / 2),
-        onPage(rightEdge, EAVE_TOP, MD + HOUSE.overhang),
-        onPage(rightEdge, EAVE_UNDER, MD + HOUSE.overhang),
-        onPage(rightEdge, RIDGE_UNDER, MD / 2),
-      ],
-      right,
-      "trim",
-    ),
-  ];
-  const soffit = face(
-    [
-      onPage(MR, RIDGE_UNDER, MD / 2),
-      onPage(rightEdge, RIDGE_UNDER, MD / 2),
-      onPage(rightEdge, EAVE_UNDER, MD + HOUSE.overhang),
-      onPage(MR, EAVE_UNDER, MD + HOUSE.overhang),
-    ],
-    unit(0, -1, S),
-    "trim",
-  );
+  const { verges, soffit } = buildRoofEdge(MAIN_END, face);
   const downspout = new Path2D();
-  const spoutZ = MD + HOUSE.overhang * 0.6;
-  downspout.moveTo(
-    onPage(MR - 0.12, EAVE_UNDER + 0.1, spoutZ).x,
-    EAVE_UNDER + 0.1,
+  const spout = MR - 0.06;
+  const spoutPath = [
+    onPage(spout, EAVE_TOP - 0.02, MD + HOUSE.overhang - 0.1),
+    onPage(spout, EAVE_UNDER - 0.15, MD + 0.05),
+    onPage(spout, 0.3, MD + 0.05),
+    onPage(spout, 0.05, MD - 0.25),
+  ];
+  spoutPath.forEach((p, i) =>
+    i === 0 ? downspout.moveTo(p.x, p.y) : downspout.lineTo(p.x, p.y),
   );
-  downspout.lineTo(onPage(MR - 0.12, 0.3, spoutZ).x, 0.3);
-  downspout.lineTo(onPage(MR - 0.12, 0.05, spoutZ - 0.3).x, 0.05);
 
   // The chimney: its stone front and right side above the roof, its crown, the dark of its flue
   // and the cap raised over it on its legs.
@@ -1794,6 +2135,7 @@ function buildHouse(): Built {
   );
 
   // The dormers, each with a window in its face and its right cheek running back to the roof.
+  const bedrooms = [LIGHTS.nursery, LIGHTS.bedroom, LIGHTS.guest];
   const dormers = DORMERS.map((middle, i) => {
     const base = mainTop(DORMER.back);
     const gable = buildGable(
@@ -1832,7 +2174,8 @@ function buildHouse(): Built {
       up: 2,
       transom: 0,
       stone: false,
-      lamp: i === 0 ? LIGHTS.nursery : LIGHTS.bedroom,
+      shutters: false,
+      lamp: at(bedrooms, i),
     });
     return { gable, cheek, openings };
   });
@@ -1890,89 +2233,142 @@ function buildHouse(): Built {
     up: 1,
     transom: 0.42,
     stone: true,
+    shutters: false,
     lamp: LIGHTS.kitchen,
   });
   const wingTruss = buildTruss(wing, HOUSE.eaves + 0.32, 0.21);
 
-  // The porch roof, the seams down it and the drip along its front.
-  const roofEnd = MR + PORCH.past;
-  const porchRoof = face(
-    [
-      onPage(WR, porchTop(OUT), OUT),
-      onPage(roofEnd, porchTop(OUT), OUT),
-      onPage(roofEnd, porchTop(0), 0),
-      onPage(WR, porchTop(0), 0),
-    ],
-    unit(0, 1, PORCH.roof.rise),
-    "metal",
-    true,
-  );
-  const seams = new Path2D();
-  for (let x = WR + GRAIN.seams / 2; x < roofEnd; x += GRAIN.seams) {
-    line(seams, onPage(x, porchTop(OUT), OUT), onPage(x, porchTop(0), 0));
-  }
-  const drip = face(
-    box(
-      (u, v) => onPage(u, v, OUT - 0.03),
-      WR,
-      PORCH.beam.high - 0.02,
-      roofEnd,
-      porchTop(OUT) + 0.01,
+  // The porch roof along the right end and along the front, meeting over the corner in a hip, the
+  // seams down each, and the drips along their edges.
+  const front = porchTop(OUT);
+  const atWall = porchTop(0);
+  const porchRoof = [
+    face(
+      [
+        onPage(PX, front, OUT),
+        onPage(PX, front, PZ),
+        onPage(MR, atWall, PZ),
+        onPage(MR, atWall, 0),
+      ],
+      unit(PORCH.roof.rise, 1, 0),
+      "metal",
+      true,
     ),
-    toward,
-    "metal",
-  );
+    face(
+      [
+        onPage(WR, front, OUT),
+        onPage(PX, front, OUT),
+        onPage(MR, atWall, 0),
+        onPage(WR, atWall, 0),
+      ],
+      unit(0, 1, PORCH.roof.rise),
+      "metal",
+      true,
+    ),
+  ];
+  const seams = [new Path2D(), new Path2D()];
+  for (let z = OUT + GRAIN.seams / 2; z < PZ; z += GRAIN.seams) {
+    line(at(seams, 0), onPage(PX, front, z), onPage(MR, atWall, z));
+  }
+  for (let x = WR + GRAIN.seams / 2; x < PX; x += GRAIN.seams) {
+    line(at(seams, 1), onPage(x, front, OUT), onPage(x, atWall, 0));
+  }
+  const drip = [
+    face(
+      box(
+        (u, v) => onPage(PX + 0.03, v, u),
+        OUT - 0.03,
+        PORCH.beam.high - 0.02,
+        PZ,
+        front + 0.01,
+      ),
+      right,
+      "metal",
+    ),
+    face(
+      box(
+        (u, v) => onPage(u, v, OUT - 0.03),
+        WR,
+        PORCH.beam.high - 0.02,
+        PX + 0.03,
+        front + 0.01,
+      ),
+      toward,
+      "metal",
+    ),
+  ];
 
-  // The porch's stone skirt and the nosing along its floor, the chairs, the piers with their caps,
-  // the cedar posts and the beam along the front.
+  // The porch's stone skirts and the nosings along its floor, along the right end and along the
+  // front; the chairs on it; its piers with their caps and the cedar posts on them, along the right
+  // end from the back and then along the front; and the cedar beams along its edges.
   const skirtOn = (u: number, v: number): Point => onPage(u, v, OUT);
-  const skirtSideOn = (u: number, v: number): Point => onPage(MR, v, u);
+  const skirtSideOn = (u: number, v: number): Point => onPage(PX, v, u);
   const skirt = [
     stone(
-      box(skirtOn, WR, FOOT, MR, HOUSE.floor),
-      toward,
-      skirtOn,
-      WR,
-      FOOT,
-      MR,
-      HOUSE.floor,
-    ),
-    stone(
-      box(skirtSideOn, OUT, FOOT, 0, HOUSE.floor),
+      box(skirtSideOn, OUT, FOOT, PZ, HOUSE.floor),
       right,
       skirtSideOn,
       OUT,
       FOOT,
-      0,
+      PZ,
+      HOUSE.floor,
+    ),
+    stone(
+      box(skirtOn, WR, FOOT, PX, HOUSE.floor),
+      toward,
+      skirtOn,
+      WR,
+      FOOT,
+      PX,
       HOUSE.floor,
     ),
   ];
-  const nosing = face(
-    box(
-      (u, v) => onPage(u, v, OUT - 0.04),
-      WR,
-      HOUSE.floor - 0.06,
-      MR + 0.03,
-      HOUSE.floor + 0.01,
+  const nosing = [
+    face(
+      box(
+        (u, v) => onPage(PX + 0.04, v, u),
+        OUT - 0.04,
+        HOUSE.floor - 0.06,
+        PZ,
+        HOUSE.floor + 0.01,
+      ),
+      right,
+      "capstone",
     ),
-    toward,
-    "capstone",
-  );
+    face(
+      box(
+        (u, v) => onPage(u, v, OUT - 0.04),
+        WR,
+        HOUSE.floor - 0.06,
+        PX + 0.04,
+        HOUSE.floor + 0.01,
+      ),
+      toward,
+      "capstone",
+    ),
+  ];
   const chairs = { thick: new Path2D(), thin: new Path2D() };
-  for (const x of PORCH_WINDOWS) {
-    rockingChair(chairs, x - RECEDE * (OUT + CHAIRS.back), OUT + CHAIRS.back);
+  const chairZ = OUT + CHAIRS.back;
+  const living = at(PORCH_WINDOWS, 0);
+  for (const page of [
+    living - CHAIRS.apart,
+    living + CHAIRS.apart,
+    at(PORCH_WINDOWS, 1),
+  ]) {
+    rockingChair(chairs, page - RECEDE * chairZ, chairZ);
   }
+  sideTable(chairs, living - RECEDE * chairZ, chairZ);
   const piers: Face[] = [];
   const posts: Face[] = [];
-  const { pier } = PORCH;
-  for (const x of POSTS) {
-    const p0 = x - pier.wide / 2;
-    const p1 = x + pier.wide / 2;
-    const z0 = POST_Z - pier.wide / 2;
-    const z1 = POST_Z + pier.wide / 2;
+  const { pier: footing } = PORCH;
+  const postAt = (x: number, z: number): void => {
+    const p0 = x - footing.wide / 2;
+    const p1 = x + footing.wide / 2;
+    const z0 = z - footing.wide / 2;
+    const z1 = z + footing.wide / 2;
     const frontOfPier = (u: number, v: number): Point => onPage(u, v, z0);
     const sideOfPier = (u: number, v: number): Point => onPage(p1, v, u);
-    const low = pier.high - pier.cap;
+    const low = footing.high - footing.cap;
     piers.push(
       stone(
         box(frontOfPier, p0, FOOT, p1, low),
@@ -1994,11 +2390,11 @@ function buildHouse(): Built {
       ),
       face(
         box(
-          (u, v) => onPage(u, v, z0 - pier.capPast),
-          p0 - pier.capPast,
+          (u, v) => onPage(u, v, z0 - footing.capPast),
+          p0 - footing.capPast,
           low,
-          p1 + pier.capPast,
-          pier.high,
+          p1 + footing.capPast,
+          footing.high,
         ),
         toward,
         "capstone",
@@ -2006,11 +2402,11 @@ function buildHouse(): Built {
       ),
       face(
         box(
-          (u, v) => onPage(p1 + pier.capPast, v, u),
-          z0 - pier.capPast,
+          (u, v) => onPage(p1 + footing.capPast, v, u),
+          z0 - footing.capPast,
           low,
-          z1 + pier.capPast,
-          pier.high,
+          z1 + footing.capPast,
+          footing.high,
         ),
         right,
         "capstone",
@@ -2021,9 +2417,9 @@ function buildHouse(): Built {
     posts.push(
       face(
         box(
-          (u, v) => onPage(u, v, OUT),
+          (u, v) => onPage(u, v, z - half),
           x - half,
-          pier.high,
+          footing.high,
           x + half,
           PORCH.beam.low,
         ),
@@ -2033,37 +2429,31 @@ function buildHouse(): Built {
       face(
         box(
           (u, v) => onPage(x + half, v, u),
-          OUT,
-          pier.high,
-          OUT + PORCH.post,
+          z - half,
+          footing.high,
+          z + half,
           PORCH.beam.low,
         ),
         right,
         "cedar",
       ),
     );
+  };
+  for (const z of PORCH.side.posts) {
+    postAt(POST_X, z);
+  }
+  for (const x of POSTS) {
+    postAt(x, POST_Z);
   }
   const beam = [
     face(
-      box(
-        (u, v) => onPage(u, v, OUT),
-        WR,
-        PORCH.beam.low,
-        roofEnd,
-        PORCH.beam.high,
-      ),
-      toward,
+      box((u, v) => onPage(PX, v, u), OUT, PORCH.beam.low, PZ, PORCH.beam.high),
+      right,
       "cedar",
     ),
     face(
-      box(
-        (u, v) => onPage(roofEnd, v, u),
-        OUT,
-        PORCH.beam.low,
-        OUT + PORCH.post,
-        PORCH.beam.high,
-      ),
-      right,
+      box((u, v) => onPage(u, v, OUT), WR, PORCH.beam.low, PX, PORCH.beam.high),
+      toward,
       "cedar",
     ),
   ];
@@ -2121,6 +2511,20 @@ function buildHouse(): Built {
   );
 
   return {
+    garageWall,
+    garageBattens,
+    garageDoors,
+    garageStone,
+    garageTrim,
+    garageSconces,
+    garageEnd,
+    garageSoffit,
+    garageVerges,
+    garageRoof,
+    garageCourses,
+    garageShingles,
+    garageFascia,
+    garageGable,
     gableEnd,
     gableFoundation,
     gableBattens,
@@ -2128,6 +2532,7 @@ function buildHouse(): Built {
     gableOpenings,
     wall,
     wallBattens,
+    wallFoundation,
     wallTrim,
     wallOpenings,
     sconces,
@@ -2160,8 +2565,262 @@ function buildHouse(): Built {
     entry,
     entryTruss,
     steps,
-    plants: PLANTS.map((spec, i) => buildPlant(spec, new Rng(0x91a7 + i * 31))),
   };
+}
+
+/**
+ * A gable end's wall up under the roof, the foundation along its foot up to its floor, its battens,
+ * and the boards up its corners.
+ */
+function buildGableEnd(
+  end: GableEnd,
+  face: FaceMaker,
+): Omit<EndParts, "openings"> {
+  const on = (u: number, v: number): Point => onPage(end.x, v, u);
+  const right = unit(1, 0, 0);
+  const { deep, floor, eaves, under } = end;
+  const wall = face(
+    [
+      on(0, FOOT),
+      on(deep, FOOT),
+      on(deep, eaves),
+      on(deep / 2, under(deep / 2)),
+      on(0, eaves),
+    ],
+    right,
+    "walls",
+  );
+  const foundation = face(box(on, 0, FOOT, deep, floor), right, "foundation");
+  const battens = new Path2D();
+  for (let u = GRAIN.sideBattens; u < deep - 0.05; u += GRAIN.sideBattens) {
+    line(battens, on(u, floor), on(u, under(u)));
+  }
+  const corner = CASING.width + 0.04;
+  const trim = new Path2D();
+  quadInto(trim, [
+    on(0, floor),
+    on(corner, floor),
+    on(corner, under(corner)),
+    on(0, eaves),
+  ]);
+  quadInto(trim, [
+    on(deep - corner, floor),
+    on(deep, floor),
+    on(deep, eaves),
+    on(deep - corner, under(deep - corner)),
+  ]);
+  return { wall, foundation, battens, trim };
+}
+
+/**
+ * The edge of the roof over a gable end: the boards along it up the front pitch and down the back,
+ * and the underside of the back pitch between them and the wall.
+ */
+function buildRoofEdge(
+  end: GableEnd,
+  face: FaceMaker,
+): { verges: Face[]; soffit: Face } {
+  const right = unit(1, 0, 0);
+  const edge = end.x + end.verge;
+  const { deep, overhang, under } = end;
+  const underEave = under(-overhang);
+  const topEave = underEave + PLUMB;
+  const underRidge = under(deep / 2);
+  const topRidge = underRidge + PLUMB;
+  const verges = [
+    face(
+      [
+        onPage(edge, topEave, -overhang),
+        onPage(edge, topRidge, deep / 2),
+        onPage(edge, underRidge, deep / 2),
+        onPage(edge, underEave, -overhang),
+      ],
+      right,
+      "trim",
+    ),
+    face(
+      [
+        onPage(edge, topRidge, deep / 2),
+        onPage(edge, topEave, deep + overhang),
+        onPage(edge, underEave, deep + overhang),
+        onPage(edge, underRidge, deep / 2),
+      ],
+      right,
+      "trim",
+    ),
+  ];
+  const soffit: Face = {
+    ...face(
+      [
+        onPage(end.x, underRidge, deep / 2),
+        onPage(edge, underRidge, deep / 2),
+        onPage(edge, underEave, deep + overhang),
+        onPage(end.x, underEave, deep + overhang),
+      ],
+      unit(0, -1, S),
+      "trim",
+    ),
+    under: true,
+  };
+  return { verges, soffit };
+}
+
+/**
+ * The courses of shingles up a roof's front pitch from its eaves `low` high and `eaveZ` back to
+ * its ridge `high` high, from `left` to `right` along the ground; and the joints between the
+ * shingles along each course, laid out by `rng`.
+ */
+function shingled(
+  left: number,
+  right: number,
+  low: number,
+  high: number,
+  eaveZ: number,
+  rng: Rng,
+): [Path2D, Path2D] {
+  const courses = new Path2D();
+  const joints = new Path2D();
+  const backOf = (y: number): number => (y - low) / S + eaveZ;
+  let below = low;
+  for (let y = low + GRAIN.courses; y < high - 0.05; y += GRAIN.courses) {
+    line(courses, onPage(left, y, backOf(y)), onPage(right, y, backOf(y)));
+    const shift = rng.next() * GRAIN.shingles;
+    for (
+      let x = left + shift;
+      x < right;
+      x += GRAIN.shingles * (0.7 + 0.6 * rng.next())
+    ) {
+      line(joints, onPage(x, below, backOf(below)), onPage(x, y, backOf(y)));
+    }
+    below = y;
+  }
+  return [courses, joints];
+}
+
+function emptyDoors(): Doors {
+  return {
+    wood: new Path2D(),
+    grooves: new Path2D(),
+    rails: new Path2D(),
+    glass: new Path2D(),
+    bars: new Path2D(),
+    iron: new Path2D(),
+    trim: new Path2D(),
+  };
+}
+
+/**
+ * A carriage door from `a` along a wall placed by `on`, `height` tall, standing on the ground: its
+ * casing; its wood and the grooves between its boards; the rail under its windows and the stile
+ * down its middle; the windows across its top, each barred into four panes; the pulls either side
+ * of its middle; and the strap hinges along its outer edges.
+ */
+function carriageDoorIn(
+  into: Doors,
+  on: (u: number, v: number) => Point,
+  a: number,
+  height: number,
+): void {
+  const b = a + GARAGE.doors.width;
+  const middle = (a + b) / 2;
+  const c = CARRIAGE.casing;
+  for (const [u0, v0, u1, v1] of [
+    [a - c, height, b + c, height + c],
+    [a - c, 0, a, height],
+    [b, 0, b + c, height],
+  ] as const) {
+    quadInto(into.trim, box(on, u0, v0, u1, v1));
+  }
+  quadInto(into.wood, box(on, a, 0, b, height));
+  for (let u = a + CARRIAGE.boards; u < b - 0.05; u += CARRIAGE.boards) {
+    line(into.grooves, on(u, 0), on(u, height));
+  }
+  const { count, from, edge, tall, gap, bar } = CARRIAGE.windows;
+  const wide = (b - a - 2 * edge - (count - 1) * gap) / count;
+  const top = height - from;
+  const bottom = top - tall;
+  for (let k = 0; k < count; k += 1) {
+    const u0 = a + edge + k * (wide + gap);
+    const u1 = u0 + wide;
+    const um = (u0 + u1) / 2;
+    const vm = (bottom + top) / 2;
+    quadInto(into.glass, box(on, u0, bottom, u1, top));
+    quadInto(into.bars, box(on, um - bar / 2, bottom, um + bar / 2, top));
+    quadInto(into.bars, box(on, u0, vm - bar / 2, u1, vm + bar / 2));
+  }
+  const railTop = bottom - gap;
+  quadInto(into.rails, box(on, a, railTop - CARRIAGE.rail, b, railTop));
+  quadInto(
+    into.rails,
+    box(
+      on,
+      middle - CARRIAGE.stile / 2,
+      0,
+      middle + CARRIAGE.stile / 2,
+      railTop - CARRIAGE.rail,
+    ),
+  );
+  const { pull, hinge } = CARRIAGE;
+  for (const side of [-1, 1]) {
+    const u = middle + side * pull.apart;
+    quadInto(
+      into.iron,
+      box(
+        on,
+        u - pull.wide / 2,
+        pull.at - pull.tall / 2,
+        u + pull.wide / 2,
+        pull.at + pull.tall / 2,
+      ),
+    );
+  }
+  for (const [edgeAt, inward] of [
+    [a, 1],
+    [b, -1],
+  ] as const) {
+    for (const v of [hinge.from, height - hinge.from]) {
+      strapInto(into.iron, on, edgeAt, v, inward, hinge.long, hinge.deep);
+    }
+  }
+}
+
+/**
+ * An iron strap hinge on a door whose edge is `u` along a wall placed by `on`, `v` up, reaching
+ * `long` in across it toward `inward` and `deep` deep at the edge, tapering to a round end.
+ */
+function strapInto(
+  into: Path2D,
+  on: (u: number, v: number) => Point,
+  u: number,
+  v: number,
+  inward: 1 | -1,
+  long: number,
+  deep: number,
+): void {
+  const end = u + inward * long;
+  quadInto(into, [
+    on(u, v - deep / 2),
+    on(end, v - deep * 0.3),
+    on(end, v + deep * 0.3),
+    on(u, v + deep / 2),
+  ]);
+  quadInto(into, disc(on(end, v), deep * 0.45, 10));
+}
+
+/**
+ * A little round table on the porch at `x` along the ground and `z` back from the front wall,
+ * between two chairs, as the lines of its top, its stem and its foot.
+ */
+function sideTable(
+  into: { thick: Path2D; thin: Path2D },
+  x: number,
+  z: number,
+): void {
+  const p = (dx: number, y: number): Point =>
+    onPage(x + dx, HOUSE.floor + y, z);
+  line(into.thick, p(-0.2, 0.5), p(0.2, 0.5));
+  line(into.thick, p(0, 0.48), p(0, 0.05));
+  line(into.thick, p(-0.14, 0.03), p(0.14, 0.03));
 }
 
 /**
@@ -2187,15 +2846,7 @@ interface GableSpec {
 const VALLEY_STEPS = 12;
 
 /** Builds a gable toward the view and the roof running back from it, in `HOUSE.pitch`. */
-function buildGable(
-  spec: GableSpec,
-  face: (
-    points: Point[],
-    normal: Vec3,
-    paint: PaintName,
-    snowy?: boolean,
-  ) => Face,
-): Gable {
+function buildGable(spec: GableSpec, face: FaceMaker): Gable {
   const { middle: m, half, eaves, base, z, overhang, verge, back } = spec;
   const reach = half + overhang;
   const underEave = eaves - S * overhang;
@@ -2249,17 +2900,20 @@ function buildGable(
       line(lines, onPage(xAt(y), y, front), onPage(xAt(y), y, back(y)));
     }
   }
-  const soffit = face(
-    [
-      onFront(at(under, 0)),
-      onFront(at(under, 1)),
-      onFace(at(under, 1)),
-      onPage(m - half, eaves, z),
-      onPage(m - half, underEave, z),
-    ],
-    unit(S, -1, 0),
-    "trim",
-  );
+  const soffit: Face = {
+    ...face(
+      [
+        onFront(at(under, 0)),
+        onFront(at(under, 1)),
+        onFace(at(under, 1)),
+        onPage(m - half, eaves, z),
+        onPage(m - half, underEave, z),
+      ],
+      unit(S, -1, 0),
+      "trim",
+    ),
+    under: true,
+  };
   const verges = face(
     [...roofline.map(onFront), ...[...under].reverse().map(onFront)],
     unit(0, 0, 1),
@@ -2303,7 +2957,7 @@ function buildGable(
 /**
  * A cedar truss in `gable`: a tie across it `tie` high, a king post from the peak down through the
  * tie to a pointed drop below it, and two struts from the foot of the king post out to the rafters,
- * each timber `thick` thick and cut where it meets the roof; and a black steel plate bolted over the
+ * each timber `thick` thick and cut where it meets the roof; and a black steel strap bolted over the
  * joint at the king post's foot.
  */
 function buildTruss(gable: Gable, tie: number, thick: number): Truss {
@@ -2339,7 +2993,10 @@ function buildTruss(gable: Gable, tie: number, thick: number): Truss {
       }
     });
     const length = Math.hypot(to.x - from.x, to.y - from.y);
-    const across = { x: -(to.y - from.y) / length, y: (to.x - from.x) / length };
+    const across = {
+      x: -(to.y - from.y) / length,
+      y: (to.x - from.x) / length,
+    };
     const grain = new Path2D();
     for (const [offset, wander] of TRUSS.grain) {
       const shift = (o: number): Point => ({
@@ -2408,27 +3065,40 @@ function buildTruss(gable: Gable, tie: number, thick: number): Truss {
     { x: m, y: tip },
     { x: m, y: peak.y },
   );
-  const { plate, bolt } = TRUSS;
-  const pw = w * (0.5 + plate.past);
-  const p0 = low - w * plate.below;
-  const p1 = high + w * plate.above;
-  const inset = w * bolt.inset;
+  // The strap: an upside-down T, along the middle of the tie either side of the king post and up
+  // the middle of the king post, bolted through each timber along its middle line.
+  const { strap } = TRUSS;
+  const mid = low + w / 2;
+  const half = (w * strap.wide) / 2;
+  const along = w * strap.along;
+  const top = high + w * strap.up;
   const on = (u: number, v: number): Point => onPage(u, v, z);
   const bolts = new Path2D();
-  for (const [u, v] of [
-    [m - pw + inset, low + w / 2],
-    [m + pw - inset, low + w / 2],
-    [m - pw + inset, p0 + inset],
-    [m + pw - inset, p0 + inset],
-    [m, p1 - inset],
-    [m, high + inset],
-  ] as const) {
-    quadInto(bolts, disc(on(u, v), w * bolt.radius, 10));
+  const boltAt = (u: number, v: number): void =>
+    quadInto(bolts, disc(on(u, v), w * strap.bolt, 10));
+  boltAt(m, mid);
+  for (const out of strap.alongTie) {
+    boltAt(m - w * out, mid);
+    boltAt(m + w * out, mid);
+  }
+  for (const up of strap.upPost) {
+    boltAt(m, high + w * up);
   }
   return {
     z,
     timbers: [...struts, tieTimber, kingPost],
-    plate: shapeOf(box(on, m - pw, p0, m + pw, p1)),
+    strap: shapeOf(
+      [
+        [m - along, mid - half],
+        [m + along, mid - half],
+        [m + along, mid + half],
+        [m + half, mid + half],
+        [m + half, top],
+        [m - half, top],
+        [m - half, mid + half],
+        [m - along, mid + half],
+      ].map(([u, v]) => on(u ?? 0, v ?? 0)),
+    ),
     bolts,
   };
 }
@@ -2535,6 +3205,8 @@ function emptyOpenings(): Openings {
     sills: new Path2D(),
     cedar: new Path2D(),
     stone: new Path2D(),
+    shutters: new Path2D(),
+    battens: new Path2D(),
     glass: new Path2D(),
     frames: new Path2D(),
     iron: new Path2D(),
@@ -2546,7 +3218,7 @@ function emptyOpenings(): Openings {
  * A window: its middle `u` along the wall and the foot of its opening `sill` high, how wide and
  * tall the opening is; how many sashes stand side by side in it, and how many panes across and up
  * each is barred into, under a transom pane `transom` tall, if any; whether it is set in stone,
- * under a cedar header, or cased in white; and its lamp.
+ * under a cedar header, or cased in white; whether shutters hang either side; and its lamp.
  */
 interface WindowSpec {
   u: number;
@@ -2558,6 +3230,7 @@ interface WindowSpec {
   up: number;
   transom: number;
   stone: boolean;
+  shutters: boolean;
   lamp: { wakes: number; sleeps: number; rises: number };
 }
 
@@ -2611,6 +3284,25 @@ function windowIn(
       into.sills,
       box(on, a - f - past, low - deep - shadow, b + f + past, low - deep),
     );
+  }
+  if (spec.shutters) {
+    const wide = spec.width / 2;
+    for (const [u0, u1] of [
+      [a - f - SHUTTER.gap - wide, a - f - SHUTTER.gap],
+      [b + f + SHUTTER.gap, b + f + SHUTTER.gap + wide],
+    ] as const) {
+      quadInto(into.shutters, box(on, u0, low, u1, high));
+      for (const v of [low + spec.height * 0.16, high - spec.height * 0.16]) {
+        quadInto(
+          into.battens,
+          box(on, u0, v - SHUTTER.batten / 2, u1, v + SHUTTER.batten / 2),
+        );
+      }
+      for (const t of [1 / 3, 2 / 3]) {
+        const u = lerp(u0, u1, t);
+        quadInto(into.battens, box(on, u - 0.006, low, u + 0.006, high));
+      }
+    }
   }
   quadInto(into.glass, box(on, a, low, b, high));
   const frames = new Path2D();
@@ -2845,94 +3537,10 @@ function rockingChair(
 }
 
 /**
- * Builds a plant from `spec`, its leaves, blooms and stems laid out by `rng`: boxwood a dome of
- * close lobes; a hydrangea a looser mound with heads of bloom over it; lavender a low mound under
- * a spray of spikes; and grass a fountain of arching blades.
- */
-function buildPlant(spec: PlantSpec, rng: Rng): Plant {
-  const lobes: Plant["lobes"] = [];
-  const blooms: Plant["blooms"] = [];
-  const stems: Plant["stems"] = [];
-  const dome = (count: number, tall: number, loose: number): void => {
-    lobes.push({ x: 0, y: tall * 0.55, r: 0.62 * tall });
-    for (let i = 0; i < count; i += 1) {
-      const angle = Math.PI * (0.06 + (0.88 * i) / (count - 1));
-      const r = (0.32 + 0.14 * rng.next()) * (1 + loose);
-      lobes.push({
-        x: Math.cos(angle) * (0.95 - r * 0.6),
-        y: Math.max(r * 0.7, Math.sin(angle) * tall * (0.95 - r * 0.4)),
-        r,
-      });
-    }
-  };
-  switch (spec.kind) {
-    case "boxwood":
-      dome(9, 1.15, 0);
-      break;
-    case "hydrangea": {
-      dome(8, 1.25, 0.15);
-      // Heads scattered over the top of the mound, the nearer ones lower down its face.
-      for (let i = 0; i < 9; i += 1) {
-        const angle = Math.PI * lerp(0.14, 0.86, (i + rng.next()) / 9);
-        const out = lerp(0.45, 0.92, rng.next());
-        blooms.push({
-          x: Math.cos(angle) * out,
-          y: Math.sin(angle) * 1.25 * out + 0.12,
-          r: 0.15 + 0.07 * rng.next(),
-        });
-        stems.push({
-          x: Math.cos(angle) * out,
-          y: Math.sin(angle) * 1.2 * out,
-          bow: (rng.next() - 0.5) * 0.2,
-        });
-      }
-      blooms.sort((a, b) => b.y - a.y);
-      break;
-    }
-    case "lavender": {
-      dome(7, 0.75, -0.1);
-      for (let i = 0; i < 22; i += 1) {
-        const lean = (i / 21 - 0.5) * 1.6 + (rng.next() - 0.5) * 0.2;
-        const length = 1.3 + 0.4 * rng.next();
-        stems.push({
-          x: Math.sin(lean) * length * 0.8,
-          y: Math.cos(lean) * length,
-          bow: lean * 0.12,
-        });
-      }
-      break;
-    }
-    case "grass": {
-      for (let i = 0; i < 26; i += 1) {
-        const lean = (i / 25 - 0.5) * 2.2 + (rng.next() - 0.5) * 0.25;
-        const length = 1.5 + 0.6 * rng.next() - 0.4 * Math.abs(lean);
-        stems.push({
-          x: Math.sin(lean) * length,
-          y: Math.cos(lean) * length * 1.1,
-          bow: lean * 0.25,
-        });
-      }
-      break;
-    }
-    default: {
-      const unknown: never = spec.kind;
-      throw new Error(`Unknown plant ${String(unknown)}.`);
-    }
-  }
-  return {
-    kind: spec.kind,
-    foot: onPage(spec.x, 0, spec.z),
-    size: spec.size,
-    lobes,
-    blooms,
-    stems,
-  };
-}
-
-/**
  * The house's outline on the page, as the shapes that stand against the light and that the tree
- * grows short of: the main block under its roof, the wing, the porch, the gable over the steps and
- * the chimney, each sunk a little into the ground.
+ * grows short of: the main block under its roof, the wing, the porch along the front and along the
+ * right end, the gable over the steps, the chimney and the garage standing apart, each sunk a little
+ * into the ground.
  */
 const OUTLINES: readonly (readonly Point[])[] = [
   [
@@ -2974,10 +3582,18 @@ const OUTLINES: readonly (readonly Point[])[] = [
   ],
   [
     onPage(WR, FOOT, POST_Z - PORCH.pier.wide / 2),
-    onPage(MR + PORCH.past, FOOT, POST_Z - PORCH.pier.wide / 2),
-    onPage(MR + PORCH.past, porchTop(OUT), OUT),
-    onPage(MR + PORCH.past, porchTop(0), 0),
+    onPage(PX, FOOT, POST_Z - PORCH.pier.wide / 2),
+    onPage(PX, porchTop(OUT), OUT),
+    onPage(MR, porchTop(0), 0),
     onPage(WR, porchTop(0), 0),
+  ],
+  [
+    onPage(PX, FOOT, POST_Z - PORCH.pier.wide / 2),
+    onPage(PX, FOOT, PZ),
+    onPage(PX, sideTop(PX), PZ),
+    onPage(MR, sideTop(MR), PZ),
+    onPage(MR, sideTop(MR), 0),
+    onPage(PX, sideTop(PX), OUT),
   ],
   [
     onPage(
@@ -3006,8 +3622,20 @@ const OUTLINES: readonly (readonly Point[])[] = [
     onPage(CX0 - CHIMNEY.cap.past, mainTop(CZ0), CZ0),
     onPage(CX1 + CHIMNEY.cap.past, mainTop(CZ0), CZ0),
     onPage(CX1 + CHIMNEY.cap.past, mainTop(CZ1), CZ1),
-    onPage(CX1 + CHIMNEY.cap.past, FLUE.y + CHIMNEY.cap.lift, CZ1),
-    onPage(CX0 - CHIMNEY.cap.past, FLUE.y + CHIMNEY.cap.lift, CZ0),
+    onPage(CX1 + CHIMNEY.cap.past, SMOKE_FROM.y + CHIMNEY.cap.lift, CZ1),
+    onPage(CX0 - CHIMNEY.cap.past, SMOKE_FROM.y + CHIMNEY.cap.lift, CZ0),
+  ],
+  [
+    onPage(GL, FOOT, 0),
+    onPage(GR, FOOT, GD),
+    onPage(GR, GARAGE_EAVE_UNDER, GD),
+    onPage(GR + GARAGE.verge, GARAGE_EAVE_UNDER, GD + GARAGE.overhang),
+    onPage(GR + GARAGE.verge, GARAGE_EAVE_TOP, GD + GARAGE.overhang),
+    onPage(GR + GARAGE.verge, GARAGE_RIDGE_TOP, GD / 2),
+    onPage(GL - GARAGE.verge, GARAGE_RIDGE_TOP, GD / 2),
+    onPage(GL - GARAGE.verge, GARAGE_EAVE_TOP, -GARAGE.overhang),
+    onPage(GL - GARAGE.verge, GARAGE_EAVE_UNDER, -GARAGE.overhang),
+    onPage(GL, GARAGE_EAVE_UNDER, 0),
   ],
 ];
 
@@ -3016,17 +3644,18 @@ const OUTLINES: readonly (readonly Point[])[] = [
  * meets the farmhouse, in meters: 0 from inside it, and Infinity if it misses.
  */
 export function farmhouseAhead(x: number, y: number, heading: number): number {
-  return aheadOf(OUTLINES, x, y, heading);
+  return aheadOf(OUTLINES, x, y - GROUND, heading);
 }
 
 /** Where the farmhouse's walls stand on the page, in meters along the ground. */
 export function farmhouseWalls(): { left: number; right: number } {
-  return { left: onPage(WL, 0, OUT).x, right: onPage(MR, 0, MD).x };
+  return { left: GL, right: onPage(PX, 0, PZ).x };
 }
 
 /** Height of the top of the farmhouse above `x`, in meters: its roof, or 0 beside it. */
 export function farmhouseTopAt(x: number): number {
-  return topOf(OUTLINES, x);
+  const top = topOf(OUTLINES, x);
+  return top > 0 ? top + GROUND : 0;
 }
 
 let shape: Path2D | undefined;
@@ -3040,6 +3669,6 @@ export function farmhouseShape(world: DOMMatrix): Path2D {
     }
   }
   const placed = new Path2D();
-  placed.addPath(shape, world);
+  placed.addPath(shape, world.translate(0, GROUND));
   return placed;
 }

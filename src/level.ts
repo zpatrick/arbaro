@@ -151,34 +151,40 @@ const MEADOW: Level = {
 };
 
 /**
- * The farm's land: a few long, gentle swells, as the meadow's, each with its height, its length and
- * where it starts along the land; level from `yard.from` to `yard.to`, where the farmhouse, the
- * tree and the barn stand, the swells easing in over `ease` meters either side. All in meters.
+ * The farm's land: level where the tree and the barn stand, up to `yard`, and beyond it a few long,
+ * gentle swells, as the meadow's, each with its height, its length and where it starts along the
+ * land, easing in over `ease` meters; and to the left the rise the farmhouse stands on, level and
+ * `rise.height` high from the land's end to `rise.top`, sloping gently down to the yard at
+ * `rise.foot`. All in meters.
  */
 const FARM_LAND = {
   swells: [
     { height: 0.7, length: 48, phase: -2.094 },
     { height: 0.35, length: 105, phase: 0 },
   ],
-  yard: { from: -25, to: 13 },
+  yard: 13,
   ease: 7,
+  rise: { height: 2, top: -19, foot: -6 },
 } as const;
 
 /** Height of the farm's land at `x`. */
 function farmLand(x: number): number {
-  const away = Math.max(0, FARM_LAND.yard.from - x, x - FARM_LAND.yard.to);
+  const { rise } = FARM_LAND;
   let height = 0;
   for (const { height: swell, length, phase } of FARM_LAND.swells) {
     height += swell * Math.sin((2 * Math.PI * x) / length + phase);
   }
-  return height * smoothstep(0, FARM_LAND.ease, away);
+  return (
+    height * smoothstep(0, FARM_LAND.ease, x - FARM_LAND.yard) +
+    rise.height * (1 - smoothstep(rise.top, rise.foot, x))
+  );
 }
 
 const FARM_LEVEL: Level = {
   id: "farm",
   name: "Farm",
   description:
-    "Long, gentle swells of farmland, the farmhouse to the left of the tree and the barn to its right, and a rail fence along the rise beyond the barn. Bears come from either side.",
+    "Long, gentle swells of farmland, the farmhouse on a rise to the left of the tree and the barn to its right, and a rail fence along the rise beyond the barn. Bears come from either side.",
   groundAt: farmLand,
   barn: true,
   farmhouse: true,
@@ -191,16 +197,16 @@ const FARM_LEVEL: Level = {
     gate: 4,
   },
   grass: [
-    { kind: "wildflower", from: -66, to: -28 },
+    { kind: "wildflower", from: -75, to: -28 },
     { kind: "meadow", from: -28, to: 11.5 },
     { kind: "wheat", from: 11.5, to: 38 },
     { kind: "wildflower", from: 38, to: 76 },
   ],
-  edges: { left: -66, right: 76, top: 55, bottom: -8 },
+  edges: { left: -75, right: 76, top: 55, bottom: -8 },
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
-  lead: 22,
+  lead: 36,
   reach: 14,
   shore: undefined,
 };

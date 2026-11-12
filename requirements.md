@@ -498,24 +498,30 @@ Three kinds of grass, each after its photo:
 - [x] A weathervane stands on the barn's cupola: a rooster on an arrow over the arms of a compass
       lettered N, E, S and W. It swings round to point the way the wind blows, overshooting a little,
       wanders in light air, and holds where it was when the air is calm.
-- [x] A white farmhouse stands on the farm to the left of the tree, true to size (its front 11.8 m
-      long, its ridge at 7.5 m), after the modern farmhouses of the references, and drawn as the
-      barn is: its front toward the view and its right gable end running back to the right.
-      Board-and-batten walls under steep charcoal shingle roofs; a stone wing at its left end,
-      gabled toward the view, with a great black-framed window under a cedar header; a deep porch
-      along the rest of its front on cedar posts, stone piers and a cedar beam, under a standing-seam
-      metal roof, with a gable over its stone steps; cedar trusses in both gables; two dormers in the
-      roof; a stone chimney by the ridge under a black cap; black-framed windows and glass double
-      doors with a lantern either side; two rocking chairs on the porch; and boxwood, lavender,
-      hydrangeas and ornamental grass along its foot, each turning with the seasons.
+- [x] A white farmhouse stands well to the left of the tree on the farm, true to size (its main
+      block 19 m along the front, its ridge at 7.5 m), after the modern farmhouses of the
+      references, and drawn as the barn is: its front toward the view and its right gable end
+      running back to the right. Board-and-batten walls under steep charcoal shingle roofs; a stone
+      wing gabled toward the view, with a great black-framed window under a cedar header, and a
+      boarded stretch beside it with a shuttered window; a deep porch along the front and round the
+      right end on cedar posts, stone piers and cedar beams, under a standing-seam metal roof, with
+      a gable over its stone steps; cedar trusses standing out from both gables, beveled, grained
+      and casting their shadows on the boards, with a drop under the king post and a steel T-strap
+      bolted over the joint; three dormers in the roof; a stone chimney by the ridge under a black
+      cap; black-framed windows and glass double doors with a lantern either side; and rocking
+      chairs on the porch, two by a little table before the living room's shuttered window. A
+      three-car garage stands apart to its left under a lower roof, with stained carriage doors
+      windowed across the top, stone at the foot of the walls between them, a lantern over each of
+      those walls, a gable over the middle door, and a window to the workshop in its gable end.
 - [x] The farmhouse is lit as the barn is: faces turned from the light are toned and hatched, the
-      roofs' edges throw their shadows down the gables, and the porch throws its shadow on the wall
-      behind it, the wall in shade at midday and the light reaching in under the beam, striped by
-      the posts, as the sun sinks. Its rooms light one by one as the evening comes on, downstairs
-      first and the bedrooms in the dormers later, and most go dark late in the night, a few coming
-      on again before dawn; the lanterns by the door burn all night, pooling warm light on the
-      wall. Snow whitens its roofs and lies along its ridge, smoke rises from its chimney once the
-      cold comes on and bends with the wind, and it stands against the rays of the sun and the moon.
+      undersides of the roofs shaded evenly, the roofs' edges and eaves throw their shadows down the
+      walls, and the porch throws its shadow on the walls behind it, in shade at midday and the light
+      reaching in under the beam, striped by the posts, as the sun sinks. Its rooms light one by one
+      as the evening comes on, downstairs first and the bedrooms in the dormers later, and most go
+      dark late in the night, a few coming on again before dawn; the lanterns by the door and on the
+      garage burn all night, pooling warm light on the walls. Snow whitens its roofs and lies along
+      its ridges, smoke rises from its chimney once the cold comes on and bends with the wind, and it
+      stands against the rays of the sun and the moon.
 - [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
       by the wind, and stop at the ground.
 - [x] Every chunk of falling snow is a body of its own, carried by the wind, and settles on the
