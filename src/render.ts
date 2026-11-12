@@ -41,7 +41,7 @@ import {
 import type { Level } from "./level";
 import type { Sea } from "./sea";
 import { drawFarSea, drawSea, drawSpray } from "./sea-art";
-import type { Aim, Pick, Tree } from "./tree";
+import type { Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import { Village } from "./village";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
@@ -66,8 +66,11 @@ const FILLET_ROUNDNESS = 0.55;
 const TIP_RING_PX = 9;
 /** Length of the line previewing where a fork will grow, in CSS pixels. */
 const FORK_PREVIEW_PX = 22;
-/** The see-through wood previewing where a dragged tip would grow: its width in CSS pixels, and how strongly it shows. */
-const AIM_PREVIEW = { px: 2.4, alpha: 0.4 } as const;
+/**
+ * The string from a dragged tip to the pointer: how strongly it shows, its dashes and gaps, and the
+ * radius of the knot at the pointer, in CSS pixels.
+ */
+const PULL = { alpha: 0.7, dash: [5, 4], knotPx: 3.5 } as const;
 /** Strain shows once the wood carries this fraction of what it can take. */
 const STRAIN_SHOWN = 0.3;
 /** Width of the strain vein at the breaking point, as a fraction of the limb's width. */
@@ -144,6 +147,13 @@ const SNOW_SINK = 0.03;
 /** Thinnest lying snow drawn, in CSS pixels. */
 const SNOW_THINNEST_PX = 0.3;
 
+/** A limb whose tip is being dragged, and where the pointer pulling it is, in CSS pixels. */
+export interface Pull {
+  limb: Limb;
+  x: number;
+  y: number;
+}
+
 /** Everything drawn in one frame. */
 export interface Scene {
   /** Where the tree grows: the lie of its ground, and whether the barn and the farmhouse stand there. */
@@ -174,8 +184,8 @@ export interface Scene {
   /** Pieces that broke or were cut off, falling or lying on the ground. */
   debris: readonly Debris[];
   hover: Pick | undefined;
-  /** In flow mode, while a tip is dragged somewhere it could grow, the way it would get there. */
-  aim: Aim | undefined;
+  /** In flow mode, the tip being dragged, if any, and the pointer pulling it. */
+  pull: Pull | undefined;
   /** Whether to mark how close each joint is to breaking. */
   strain: boolean;
   /** Flowers on the tree, then those that came off it. */
@@ -625,6 +635,11 @@ export class Renderer {
     );
     if (scene.tree !== undefined) {
       if (scene.flow !== undefined) {
+        // The selected limb is lit as an open spout's branch is.
+        const selected = scene.tree.active;
+        if (selected !== undefined && selected !== scene.flow.openSpout) {
+          this.drawBranchFade(camera, selected);
+        }
         if (scene.flow.openSpout !== undefined) {
           this.drawBranchFade(camera, scene.flow.openSpout);
         }
@@ -635,10 +650,15 @@ export class Renderer {
           scene.flow.openSpout,
         );
       }
-      if (scene.aim !== undefined) {
-        this.drawAim(camera, scene.aim);
+      this.drawGuides(
+        camera,
+        scene.tree,
+        scene.hover,
+        scene.flow !== undefined,
+      );
+      if (scene.pull !== undefined) {
+        this.drawPull(camera, scene.pull);
       }
-      this.drawGuides(camera, scene.tree, scene.hover);
     }
     if (scene.flowerHover?.ghost !== undefined) {
       const { ghost } = scene.flowerHover;
@@ -1017,16 +1037,15 @@ export class Renderer {
   }
 
   /**
-   * A soft patch of light travels from the base of the branch an open spout feeds out to its
-   * tip, then starts again. It fills the wood and feathers out past it, fading away to either
-   * side of its heart, so it reads as a wash of light rather than a line.
+   * A soft patch of light travels from the base of `limb` out to its tip, then starts again: the
+   * branch an open spout feeds, or the selected limb. It fills the wood and feathers out past it,
+   * fading away to either side of its heart, so it reads as a wash of light rather than a line.
    */
   private drawBranchFade(camera: Camera, limb: Limb): void {
     const fork = limb.attachment;
-    invariant(fork !== undefined, "A spout feeds an offshoot.");
-    // The branch's base sits inside its parent. Start where it comes out, so the light is the
+    // An offshoot's base sits inside its parent. Start where it comes out, so the light is the
     // branch and not a bite out of the wood it grows from.
-    const buried = fork.parent.radiusAt(fork.s);
+    const buried = fork === undefined ? 0 : fork.parent.radiusAt(fork.s);
     const start = buried < limb.length * 0.85 ? buried : 0;
     const span = limb.length - start;
     if (span <= 0) {
@@ -1311,39 +1330,22 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Draws the wood a dragged tip would grow, see-through, out to where the pointer is. */
-  private drawAim(camera: Camera, aim: Aim): void {
-    const ctx = this.ctx;
-    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
-    ctx.lineWidth = AIM_PREVIEW.px;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = this.inkColor;
-    ctx.globalAlpha = AIM_PREVIEW.alpha;
-    ctx.beginPath();
-    for (const [i, p] of aim.path.entries()) {
-      const at = camera.toScreen(p.x, p.y);
-      if (i === 0) {
-        ctx.moveTo(at.x, at.y);
-      } else {
-        ctx.lineTo(at.x, at.y);
-      }
-    }
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  /** Marks the limb being grown, and previews what a click would do. */
+  /**
+   * Marks the selected limb, and previews what a click would do. In steer mode a lone trunk goes
+   * unmarked, as it is the only limb to grow; in flow mode a selected limb is always marked, as
+   * nothing is selected until a click chooses it.
+   */
   private drawGuides(
     camera: Camera,
     tree: Tree,
     hover: Pick | undefined,
+    flowing: boolean,
   ): void {
     const ctx = this.ctx;
     ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
     ctx.lineWidth = 1.25;
     ctx.lineCap = "round";
-    if (tree.limbs.length > 1) {
+    if (tree.active !== undefined && (flowing || tree.limbs.length > 1)) {
       const tip = tree.active.tip;
       this.ring(camera.toScreen(tip.x, tip.y), 0.55);
     }
@@ -1378,6 +1380,30 @@ export class Renderer {
     ctx.fillStyle = PALETTE.paper;
     ctx.fill();
     ctx.stroke();
+  }
+
+  /** Strings a dragged tip to the pointer pulling it, with a knot where the pointer holds it. */
+  private drawPull(camera: Camera, pull: Pull): void {
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    const tip = pull.limb.tip;
+    const from = camera.toScreen(tip.x, tip.y);
+    ctx.strokeStyle = this.guideColor;
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = PULL.alpha;
+    ctx.setLineDash(PULL.dash);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(pull.x, pull.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(pull.x, pull.y, PULL.knotPx, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.paper;
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   private ring(center: Vec, alpha: number, radius = TIP_RING_PX): void {

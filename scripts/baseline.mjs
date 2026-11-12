@@ -45,11 +45,11 @@ const FLOW = [
   { growth: { mode: "flow", flowRate: 1 } },
   still(14),
   { fork: 0, at: 0.55, side: 1 },
-  { aim: 1, dx: -1.5, dy: 1.5 },
+  { stake: 1, steer: -0.3 },
   still(13),
   { select: 0 },
   { fork: 0, at: 0.8, side: -1 },
-  { aim: 2, dx: 1.5, dy: 1.5 },
+  { stake: 2, steer: 0.4 },
   still(15),
   { spout: 2, share: 0.3 },
   still(14),
@@ -70,8 +70,8 @@ const flowering = (settings, time = {}) => [
 
 /**
  * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
- * fraction of its length, selects a limb, stakes limb `aim` to grow through the point `dx`, `dy`
- * from its tip, prunes limb `prune` at a fraction of its length, sets the
+ * fraction of its length, selects a limb, stakes limb `stake` at a steering from -1 to 1, prunes
+ * limb `prune` at a fraction of its length, sets the
  * wind, sets how much the tree can take, changes the flowers, or grows a flower by hand on limb
  * `flower` at a fraction of its length, all through the dev-only debug hook on a freshly loaded
  * page so every scene starts from the same seed. `crop` frames a close-up around the trunk's
@@ -286,8 +286,8 @@ try {
           debug.fork(action.fork, action.at, action.side);
         } else if (action.select !== undefined) {
           debug.select(action.select);
-        } else if (action.aim !== undefined) {
-          debug.aim(action.aim, action.dx, action.dy);
+        } else if (action.stake !== undefined) {
+          debug.stake(action.stake, action.steer);
         } else if (action.prune !== undefined) {
           debug.prune(action.prune, action.at);
         } else if (action.strength !== undefined) {
@@ -327,7 +327,7 @@ try {
       const forked = tree.limbs[1]?.attachment;
       return {
         base: screen(tree.root.points[0]),
-        tip: screen(tree.active.tip),
+        tip: tree.active === undefined ? undefined : screen(tree.active.tip),
         fork:
           forked === undefined
             ? undefined

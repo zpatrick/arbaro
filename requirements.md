@@ -110,20 +110,26 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A branch starts at a spout. Click it to set how much of the flow goes into the branch versus
       on up the trunk (50%, for example). Stems have their own spouts with the same split.
 - [x] A spout can give its branch everything, turn it off, or anything between.
+- [x] The spout's popover opens beside it and can be dragged anywhere by its background, where it
+      then stays. A click anywhere off it closes it.
 - [x] The flow shows as dots of energy that start large, split at each spout by its share, and
       travel out to the tips, where whatever arrives grows the tip in the direction it is steered.
-- [x] In flow mode, the arrow keys do nothing; a limb is steered by dragging from its tip. Wherever
-      the pointer is, a see-through preview shows the curve the limb would grow along to bring its
-      tip there, bending no tighter than the wood can turn and leaning no further than its species
-      allows. Where the tip could never get, behind it, too sharp a turn away, past its lean, or
-      through the ground, the barn, the fence or the level's edge, nothing shows, and letting go
-      there does nothing.
+- [x] In flow mode, the arrow keys do nothing; a limb is steered by dragging from its tip. Only
+      how far the pointer is out to the limb's left or right, across the way it pointed when
+      pressed, counts: the further out, the harder it steers, up to as hard as an arrow key. The
+      limb bends to it as it is dragged, just as a held arrow key bends it in steer-and-grow mode.
+      While it is dragged, a dashed string runs from its tip to the pointer pulling it.
 - [x] Letting go stakes the limb: it grows on as if up and that much left or right were held for
-      good, on past the point and still bending until it leans as far as its species allows,
-      instead of drifting back toward its natural shape. Only new growth follows the stake; the
-      wood already grown keeps its shape. It changes only when the tip is dragged again.
+      good, still bending until it leans as far as its species allows, instead of drifting back
+      toward its natural shape. Let go with the pointer in line with the limb and it grows on
+      straight. It changes only when the tip is dragged again.
 - [x] Staking applies only in flow mode. In steer-and-grow mode, the arrow keys steer the selected
       limb and an unsteered tip drifts back toward its natural shape, as before.
+- [x] In flow mode, the selected limb is lit by the same soft light traveling along it that lights
+      an open spout's branch, as well as the ring at its tip. A tree starts with no limb selected,
+      so the first click on a limb selects it and the next forks it, and a click off the tree
+      leaves no limb selected again. In steer-and-grow mode a limb stays selected, as it is the one
+      the up key grows.
 - [x] How fast nutrients rise from the roots can be set in the debug panel.
 - _Open._ Water is the currency the flow is made of.
 - _Open._ A spout setting that holds its branch steady, taking in just what it loses to decay.

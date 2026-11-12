@@ -46,15 +46,15 @@ export const HABITS: Readonly<Record<Species, Habit>> = {
   cherry: {
     wander: 0.07,
     uprightPull: 0.12,
-    freeLean: 1.0,
-    // A little past level, so a limb can droop.
-    maxLean: 1.75,
+    freeLean: 1.35,
+    // Past level, so a limb can be bent down to droop.
+    maxLean: 2.0,
     weep: undefined,
   },
   willow: {
     wander: 0.12,
     uprightPull: 0.07,
-    freeLean: 1.3,
+    freeLean: 1.65,
     // Far enough past level that a branch can be steered down to weep.
     maxLean: 2.7,
     weep: { arch: 0.3, most: 2.5 },

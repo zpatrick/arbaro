@@ -189,6 +189,11 @@ export class Limb {
   private grown = 0;
   private speed = 0;
   private steering = 0;
+  /**
+   * Whether the steering was held at the last update, as a stake holds it, so that even none keeps
+   * the tip growing straight instead of drifting back toward its natural shape.
+   */
+  private held = false;
   /** Progress through the meander, advanced in meanders grown rather than raw length. */
   private wanderPhase = 0;
 
@@ -313,103 +318,40 @@ export class Limb {
   }
 
   /**
-   * Advances growth and steering. `steer` is -1 for left, 1 for right and 0 to let the tip drift
-   * back upright. The tip eases toward growing at `speed`. `size` scales turning to the tree's
-   * current scale, and `room` is how much further the tip may grow. Returns true if the shape
-   * changed.
+   * Advances growth and steering. `steer` is how hard the tip is steered, from -1 for left to 1
+   * for right, held there; held at 0 it grows on straight. Undefined lets the tip drift back
+   * toward its natural shape. The tip eases toward growing at `speed`. `size` scales turning to
+   * the tree's current scale, and `room` is how much further the tip may grow. Returns true if the
+   * shape changed.
    */
   update(
     dt: number,
-    steer: number,
+    steer: number | undefined,
     speed: number,
     size: number,
     room: number,
   ): boolean {
-    this.steering = approach(this.steering, steer, 0.1, dt);
-    if (steer === 0 && Math.abs(this.steering) < 0.01) {
-      this.steering = 0;
-    }
-
-    const grown = this.advance(dt, speed, room);
-    if (grown > 0) {
-      this.extend(grown);
-      this.wanderPhase += grown / (LIMB.wanderLength * size);
-    }
-    if (grown > 0 || this.steering !== 0) {
-      this.bendTip(dt, grown > 0, size);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Advances growth held at the limb's stake: new wood turns as the stake asks, and the wood
-   * already grown keeps its shape. `speed`, `size` and `room` are as for `update`. Returns true if
-   * the shape changed.
-   */
-  growStaked(dt: number, speed: number, size: number, room: number): boolean {
-    invariant(
-      this.stake !== undefined,
-      "Only a staked limb grows by its stake.",
-    );
-    const grown = this.advance(dt, speed, room);
-    if (grown <= 0) {
-      return false;
-    }
-    this.extend(
-      grown,
-      this.steeredCurvature(this.stake, this.restTip.heading - UPRIGHT, size),
-    );
-    return true;
-  }
-
-  /**
-   * The centerline, in the grown shape, that the tip would grow along over the next `length` world
-   * units if the limb were staked at `stake`: out to the end of the segment it is growing, then
-   * turning as the stake asks. `reach` is how far the tip is from the ground along the wood, which
-   * sets the scale it turns at.
-   */
-  stakedPath(stake: number, reach: number, length: number): LimbPoint[] {
-    const firstBendable = Math.ceil(this.straightBase / SEGMENT_LENGTH);
-    const growing = at(this.segments, this.segments.length - 1);
-    let index = this.segments.length - 1;
-    let room = SEGMENT_LENGTH - growing.length;
-    let curvature = growing.curvature;
-    const tip = this.restTip;
-    let { x, y, heading } = tip;
-    let travelled = 0;
-    const points: LimbPoint[] = [{ x, y, heading, s: tip.s }];
-    while (length - travelled > 1e-9) {
-      if (room <= 1e-12) {
-        index += 1;
-        room = SEGMENT_LENGTH;
-        const size = Math.max(1, (reach + travelled) / LIMB.steadyLength);
-        curvature = this.steeredCurvature(stake, heading - UPRIGHT, size);
-      }
-      const step = Math.min(room, length - travelled);
-      const turn = index < firstBendable ? 0 : curvature * step;
-      const mid = heading + turn / 2;
-      x += Math.cos(mid) * step;
-      y += Math.sin(mid) * step;
-      heading += turn;
-      room -= step;
-      travelled += step;
-      points.push({ x, y, heading, s: tip.s + travelled });
-    }
-    return points;
-  }
-
-  /**
-   * Eases the tip toward growing at `speed`, or to a stop once it has no `room` left, and returns
-   * how far it grows over `dt`.
-   */
-  private advance(dt: number, speed: number, room: number): number {
     const canGrow = speed > 0 && room > 0;
     this.speed = approach(this.speed, canGrow ? speed : 0, 0.2, dt);
     if (!canGrow && this.speed < 0.005) {
       this.speed = 0;
     }
-    return Math.min(this.speed * dt, Math.max(0, room));
+    this.held = steer !== undefined;
+    this.steering = approach(this.steering, steer ?? 0, 0.1, dt);
+    if (steer === undefined && Math.abs(this.steering) < 0.01) {
+      this.steering = 0;
+    }
+
+    const grown = Math.min(this.speed * dt, Math.max(0, room));
+    if (grown > 0) {
+      this.extend(grown);
+      this.wanderPhase += grown / (LIMB.wanderLength * size);
+    }
+    if (grown > 0 || this.held || this.steering !== 0) {
+      this.bendTip(dt, grown > 0, size);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -594,12 +536,21 @@ export class Limb {
     const { habit } = this;
     const lean = this.restTip.heading - UPRIGHT;
     let target: number;
-    if (this.steering !== 0) {
-      target = this.steeredCurvature(
-        this.steering * (growing ? 1 : LIMB.idleBend),
-        lean,
-        size,
-      );
+    if (this.held || this.steering !== 0) {
+      target =
+        (-this.steering * LIMB.maxCurvature * (growing ? 1 : LIMB.idleBend)) /
+        size;
+      if (target * lean > 0) {
+        const free = clamp(
+          (habit.freeLean - Math.abs(lean)) / LIMB.leanEase,
+          0,
+          1,
+        );
+        const slow =
+          LIMB.slowSteer *
+          clamp((habit.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
+        target *= Math.max(free, slow);
+      }
     } else {
       const meander = habit.wander * valueNoise(this.wanderPhase, this.seed);
       const { weep } = habit;
@@ -628,42 +579,13 @@ export class Limb {
     }
   }
 
-  /**
-   * Turn rate, in radians per world unit, that steering `steer` asks of the tip while it leans
-   * `lean` radians from vertical, at scale `size`. Steering it further over eases off toward its
-   * habit's lean limits.
-   */
-  private steeredCurvature(steer: number, lean: number, size: number): number {
-    const { habit } = this;
-    let curvature = (-steer * LIMB.maxCurvature) / size;
-    if (curvature * lean > 0) {
-      const free = clamp(
-        (habit.freeLean - Math.abs(lean)) / LIMB.leanEase,
-        0,
-        1,
-      );
-      const slow =
-        LIMB.slowSteer *
-        clamp((habit.maxLean - Math.abs(lean)) / LIMB.leanEase, 0, 1);
-      curvature *= Math.max(free, slow);
-    }
-    return curvature;
-  }
-
-  /**
-   * Lengthens the tip by `amount`. Each new segment turns at `curvature`, or carries on at the
-   * tip's own if none is given.
-   */
-  private extend(amount: number, curvature?: number): void {
+  private extend(amount: number): void {
     let remaining = amount;
     while (remaining > 1e-12) {
       const last = at(this.segments, this.segments.length - 1);
       const room = SEGMENT_LENGTH - last.length;
       if (room <= 1e-12) {
-        this.segments.push({
-          length: 0,
-          curvature: curvature ?? last.curvature,
-        });
+        this.segments.push({ length: 0, curvature: last.curvature });
         continue;
       }
       const added = Math.min(room, remaining);
