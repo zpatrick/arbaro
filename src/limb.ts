@@ -321,7 +321,9 @@ export class Limb {
    * Advances growth and steering. `steer` is how hard the tip is steered, from -1 for left to 1
    * for right, held there; held at 0 it grows on straight. Undefined lets the tip drift back
    * toward its natural shape. The tip eases toward growing at `speed`. `size` scales turning to
-   * the tree's current scale, and `room` is how much further the tip may grow. Returns true if the
+   * the tree's current scale, and `room` is how much further the tip may grow. While the limb is
+   * not growing, held steering leans its soft tip part of the way, as a held arrow key does,
+   * unless `bendIdle` is false, as for a stake, which holds the wood as it is. Returns true if the
    * shape changed.
    */
   update(
@@ -330,6 +332,7 @@ export class Limb {
     speed: number,
     size: number,
     room: number,
+    bendIdle = true,
   ): boolean {
     const canGrow = speed > 0 && room > 0;
     this.speed = approach(this.speed, canGrow ? speed : 0, 0.2, dt);
@@ -347,7 +350,7 @@ export class Limb {
       this.extend(grown);
       this.wanderPhase += grown / (LIMB.wanderLength * size);
     }
-    if (grown > 0 || this.held || this.steering !== 0) {
+    if (grown > 0 || (bendIdle && (this.held || this.steering !== 0))) {
       this.bendTip(dt, grown > 0, size);
       return true;
     }

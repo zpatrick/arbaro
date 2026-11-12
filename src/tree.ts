@@ -314,12 +314,14 @@ export class Tree {
         const reach = this.reach(limb);
         const size = Math.max(1, reach / LIMB.steadyLength);
         const speed = growth.flowRate * share * FLOW_GROWTH;
+        // A stake bends a limb only as it grows: one the flow no longer reaches keeps its shape.
         const moved = limb.update(
           dt,
           limb.stake,
           speed,
           size,
           Math.min(LIMB.maxReach - reach, roomAhead(limb, this.level).room),
+          false,
         );
         changed = changed || moved;
       }
