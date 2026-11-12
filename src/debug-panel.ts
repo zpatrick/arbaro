@@ -151,7 +151,7 @@ const GROWTH_MODES: readonly {
     id: "flow",
     name: "Flow",
     description:
-      "Nutrients rise from the roots and grow every tip at once. Each fork is a spout that splits the flow between the branch and the limb it grows from; click a spout to set its share. Left and right still steer the selected limb.",
+      "Nutrients rise from the roots and grow every tip at once. Each fork is a spout that splits the flow between the branch and the limb it grows from; click a spout to set its share. Drag a limb's tip to steer it; it keeps bending that way as it grows.",
   },
 ];
 

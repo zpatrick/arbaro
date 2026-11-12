@@ -2,7 +2,7 @@ import { barnAhead } from "./barn";
 import { fenceAhead } from "./fence";
 import type { Contact, Piece } from "./debris";
 import type { Level } from "./level";
-import { type Controls, LIMB, Limb, UPRIGHT } from "./limb";
+import { type Controls, LIMB, Limb, type LimbPoint, UPRIGHT } from "./limb";
 import {
   type Failure,
   type Load,
@@ -103,10 +103,24 @@ function roomAhead(
   level: Level,
 ): { room: number; obstacle: Obstacle } {
   const tip = limb.restTip;
-  const ground = groundAhead(level, tip.x, tip.y, tip.heading);
-  const barn = level.barn ? barnAhead(tip.x, tip.y, tip.heading) : Infinity;
-  const fence = fenceAhead(level, tip.x, tip.y, tip.heading);
-  const edge = edgeAhead(level, tip.x, tip.y, tip.heading);
+  return roomFrom(level, tip.x, tip.y, tip.heading);
+}
+
+/**
+ * How far a tip at (x, y), heading `heading` radians counterclockwise from +x, may grow before it
+ * comes within `CLEARANCE` of `level`'s ground, its barn, its fence or its edge, and which of them
+ * it would meet first.
+ */
+function roomFrom(
+  level: Level,
+  x: number,
+  y: number,
+  heading: number,
+): { room: number; obstacle: Obstacle } {
+  const ground = groundAhead(level, x, y, heading);
+  const barn = level.barn ? barnAhead(x, y, heading) : Infinity;
+  const fence = fenceAhead(level, x, y, heading);
+  const edge = edgeAhead(level, x, y, heading);
   const nearest = Math.min(ground, barn, fence, edge);
   return {
     room: Math.max(0, nearest - CLEARANCE),
@@ -199,6 +213,74 @@ function forkedAt(offshoot: Limb): number {
   return offshoot.attachment.s;
 }
 
+/**
+ * Stakes tried, evenly from hard left to hard right, when looking for the one that grows a tip
+ * through a point, before narrowing in on it.
+ */
+const AIM_TRIES = 41;
+/** Halvings that narrow a stake down once a try on either side of the point has been found. */
+const AIM_HALVINGS = 30;
+/** Furthest a tip may pass from the point it is aimed at, in world units. */
+const AIM_TOLERANCE = 1e-3;
+
+/** A stake that grows a limb's tip through a chosen point, and the way the tip would go there. */
+export interface Aim {
+  /** The steering to stake the limb at, from -1 for left to 1 for right. */
+  stake: number;
+  /** The centerline the tip would grow along to reach the point, as the limb is drawn now. */
+  path: { x: number; y: number }[];
+}
+
+/** Where `path` passes closest to `point`, and which side of it the point lies on. */
+interface Nearest {
+  /** Distance from the path to the point: positive with the point to the left of the path. */
+  offset: number;
+  /** How far along the path from its start. */
+  along: number;
+  /** The segment of the path it falls in, and how far through it. */
+  index: number;
+  t: number;
+}
+
+function nearestOn(
+  path: readonly LimbPoint[],
+  point: { x: number; y: number },
+): Nearest {
+  let best: (Nearest & { distance: number }) | undefined;
+  let along = 0;
+  for (let i = 0; i + 1 < path.length; i += 1) {
+    const a = at(path, i);
+    const b = at(path, i + 1);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    const t =
+      length > 0
+        ? clamp(
+            ((point.x - a.x) * dx + (point.y - a.y) * dy) / (length * length),
+            0,
+            1,
+          )
+        : 0;
+    const px = a.x + dx * t;
+    const py = a.y + dy * t;
+    const distance = Math.hypot(point.x - px, point.y - py);
+    if (best === undefined || distance < best.distance) {
+      const side = dx * (point.y - py) - dy * (point.x - px) >= 0 ? 1 : -1;
+      best = {
+        offset: side * distance,
+        along: along + length * t,
+        index: i,
+        t,
+        distance,
+      };
+    }
+    along += length;
+  }
+  invariant(best !== undefined, "A path needs at least two points.");
+  return best;
+}
+
 /** Where a pointer lands on the tree. */
 export interface Pick {
   limb: Limb;
@@ -249,9 +331,10 @@ export class Tree {
    * Grows the tree, then lets the wind and gravity move it, with `loads` hung on it. Returns the
    * joints that gave way, outermost last.
    *
-   * Steering a limb always steers the active one. In steer mode only the active limb grows, while
-   * the up key is held. In flow mode nutrients rise from the roots, split at every spout, and grow
-   * each tip as fast as its share of the flow allows.
+   * In steer mode only the active limb grows, while the up key is held, and the keys steer it. In
+   * flow mode nutrients rise from the roots, split at every spout, and grow each tip as fast as its
+   * share of the flow allows. The keys steer nothing there: a staked limb grows on as its stake
+   * asks, and the rest as they would left to themselves.
    */
   update(
     dt: number,
@@ -289,14 +372,14 @@ export class Tree {
         const reach = this.reach(limb);
         const size = Math.max(1, reach / LIMB.steadyLength);
         const speed = growth.flowRate * share * FLOW_GROWTH;
-        const steer = limb === this.active ? controls.steer : 0;
-        const moved = limb.update(
-          dt,
-          steer,
-          speed,
-          size,
-          Math.min(LIMB.maxReach - reach, roomAhead(limb, this.level).room),
+        const room = Math.min(
+          LIMB.maxReach - reach,
+          roomAhead(limb, this.level).room,
         );
+        const moved =
+          limb.stake === undefined
+            ? limb.update(dt, 0, speed, size, room)
+            : limb.growStaked(dt, speed, size, room);
         changed = changed || moved;
       }
     }
@@ -492,9 +575,123 @@ export class Tree {
     return { mass, center, inertia, area, contacts, bounds, hinge };
   }
 
-  /** Makes `limb` the one that steers, and in steer mode the one that grows. */
+  /** Makes `limb` the selected one, which in steer mode is the one that grows and steers. */
   select(limb: Limb): void {
     this.active = limb;
+  }
+
+  /**
+   * How to stake `limb` so its tip grows through (x, y), a point near the limb as it is drawn now,
+   * and the way the tip would grow there. Undefined if no stake gets it there: the point is behind
+   * the tip, needs a tighter turn than the wood can make or a lean past what the species allows,
+   * or lies past the ground, the barn, the fence, the level's edge or as far as any tip can reach.
+   */
+  aim(limb: Limb, x: number, y: number): Aim | undefined {
+    // Growth follows the grown shape, so carry the point over to it from however far the tip has
+    // swayed.
+    const drawn = limb.tip;
+    const rest = limb.restTip;
+    const sway = drawn.heading - rest.heading;
+    const target = {
+      x:
+        rest.x +
+        (x - drawn.x) * Math.cos(sway) +
+        (y - drawn.y) * Math.sin(sway),
+      y:
+        rest.y -
+        (x - drawn.x) * Math.sin(sway) +
+        (y - drawn.y) * Math.cos(sway),
+    };
+    const dx = target.x - rest.x;
+    const dy = target.y - rest.y;
+    if (dx * Math.cos(rest.heading) + dy * Math.sin(rest.heading) <= 0) {
+      return undefined;
+    }
+    const reach = this.reach(limb);
+    // A tip turning as sharply as the wood allows reaches any point it can within half a turn,
+    // which is well inside twice the straight distance.
+    const length = Math.min(LIMB.maxReach - reach, 2 * Math.hypot(dx, dy));
+    if (length <= 0) {
+      return undefined;
+    }
+    const pathFor = (stake: number): LimbPoint[] =>
+      limb.stakedPath(stake, reach, length);
+    const offsetAt = (stake: number): number =>
+      nearestOn(pathFor(stake), target).offset;
+
+    // Steering further right swings the path right, leaving the point further to its left, so the
+    // stake that passes through the point lies between two tries that leave it on either side.
+    let found: { stake: number; nearest: Nearest } | undefined;
+    let below = -1;
+    let belowOffset = offsetAt(below);
+    for (let k = 1; k < AIM_TRIES; k += 1) {
+      const above = -1 + (2 * k) / (AIM_TRIES - 1);
+      const aboveOffset = offsetAt(above);
+      if (belowOffset * aboveOffset <= 0) {
+        let lo = below;
+        let hi = above;
+        let loOffset = belowOffset;
+        for (let i = 0; i < AIM_HALVINGS; i += 1) {
+          const mid = (lo + hi) / 2;
+          const midOffset = offsetAt(mid);
+          if (loOffset * midOffset <= 0) {
+            hi = mid;
+          } else {
+            lo = mid;
+            loOffset = midOffset;
+          }
+        }
+        const stake = (lo + hi) / 2;
+        const nearest = nearestOn(pathFor(stake), target);
+        // Where the path only jumps from one side of the point to the other, it never meets it.
+        if (
+          Math.abs(nearest.offset) <= AIM_TOLERANCE &&
+          nearest.along > 0 &&
+          nearest.along < length &&
+          (found === undefined || nearest.along < found.nearest.along)
+        ) {
+          found = { stake, nearest };
+        }
+      }
+      below = above;
+      belowOffset = aboveOffset;
+    }
+    if (found === undefined) {
+      return undefined;
+    }
+
+    const full = pathFor(found.stake);
+    const end = found.nearest;
+    const path = full.slice(0, end.index + 1);
+    const a = at(full, end.index);
+    const b = at(full, end.index + 1);
+    path.push({
+      x: lerp(a.x, b.x, end.t),
+      y: lerp(a.y, b.y, end.t),
+      heading: lerp(a.heading, b.heading, end.t),
+      s: lerp(a.s, b.s, end.t),
+    });
+    for (let i = 0; i + 1 < path.length; i += 1) {
+      const from = at(path, i);
+      const to = at(path, i + 1);
+      const step = Math.hypot(to.x - from.x, to.y - from.y);
+      if (roomFrom(this.level, from.x, from.y, from.heading).room < step) {
+        return undefined;
+      }
+    }
+    return {
+      stake: found.stake,
+      path: path.map((p) => ({
+        x:
+          drawn.x +
+          (p.x - rest.x) * Math.cos(sway) -
+          (p.y - rest.y) * Math.sin(sway),
+        y:
+          drawn.y +
+          (p.x - rest.x) * Math.sin(sway) +
+          (p.y - rest.y) * Math.cos(sway),
+      })),
+    };
   }
 
   /** Starts a new offshoot at distance `s` along `parent` and makes it the active limb. */

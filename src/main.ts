@@ -28,6 +28,7 @@ import { Sea, type SeaSettings } from "./sea";
 import type { Species } from "./species";
 import { SpoutControl } from "./spout-control";
 import {
+  type Aim,
   type Bounds,
   type Growth,
   type GrowthMode,
@@ -54,6 +55,8 @@ const MESSAGE_SECONDS = 2.6;
 const CLOCK_STEP_MINUTES = 15;
 /** How close to a spout, in CSS pixels, the pointer must be to pick it. */
 const SPOUT_PICK_PX = 10;
+/** How close to a limb's tip, in CSS pixels, a press must start to drag it in flow mode. */
+const TIP_PICK_PX = 12;
 /** How fast energy dots ride up the wood, in CSS pixels per second. */
 const DOT_SPEED_PX = 90;
 /** A press must move this far, in CSS pixels, before it pans the view, so a click stays a click. */
@@ -69,7 +72,7 @@ const ZOOM_PER_PX = { wheel: 0.0015, pinch: 0.01 } as const;
 const HINTS: Record<GrowthMode, string> = {
   steer:
     "<span>Hold <kbd>↑</kbd> to grow</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Hold <kbd>C</kbd> and click to prune</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
-  flow: "<span>The roots feed every tip</span><span><kbd>←</kbd> <kbd>→</kbd> to steer</span><span>Click a limb to select it, again to fork</span><span>Click a spout to split the flow</span><span>Hold <kbd>C</kbd> and click to prune</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
+  flow: "<span>The roots feed every tip</span><span>Drag a tip to steer it</span><span>Click a limb to select it, again to fork</span><span>Click a spout to split the flow</span><span>Hold <kbd>C</kbd> and click to prune</span><span>Drag to pan, scroll to zoom, <kbd>F</kbd> to follow the tree</span><span><kbd>R</kbd> to replant</span>",
 };
 
 function element<T extends HTMLElement>(
@@ -157,6 +160,18 @@ const BLOCKED: Record<Obstacle, string> = {
 let panning:
   | { pointerId: number; x: number; y: number; dragging: boolean }
   | undefined;
+/**
+ * In flow mode, a press on a limb's tip that steers it once it drags: where the press started and
+ * where the pointer is now, in CSS pixels, and whether it has moved far enough to count as a drag.
+ */
+interface TipPress {
+  pointerId: number;
+  limb: Limb;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  dragging: boolean;
+}
+let tipPress: TipPress | undefined;
 let messageTimer: number | undefined;
 /**
  * When set, frames still draw but time stands still, so a script can step the simulation exactly.
@@ -262,6 +277,81 @@ function spoutAt(standing: Tree, x: number, y: number): Limb | undefined {
     }
   }
   return nearest?.limb;
+}
+
+/** The limb whose tip is within reach of (x, y) in CSS pixels, nearest first. */
+function tipAt(standing: Tree, x: number, y: number): Limb | undefined {
+  let nearest: { limb: Limb; distance: number } | undefined;
+  for (const limb of standing.limbs) {
+    const at = camera.toScreen(limb.tip.x, limb.tip.y);
+    const distance = Math.hypot(at.x - x, at.y - y);
+    if (
+      distance <= TIP_PICK_PX &&
+      (nearest === undefined || distance < nearest.distance)
+    ) {
+      nearest = { limb, distance };
+    }
+  }
+  return nearest?.limb;
+}
+
+/** How to stake `limb` so its tip grows through (x, y) in CSS pixels, if it can get there. */
+function aimAt(
+  standing: Tree,
+  limb: Limb,
+  x: number,
+  y: number,
+): Aim | undefined {
+  const world = camera.toWorld(x, y);
+  return standing.aim(limb, world.x, world.y);
+}
+
+/**
+ * A click on the tree at (x, y) in CSS pixels: in flow mode, on a spout, opens it. Otherwise it
+ * closes the open spout, or failing that selects the limb there, or forks it if it is selected
+ * already. Returns false if the click missed the tree.
+ */
+function clickTree(standing: Tree, x: number, y: number): boolean {
+  if (panel.growth.mode === "flow") {
+    const spout = spoutAt(standing, x, y);
+    if (spout !== undefined) {
+      spoutControl.open(spout);
+      return true;
+    }
+  }
+  const pick = pickAt(standing, x, y);
+  if (spoutControl.limb !== undefined) {
+    spoutControl.close();
+  } else if (pick !== undefined && pick.limb === standing.active) {
+    standing.fork(pick.limb, pick.s, pick.side);
+  } else if (pick !== undefined) {
+    standing.select(pick.limb);
+  }
+  return pick !== undefined;
+}
+
+/**
+ * Ends a press on a limb's tip. One that never dragged is a click; one that did stakes the limb
+ * to grow through where it was let go, and selects it, if the tip could ever get there.
+ */
+function letGo(press: TipPress): void {
+  // The limb can snap off or the tree fall while it is held, and the mode can change.
+  if (
+    tree === undefined ||
+    !tree.has(press.limb) ||
+    panel.growth.mode !== "flow"
+  ) {
+    return;
+  }
+  if (!press.dragging) {
+    clickTree(tree, press.from.x, press.from.y);
+    return;
+  }
+  const aim = aimAt(tree, press.limb, press.to.x, press.to.y);
+  if (aim !== undefined) {
+    press.limb.stake = aim.stake;
+    tree.select(press.limb);
+  }
 }
 
 /** Shows the time and the season in the corner, in ink that shows against the sky in `light`. */
@@ -622,6 +712,18 @@ window.addEventListener("blur", () => {
 canvas.addEventListener("pointermove", (event) => {
   pointer = onScene(event);
   shiftHeld = event.shiftKey;
+  if (tipPress !== undefined && event.pointerId === tipPress.pointerId) {
+    const moved = Math.hypot(
+      pointer.x - tipPress.from.x,
+      pointer.y - tipPress.from.y,
+    );
+    tipPress = {
+      ...tipPress,
+      to: pointer,
+      dragging: tipPress.dragging || moved >= PAN_THRESHOLD_PX,
+    };
+    return;
+  }
   if (panning === undefined || event.pointerId !== panning.pointerId) {
     return;
   }
@@ -640,6 +742,13 @@ for (const type of ["pointerup", "pointercancel"] as const) {
   canvas.addEventListener(type, (event) => {
     if (event.pointerId === panning?.pointerId) {
       panning = undefined;
+    }
+    if (tipPress !== undefined && event.pointerId === tipPress.pointerId) {
+      const press = tipPress;
+      tipPress = undefined;
+      if (type === "pointerup") {
+        letGo(press);
+      }
     }
   });
 }
@@ -668,7 +777,8 @@ canvas.addEventListener(
 // forks a new offshoot from that spot. Holding C, a click prunes the limb there instead, and
 // everything beyond falls; holding H, a click hangs a hive from the limb there, to be built. In
 // flow mode, clicking a spout opens it; a click anywhere else just
-// closes the open one. While flowers are placed by hand, a shift-click places or knocks off a
+// closes the open one; and dragging from a limb's tip stakes the limb to grow through wherever it
+// is let go. While flowers are placed by hand, a shift-click places or knocks off a
 // flower instead. Dragging from open space, or with the middle button from anywhere, pans the
 // view.
 canvas.addEventListener("pointerdown", (event) => {
@@ -711,22 +821,20 @@ canvas.addEventListener("pointerdown", (event) => {
     tendFlowers(tree, x, y);
     return;
   }
-  if (panel.growth.mode === "flow") {
-    const spout = spoutAt(tree, x, y);
-    if (spout !== undefined) {
-      spoutControl.open(spout);
-      return;
-    }
+  // A press on a tip waits to see whether it drags before it counts as a click.
+  const tipped = panel.growth.mode === "flow" ? tipAt(tree, x, y) : undefined;
+  if (tipped !== undefined) {
+    tipPress = {
+      pointerId: event.pointerId,
+      limb: tipped,
+      from: { x, y },
+      to: { x, y },
+      dragging: false,
+    };
+    canvas.setPointerCapture(event.pointerId);
+    return;
   }
-  const pick = pickAt(tree, x, y);
-  if (spoutControl.limb !== undefined) {
-    spoutControl.close();
-  } else if (pick !== undefined && pick.limb === tree.active) {
-    tree.fork(pick.limb, pick.s, pick.side);
-  } else if (pick !== undefined) {
-    tree.select(pick.limb);
-  }
-  if (pick === undefined) {
+  if (!clickTree(tree, x, y)) {
     startPanning(event);
   }
 });
@@ -752,6 +860,16 @@ function frame(now: number): void {
   panel.showSea(sea.significantHeight);
   showClock(light);
   const flowing = tree !== undefined && panel.growth.mode === "flow";
+  if (
+    tipPress !== undefined &&
+    (!flowing || tree === undefined || !tree.has(tipPress.limb))
+  ) {
+    tipPress = undefined;
+  }
+  const aim =
+    tipPress?.dragging === true && tree !== undefined
+      ? aimAt(tree, tipPress.limb, tipPress.to.x, tipPress.to.y)
+      : undefined;
   const tending =
     tree !== undefined &&
     pointer !== undefined &&
@@ -772,7 +890,8 @@ function frame(now: number): void {
     tree === undefined ||
     pointer === undefined ||
     hoveredSpout !== undefined ||
-    tending
+    tending ||
+    tipPress?.dragging === true
       ? undefined
       : pickAt(tree, pointer.x, pointer.y);
   const pointing =
@@ -783,7 +902,7 @@ function frame(now: number): void {
     strandHover?.ghost !== undefined ||
     strandHover?.target !== undefined;
   canvas.style.cursor =
-    panning?.dragging === true
+    panning?.dragging === true || tipPress?.dragging === true
       ? "grabbing"
       : (pruneHeld || hiveHeld || placingHive) && hover !== undefined
         ? "crosshair"
@@ -820,6 +939,7 @@ function frame(now: number): void {
     tree,
     debris,
     hover,
+    aim,
     strain: panel.showStrain,
     flowers: flowers.views(panel.flowers, panel.time.season),
     flowerHover,
@@ -855,6 +975,11 @@ interface DebugHandle {
   fork(index: number, fraction: number, side: 1 | -1): void;
   /** Makes limb `index` the one that grows and steers, like a click. */
   select(index: number): void;
+  /**
+   * Stakes limb `index` to grow its tip through the point `dx`, `dy` world units from where it is
+   * drawn now, like dragging its tip there in flow mode.
+   */
+  aim(index: number, dx: number, dy: number): void;
   /** Prunes limb `index` at `fraction` of its length, like a click with C held. */
   prune(index: number, fraction: number): void;
   /** Changes the wind, as the debug panel would. */
@@ -956,6 +1081,16 @@ if (import.meta.env.DEV) {
     },
     select(index) {
       standing().select(at(standing().limbs, index));
+    },
+    aim(index, dx, dy) {
+      const limb = at(standing().limbs, index);
+      const aim = standing().aim(limb, limb.tip.x + dx, limb.tip.y + dy);
+      invariant(
+        aim !== undefined,
+        `Limb ${index}'s tip could never grow through ${dx}, ${dy} from where it is.`,
+      );
+      limb.stake = aim.stake;
+      standing().select(limb);
     },
     prune(index, fraction) {
       const limb = at(standing().limbs, index);

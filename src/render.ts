@@ -40,7 +40,7 @@ import {
 import type { Level } from "./level";
 import type { Sea } from "./sea";
 import { drawFarSea, drawSea, drawSpray } from "./sea-art";
-import type { Pick, Tree } from "./tree";
+import type { Aim, Pick, Tree } from "./tree";
 import { at, clamp, invariant, lerp, Rng, smoothstep } from "./util";
 import { Village } from "./village";
 import { SNOW, SNOW_COLOR, type SnowCover, type Weather } from "./weather";
@@ -65,6 +65,8 @@ const FILLET_ROUNDNESS = 0.55;
 const TIP_RING_PX = 9;
 /** Length of the line previewing where a fork will grow, in CSS pixels. */
 const FORK_PREVIEW_PX = 22;
+/** The see-through wood previewing where a dragged tip would grow: its width in CSS pixels, and how strongly it shows. */
+const AIM_PREVIEW = { px: 2.4, alpha: 0.4 } as const;
 /** Strain shows once the wood carries this fraction of what it can take. */
 const STRAIN_SHOWN = 0.3;
 /** Width of the strain vein at the breaking point, as a fraction of the limb's width. */
@@ -169,6 +171,8 @@ export interface Scene {
   /** Pieces that broke or were cut off, falling or lying on the ground. */
   debris: readonly Debris[];
   hover: Pick | undefined;
+  /** In flow mode, while a tip is dragged somewhere it could grow, the way it would get there. */
+  aim: Aim | undefined;
   /** Whether to mark how close each joint is to breaking. */
   strain: boolean;
   /** Flowers on the tree, then those that came off it. */
@@ -612,6 +616,9 @@ export class Renderer {
           scene.flow.hoveredSpout,
           scene.flow.openSpout,
         );
+      }
+      if (scene.aim !== undefined) {
+        this.drawAim(camera, scene.aim);
       }
       this.drawGuides(camera, scene.tree, scene.hover);
     }
@@ -1284,6 +1291,28 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.drawImage(this.veins, x, y, w, h, x, y, w, h);
     ctx.restore();
+  }
+
+  /** Draws the wood a dragged tip would grow, see-through, out to where the pointer is. */
+  private drawAim(camera: Camera, aim: Aim): void {
+    const ctx = this.ctx;
+    ctx.setTransform(camera.dpr, 0, 0, camera.dpr, 0, 0);
+    ctx.lineWidth = AIM_PREVIEW.px;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = this.inkColor;
+    ctx.globalAlpha = AIM_PREVIEW.alpha;
+    ctx.beginPath();
+    for (const [i, p] of aim.path.entries()) {
+      const at = camera.toScreen(p.x, p.y);
+      if (i === 0) {
+        ctx.moveTo(at.x, at.y);
+      } else {
+        ctx.lineTo(at.x, at.y);
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   /** Marks the limb being grown, and previews what a click would do. */

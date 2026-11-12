@@ -111,13 +111,18 @@ switched on in the debug panel beside the original steer-and-grow controls:
 - [x] A spout can give its branch everything, turn it off, or anything between.
 - [x] The flow shows as dots of energy that start large, split at each spout by its share, and
       travel out to the tips, where whatever arrives grows the tip in the direction it is steered.
-- [ ] In flow mode, steering a limb stakes its growth direction. Releasing the arrow key or
-      selecting another limb leaves that steering in place, so the limb continues to grow as if
-      the key were still held instead of drifting back toward its natural straight or upright
-      shape. To change or straighten it, the player selects it again and steers it the other way.
-      The circle at the tip shows the direction in which the limb is staked.
-- [ ] Staking applies only in flow mode. In steer-and-grow mode, an unsteered tip continues to
-      drift back toward its natural shape as it does now.
+- [x] In flow mode, the arrow keys do nothing; a limb is steered by dragging from its tip. Wherever
+      the pointer is, a see-through preview shows the curve the limb would grow along to bring its
+      tip there, bending no tighter than the wood can turn and leaning no further than its species
+      allows. Where the tip could never get, behind it, too sharp a turn away, past its lean, or
+      through the ground, the barn, the fence or the level's edge, nothing shows, and letting go
+      there does nothing.
+- [x] Letting go stakes the limb: it grows on as if up and that much left or right were held for
+      good, on past the point and still bending until it leans as far as its species allows,
+      instead of drifting back toward its natural shape. Only new growth follows the stake; the
+      wood already grown keeps its shape. It changes only when the tip is dragged again.
+- [x] Staking applies only in flow mode. In steer-and-grow mode, the arrow keys steer the selected
+      limb and an unsteered tip drifts back toward its natural shape, as before.
 - [x] How fast nutrients rise from the roots can be set in the debug panel.
 - _Open._ Water is the currency the flow is made of.
 - _Open._ A spout setting that holds its branch steady, taking in just what it loses to decay.

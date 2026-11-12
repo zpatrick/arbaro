@@ -40,6 +40,21 @@ const TREE_OF_LIFE = [
   grow(1.8),
 ];
 
+/** A tree grown by the flow, with a branch staked out to either side and one spout turned down. */
+const FLOW = [
+  { growth: { mode: "flow", flowRate: 1 } },
+  still(14),
+  { fork: 0, at: 0.55, side: 1 },
+  { aim: 1, dx: -1.5, dy: 1.5 },
+  still(13),
+  { select: 0 },
+  { fork: 0, at: 0.8, side: -1 },
+  { aim: 2, dx: 1.5, dy: 1.5 },
+  still(15),
+  { spout: 2, share: 0.3 },
+  still(14),
+];
+
 /** Sets the wind, as the debug panel would. */
 const blow = (model, strength, direction = 0) => ({
   wind: { model, strength, direction },
@@ -55,7 +70,8 @@ const flowering = (settings, time = {}) => [
 
 /**
  * Each action either holds the controls for some seconds at 60 Hz, forks limb `fork` at a
- * fraction of its length, selects a limb, prunes limb `prune` at a fraction of its length, sets the
+ * fraction of its length, selects a limb, stakes limb `aim` to grow through the point `dx`, `dy`
+ * from its tip, prunes limb `prune` at a fraction of its length, sets the
  * wind, sets how much the tree can take, changes the flowers, or grows a flower by hand on limb
  * `flower` at a fraction of its length, all through the dev-only debug hook on a freshly loaded
  * page so every scene starts from the same seed. `crop` frames a close-up around the trunk's
@@ -159,40 +175,8 @@ const SCENES = [
       still(6),
     ],
   },
-  {
-    file: "25-flow",
-    actions: [
-      { growth: { mode: "flow", flowRate: 1 } },
-      still(14),
-      { fork: 0, at: 0.55, side: 1 },
-      { seconds: 5, grow: false, steer: -1 },
-      still(8),
-      { select: 0 },
-      { fork: 0, at: 0.8, side: -1 },
-      { seconds: 5, grow: false, steer: 1 },
-      still(10),
-      { spout: 2, share: 0.3 },
-      still(14),
-    ],
-  },
-  {
-    file: "26-flow-spouts-detail",
-    scale: 3,
-    crop: "fork",
-    actions: [
-      { growth: { mode: "flow", flowRate: 1 } },
-      still(14),
-      { fork: 0, at: 0.55, side: 1 },
-      { seconds: 5, grow: false, steer: -1 },
-      still(8),
-      { select: 0 },
-      { fork: 0, at: 0.8, side: -1 },
-      { seconds: 5, grow: false, steer: 1 },
-      still(10),
-      { spout: 2, share: 0.3 },
-      still(14),
-    ],
-  },
+  { file: "25-flow", actions: FLOW },
+  { file: "26-flow-spouts-detail", scale: 3, crop: "fork", actions: FLOW },
   {
     file: "24-regrown",
     actions: [
@@ -302,6 +286,8 @@ try {
           debug.fork(action.fork, action.at, action.side);
         } else if (action.select !== undefined) {
           debug.select(action.select);
+        } else if (action.aim !== undefined) {
+          debug.aim(action.aim, action.dx, action.dy);
         } else if (action.prune !== undefined) {
           debug.prune(action.prune, action.at);
         } else if (action.strength !== undefined) {
