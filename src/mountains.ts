@@ -149,9 +149,20 @@ const BELOW_FEET = 1;
  * `summer` of the way up the tallest peak at midsummer to `winter` at midwinter; lower on the far
  * row's greater peaks, at `far` of that; ragged along the range by up to `ragged` of the horizon's
  * height either way, over stretches about `along` of it long, and from face to face by up to
- * `byFace`; and reaching `gully` further down the hollow in the middle of each face than at the
- * spurs either side, which the wind scours. It is `day` by day and `night` by night, hazed `haze`
- * of the way to the far row's blue on its peaks, and laid as thickly as `alpha` says.
+ * `byFace`. It reaches `gully` further down the hollow in the middle of each face than at the spurs
+ * either side, which the wind scours, and on down in narrow tongues, each up to `tongue.deep` of the
+ * horizon's height long and `tongue.wide` of its face across; it thins out over its last `thin` of
+ * the horizon's height and lingers in streaks up to `patches` below the line. Ribs of rock run down
+ * through it along the fall line, about `ribs.gap` apart at the base horizon height where there are
+ * any, up to `ribs.wide` of the horizon's height across, most reaching down out of it from partway
+ * up the face and some short outcrops higher up. A face's snow is lit and shaded as its rock is:
+ * `lit` where the sun or the moon falls on it and `shade` where it does not, by day and by night,
+ * and `ambient` of the way to lit with neither on it, deepening toward `deepens` of the shade down
+ * the face; laid `alpha` thick; hazed `haze` of the way to the far row's blue; and warm with the
+ * glow of sunrise and sunset, `glow` of the way to the sun's color. Its edge is carved as the
+ * peaks' lines are, `line.alpha` as strong and `line.width` as wide as a hatching line; flutes are
+ * raked down its fall lines `flutes.gap` apart at the base horizon height, `flutes.alpha` as strong
+ * as the peaks' lines; and the ribs are edged with a carved line `edged` as strong.
  */
 const SNOW = {
   summer: 0.92,
@@ -160,12 +171,28 @@ const SNOW = {
   ragged: 0.012,
   along: 0.05,
   byFace: 0.02,
-  gully: 0.025,
-  day: [250, 251, 253],
-  night: [168, 176, 200],
+  gully: 0.03,
+  tongue: { deep: 0.07, wide: [0.08, 0.2] },
+  thin: 0.012,
+  patches: 0.07,
+  ribs: { gap: 13, wide: 0.012, among: 0.6 },
+  lit: { day: [250, 251, 253], night: [138, 148, 176] },
+  shade: { day: [172, 188, 222], night: [52, 60, 88] },
+  ambient: { day: 0.4, night: 0.12 },
+  alpha: { day: 0.95, night: 0.9 },
+  deepens: 0.3,
+  edged: 0.32,
   haze: 0.2,
-  alpha: { day: 0.92, night: 0.55 },
-} as const;
+  glow: 0.3,
+  flutes: { gap: 3.6, alpha: 0.26 },
+  line: { alpha: 0.6, width: 1.1 },
+} as const satisfies {
+  lit: { day: Rgb; night: Rgb };
+  shade: { day: Rgb; night: Rgb };
+  [key: string]: unknown;
+};
+/** How far apart the points along a face's snowline are worked out, in CSS pixels. */
+const EDGE_STEP = 2;
 /** How far the year turns, as a share of it, before the snow is laid afresh. */
 const SEASON_STEP = 0.01;
 /**
@@ -228,6 +255,35 @@ interface Built {
     facing: number;
     rise: number;
     treeline: number;
+    snow: FaceSnow;
+  }[];
+}
+
+/**
+ * What a face's snow is laid out from, whatever the season: how far across the face it stands and
+ * how high its top; its fall line, from its highest corner to the middle of its lowest; how far below
+ * where the snowline stands on this face its edge reaches at each of `edge.length` points evenly
+ * across the face, and at the most; the ribs of rock running down through it; the flutes down its
+ * fall lines, every third raked more strongly; and the streaks the snow lingers in below the line,
+ * each where it lies, how far below the line it lasts, as a share of the most, how far below where
+ * the snowline stands the snow's edge reaches there, and its shape.
+ */
+interface FaceSnow {
+  left: number;
+  right: number;
+  top: number;
+  crest: Point;
+  base: Point;
+  edge: number[];
+  lowest: number;
+  ribs: Path2D;
+  flutes: { strong: Path2D; faint: Path2D };
+  streaks: {
+    x: number;
+    y: number;
+    reach: number;
+    edge: number;
+    shape: Path2D;
   }[];
 }
 
@@ -283,8 +339,8 @@ export class Mountains {
       this.builtScale !== peakScale ||
       this.builtDrop !== drop
     ) {
-      this.built = rangeShape().map((shape) =>
-        build(shape, camera.groundY, peakScale, drop),
+      this.built = rangeShape().map((shape, index) =>
+        build(shape, camera.groundY, peakScale, drop, index),
       );
       this.builtFor = camera.groundY;
       this.builtScale = peakScale;
@@ -435,8 +491,7 @@ export class Mountains {
   ): void {
     const canvas = this.carving;
     const height =
-      above +
-      Math.ceil((below * camera.groundY + CARVING_MARGIN) * camera.dpr);
+      above + Math.ceil((below * camera.groundY + CARVING_MARGIN) * camera.dpr);
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
@@ -467,8 +522,12 @@ export class Mountains {
     const snowline =
       TALLEST * lerp(SNOW.summer, SNOW.winter, smoothstep(0, 1, season));
     const silhouette = silhouetteOf(light);
-    const snowColor = mix(SNOW.night, SNOW.day, light.daylight);
+    const snowLit = mix(SNOW.lit.night, SNOW.lit.day, light.daylight);
+    const snowShade = mix(SNOW.shade.night, SNOW.shade.day, light.daylight);
     const snowAlpha = lerp(SNOW.alpha.night, SNOW.alpha.day, light.daylight);
+    const ambient = lerp(SNOW.ambient.night, SNOW.ambient.day, light.daylight);
+    // How much the sun or the moon lights the faces turned to it, rather than the sky lighting all.
+    const keyed = light.direct * Math.max(sunUp, SHADE.moon * moonUp);
 
     for (const [index, mountain] of this.built.entries()) {
       const fade = mountain.far ? LINE_ALPHA.far : 1;
@@ -476,16 +535,13 @@ export class Mountains {
       ctx.fillStyle = "#000";
       ctx.fill(mountain.body);
       ctx.globalCompositeOperation = "source-over";
-      const snow = css(
+      // The snow's color as it stands far off and darkens into the silhouette.
+      const distant = (color: Rgb): Rgb =>
         mix(
-          mountain.far
-            ? mix(snowColor, DAY.haze.color, SNOW.haze * day)
-            : snowColor,
+          mountain.far ? mix(color, DAY.haze.color, SNOW.haze * day) : color,
           light.ink,
           silhouette * (mountain.far ? SILHOUETTE.far : 1),
-        ),
-        snowAlpha,
-      );
+        );
       const line =
         mountain.sunk -
         snowline * (mountain.far ? SNOW.far : 1) * mountain.unit;
@@ -524,18 +580,32 @@ export class Mountains {
           ctx.fillStyle = css(DAY.warm.color, warm);
           ctx.fill(face.outline);
         }
-        // Snow above the snowline, white where the sun falls on it, and under the face's shading
-        // so it is shaded, cooled and hatched as the rock is.
+        // Snow above the snowline, lit as far as the sun or the moon falls on the face, under the
+        // face's shading so it is cooled and hatched as the rock is.
         const lies =
           line +
           SNOW.byFace * mountain.unit * valueNoise(i * 1.37 + index * 7.1, 313);
-        const above = snowAbove(face.points, lies, mountain.unit, index);
-        if (above !== undefined) {
-          ctx.save();
-          ctx.clip(face.outline);
-          ctx.fillStyle = snow;
-          ctx.fill(above);
-          ctx.restore();
+        if (face.snow.top <= lies + face.snow.lowest) {
+          const lit =
+            keyed * (1 - smoothstep(0.25, 0.65, shade)) + (1 - keyed) * ambient;
+          const glowing =
+            SNOW.glow *
+            light.twilight *
+            sunUp *
+            light.direct *
+            litBy(face.facing, light.sun, 0);
+          const color = distant(
+            mix(mix(snowShade, snowLit, lit), light.sunColor, glowing),
+          );
+          drawSnow(ctx, face, lies, mountain.unit, {
+            color,
+            shade: distant(snowShade),
+            alpha: snowAlpha,
+            flute: css(lines, SNOW.flutes.alpha * alpha * fade),
+            edge: css(lines, SNOW.edged * alpha * fade),
+            line: css(lines, SNOW.line.alpha * alpha * fade),
+            lineScale: scale,
+          });
         }
         if (shade > 0) {
           ctx.fillStyle = css(light.ink, SHADE.tone * shade * fade);
@@ -614,48 +684,307 @@ function silhouetteOf(light: SkyLight): number {
 }
 
 /**
- * The part of a face with corners `points` that lies above a snowline at `line`, ragged along the
- * range and reaching further down the hollow in the middle of the face, in CSS pixels for a peak
- * `unit` pixels to the unit of its carving; or nothing if the face lies wholly below it. `seed`
- * sets how the line wanders along this peak.
+ * Lays out a face's snow, whatever the season, for a face with corners `points` as carved from
+ * `carved`, on a peak `unit` pixels to the unit of its carving with lines `lineScale` as wide as at
+ * the base horizon height, by `rng`, its snowline wandering by `seed`: its edge below where the
+ * snowline stands on it, further down the hollow in the middle of the face and further still in its
+ * tongues, each narrowing to a point, and ragged along the range at three scales; ribs of rock and
+ * flutes down its fall line, from its highest corner toward the middle of its lowest; and streaks
+ * scattered over it along the fall line, to show as snow lingering below the line as it falls.
  */
-function snowAbove(
+function faceSnow(
   points: readonly Point[],
-  line: number,
+  carved: readonly Point[],
   unit: number,
+  lineScale: number,
+  rng: Rng,
   seed: number,
-): Path2D | undefined {
-  const top = Math.min(...points.map((p) => p.y));
-  const reach = SNOW.ragged * unit;
-  const gully = SNOW.gully * unit;
-  if (top > line + reach + gully) {
-    return undefined;
-  }
+): FaceSnow {
   const left = Math.min(...points.map((p) => p.x));
   const right = Math.max(...points.map((p) => p.x));
-  const middle = (left + right) / 2;
+  const top = Math.min(...points.map((p) => p.y));
+  const width = right - left;
+  const tongues: { at: number; wide: number; deep: number }[] = [];
+  const count = width > 0.12 * unit ? 1 + Math.floor(rng.next() * 3) : 1;
+  for (let k = 0; k < count; k += 1) {
+    tongues.push({
+      at: lerp(0.18, 0.82, (k + 0.2 + 0.6 * rng.next()) / count),
+      wide: lerp(SNOW.tongue.wide[0], SNOW.tongue.wide[1], rng.next()),
+      deep: SNOW.tongue.deep * (0.35 + 0.65 * rng.next()),
+    });
+  }
+  const reach = SNOW.ragged * unit;
+  const gully = SNOW.gully * unit;
   const along = SNOW.along * unit;
-  const steps = Math.max(2, Math.ceil((right - left) / 3));
-  const path = new Path2D();
-  for (let i = 0; i <= steps; i += 1) {
-    const x = lerp(left, right, i / steps);
-    const across = (2 * (x - middle)) / Math.max(right - left, 1e-6);
-    const y =
-      line +
+  const middle = (left + right) / 2;
+  const span = Math.max(width, 1e-6);
+  const below = (x: number): number => {
+    const across = (2 * (x - middle)) / span;
+    let y =
       gully * (1 - across * across) +
       reach *
-        (0.7 * valueNoise(x / along, 401 + seed) +
-          0.3 * valueNoise((x * 3.3) / along, 402 + seed));
-    if (i === 0) {
-      path.moveTo(x, y);
-    } else {
-      path.lineTo(x, y);
+        (0.6 * valueNoise(x / along, 401 + seed) +
+          0.28 * valueNoise((x * 3.1) / along, 402 + seed) +
+          0.12 * valueNoise((x * 9.7) / along, 403 + seed));
+    for (const tongue of tongues) {
+      const t =
+        Math.abs(x - lerp(left, right, tongue.at)) / (tongue.wide * span);
+      if (t < 1) {
+        y += tongue.deep * unit * (1 - t) * (1 - t);
+      }
+    }
+    return y;
+  };
+  const samples = Math.max(2, Math.ceil(width / EDGE_STEP));
+  const edge = Array.from({ length: samples + 1 }, (_, k) =>
+    below(lerp(left, right, k / samples)),
+  );
+
+  // The fall line, and across it.
+  const crest = carved.reduce((a, b) => (b.y < a.y ? b : a));
+  const deepest = Math.max(...carved.map((p) => p.y));
+  const floor = carved.filter((p) => p.y === deepest);
+  const base = {
+    x: floor.reduce((sum, p) => sum + p.x, 0) / floor.length,
+    y: deepest,
+  };
+  const length = Math.hypot(base.x - crest.x, base.y - crest.y);
+  const ax = (base.x - crest.x) / length;
+  const ay = (base.y - crest.y) / length;
+  const nx = -ay;
+  const ny = ax;
+  const offsets = points.map(
+    (p) => (p.x - crest.x) * nx + (p.y - crest.y) * ny,
+  );
+  const least = Math.min(...offsets);
+  const most = Math.max(...offsets);
+  // A point `down` along the fall line from the crest and `out` across it.
+  const onFall = (down: number, out: number): Point => ({
+    x: crest.x + ax * down + nx * out,
+    y: crest.y + ay * down + ny * out,
+  });
+
+  // Ribs of rock, each a tapering streak along the fall line at its own place across the face, so
+  // none crosses another.
+  const ribs = new Path2D();
+  const ribGap = SNOW.ribs.gap * lineScale;
+  const ribWide = SNOW.ribs.wide * unit;
+  for (
+    let out = least + ribGap * (0.3 + 0.5 * rng.next());
+    out < most - 0.3 * ribGap;
+    out += ribGap * (0.8 + 0.6 * rng.next())
+  ) {
+    if (rng.next() < SNOW.ribs.among) {
+      const long = rng.next() < 0.65;
+      const from =
+        length *
+        (long ? lerp(0.2, 0.75, rng.next()) : lerp(0.05, 0.55, rng.next()));
+      const to = long
+        ? length * 1.3
+        : from + length * lerp(0.06, 0.16, rng.next());
+      const wide = ribWide * lerp(0.45, 1, rng.next()) * (long ? 1 : 0.7);
+      const seed = rng.next() * 1000;
+      const steps = 12;
+      const one: Point[] = [];
+      const other: Point[] = [];
+      for (let k = 0; k <= steps; k += 1) {
+        const t = k / steps;
+        const half =
+          (wide / 2) *
+          (long ? Math.pow(t, 0.55) : Math.sin(Math.PI * t)) *
+          (0.75 + 0.5 * (valueNoise(t * 5, seed) * 0.5 + 0.5));
+        const wobble = valueNoise(t * 3, seed + 1) * 0.6 * wide;
+        const middle = lerp(from, to, t);
+        one.push(onFall(middle, out + wobble + half));
+        other.push(onFall(middle, out + wobble - half));
+      }
+      const outline = [...one, ...other.reverse()];
+      outline.forEach((p, k) => {
+        if (k === 0) {
+          ribs.moveTo(p.x, p.y);
+        } else {
+          ribs.lineTo(p.x, p.y);
+        }
+      });
+      ribs.closePath();
     }
   }
-  path.lineTo(right, top - 1);
-  path.lineTo(left, top - 1);
-  path.closePath();
-  return path;
+
+  // Flutes, fine lines down the fall line from above the face to partway down it, every third
+  // raked more strongly.
+  const gap = SNOW.flutes.gap * lineScale;
+  const flutes = { strong: new Path2D(), faint: new Path2D() };
+  let raked = 0;
+  for (
+    let out = least + gap * rng.next();
+    out < most;
+    out += gap * (0.7 + 0.6 * rng.next())
+  ) {
+    const reach = length * (0.3 + 0.55 * rng.next());
+    const start = onFall(-0.1 * length, out);
+    const end = onFall(reach, out);
+    const bow = (rng.next() - 0.5) * 0.08 * reach;
+    const flute = raked % 3 === 0 ? flutes.strong : flutes.faint;
+    raked += 1;
+    flute.moveTo(start.x, start.y);
+    flute.quadraticCurveTo(
+      (start.x + end.x) / 2 + nx * bow,
+      (start.y + end.y) / 2 + ny * bow,
+      end.x,
+      end.y,
+    );
+  }
+
+  // Streaks of snow along the fall line, each a lens of a few corners.
+  const streaks: FaceSnow["streaks"] = [];
+  const height = deepest - top;
+  const tries = Math.round(
+    clamp((width * height) / (0.0009 * unit * unit), 3, 60),
+  );
+  const fall = Math.atan2(ay, ax);
+  for (let k = 0; k < tries; k += 1) {
+    const x = lerp(left, right, rng.next());
+    const y = lerp(top, deepest, rng.next());
+    if (contains(points, { x, y })) {
+      const size = (0.004 + 0.008 * rng.next()) * unit;
+      const angle = fall + (rng.next() - 0.5) * 0.3;
+      const stretch = 1.6 + 1.6 * rng.next();
+      const shape = new Path2D();
+      const corners = 7;
+      for (let c = 0; c < corners; c += 1) {
+        const t = (c / corners) * Math.PI * 2;
+        const r = 0.75 + 0.5 * rng.next();
+        const u = Math.cos(t) * size * stretch * r;
+        const v = Math.sin(t) * size * 0.4 * r;
+        const px = x + u * Math.cos(angle) - v * Math.sin(angle);
+        const py = y + u * Math.sin(angle) + v * Math.cos(angle);
+        if (c === 0) {
+          shape.moveTo(px, py);
+        } else {
+          shape.lineTo(px, py);
+        }
+      }
+      shape.closePath();
+      streaks.push({
+        x,
+        y,
+        reach: 0.25 + 0.75 * rng.next(),
+        edge: below(x),
+        shape,
+      });
+    }
+  }
+  return {
+    left,
+    right,
+    top,
+    crest,
+    base,
+    edge,
+    lowest: Math.max(...edge),
+    ribs,
+    flutes,
+    streaks,
+  };
+}
+
+/**
+ * The snow on `face` above its snowline, which stands at `line` on it, for a peak `unit` pixels to
+ * the unit of its carving, in `look`: thin along its lower edge and thick above, the ribs of rock left bare through
+ * it so the face shows there as it does below the line; deepening toward the shade down the face;
+ * the streaks lingering below the line; its edge carved along the snowline; the flutes raked down
+ * its fall lines; and the ribs' edges carved where they run through the snow.
+ */
+function drawSnow(
+  ctx: CanvasRenderingContext2D,
+  face: Built["faces"][number],
+  line: number,
+  unit: number,
+  look: {
+    color: Rgb;
+    shade: Rgb;
+    alpha: number;
+    flute: string;
+    edge: string;
+    line: string;
+    lineScale: number;
+  },
+): void {
+  const { snow } = face;
+  const last = snow.edge.length - 1;
+  // Along the snow's edge, `lift` above it.
+  const trace = (path: Path2D, lift: number): void => {
+    snow.edge.forEach((below, k) => {
+      const x = lerp(snow.left, snow.right, k / last);
+      const y = line + below - lift;
+      if (k === 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    });
+  };
+  const edge = new Path2D();
+  trace(edge, 0);
+  const region = (lift: number): Path2D => {
+    const path = new Path2D();
+    trace(path, lift);
+    path.lineTo(snow.right, snow.top - 1);
+    path.lineTo(snow.left, snow.top - 1);
+    path.closePath();
+    return path;
+  };
+  // The snow above a line `lift` over the snowline, `alpha` thick, with the ribs left bare: within
+  // it, each rib is a second shape over the first, which the even-odd rule leaves unfilled.
+  const lay = (
+    lift: number,
+    alpha: number,
+    fill: string | CanvasGradient,
+  ): Path2D => {
+    const within = region(lift);
+    const ribbed = new Path2D(within);
+    ribbed.addPath(snow.ribs);
+    ctx.save();
+    ctx.clip(within);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = fill;
+    ctx.fill(ribbed, "evenodd");
+    ctx.restore();
+    return within;
+  };
+  ctx.save();
+  ctx.clip(face.outline);
+  const solid = css(look.color);
+  const whole = lay(0, look.alpha * 0.55, solid);
+  lay(SNOW.thin * unit, look.alpha * 0.9, solid);
+  const { crest, base } = snow;
+  const deepening = ctx.createLinearGradient(crest.x, crest.y, base.x, base.y);
+  deepening.addColorStop(0, css(look.shade, 0));
+  deepening.addColorStop(1, css(look.shade, SNOW.deepens));
+  lay(0, look.alpha, deepening);
+  // Streaks lingering below the line, the fewer the farther below it.
+  ctx.fillStyle = css(look.color, look.alpha * 0.7);
+  for (const streak of snow.streaks) {
+    const below = streak.y - (line + streak.edge);
+    if (below > 0 && below < SNOW.patches * unit * streak.reach) {
+      ctx.fill(streak.shape);
+    }
+  }
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = SNOW.line.width * LINE.hatch * look.lineScale;
+  ctx.strokeStyle = look.line;
+  ctx.stroke(edge);
+  ctx.clip(whole);
+  ctx.strokeStyle = look.flute;
+  ctx.lineWidth = 0.5 * look.lineScale;
+  ctx.stroke(snow.flutes.faint);
+  ctx.lineWidth = 0.9 * look.lineScale;
+  ctx.stroke(snow.flutes.strong);
+  ctx.lineWidth = 0.8 * look.lineScale;
+  ctx.strokeStyle = look.edge;
+  ctx.stroke(snow.ribs);
+  ctx.restore();
 }
 
 /**
@@ -676,13 +1005,15 @@ function litBy(facing: number, body: SkyBody, wrap: number): number {
 
 /**
  * A peak's shape in CSS pixels for a horizon `horizon` pixels below the top of the view. Peaks are
- * `peakScale` as tall as carved, and their bases sit `drop` of the sky below the horizon.
+ * `peakScale` as tall as carved, and their bases sit `drop` of the sky below the horizon. `index`
+ * sets how its snowline wanders.
  */
 function build(
   shape: PeakShape,
   horizon: number,
   peakScale: number,
   drop: number,
+  index: number,
 ): Built {
   const lineScale = horizon / BASE_HORIZON;
   const sunk = drop * horizon;
@@ -738,19 +1069,23 @@ function build(
     path.closePath();
     const middle =
       face.carved.reduce((sum, p) => sum + p.y, 0) / face.carved.length;
+    const carved = face.carved.map(px);
     return {
       outline: path,
       points,
-      hatch: hatching(
-        points,
-        face.carved.map(px),
-        face.facing < 0 ? -1 : 1,
-        lineScale,
-      ),
+      hatch: hatching(points, carved, face.facing < 0 ? -1 : 1, lineScale),
       facing: face.facing,
       rise: middle / summit,
       treeline:
         DAY.treeline + DAY.ragged * valueNoise(i * 1.7 + summit * 13, 31),
+      snow: faceSnow(
+        points,
+        carved,
+        unit,
+        lineScale,
+        new Rng(4201 + i * 31),
+        index,
+      ),
     };
   });
   return { far: shape.far, sunk, unit, body, ridge: ridgeLine, lines, faces };
@@ -977,7 +1312,11 @@ class Carving {
         // a spur, away from it.
         const onRidge = faces.length === 1;
         narrow.turn += onRidge ? turn : Math.abs(turn) * away;
-        this.lines.push({ points: path, weight: WEIGHT.lens, skirt: undefined });
+        this.lines.push({
+          points: path,
+          weight: WEIGHT.lens,
+          skirt: undefined,
+        });
         return;
       }
     }

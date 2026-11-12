@@ -475,12 +475,13 @@ Three kinds of grass, each after its photo:
       never stop short at a line over empty land.
 - [x] Snow lies on the peaks above a snowline that comes down the range as the year turns: a
       little on the tallest peaks at midsummer, down over the upper half of the far range by
-      midwinter. It reaches farther down the hollow of each face than along the spurs beside it,
-      and is shaded and hatched as the rock is, blue in shade, warm with the glow of sunrise and
-      sunset, and pale by moonlight.
-- [ ] The snow on the peaks needs another pass. As drawn it is a flat fill above the snowline,
-      and it reads as minimal effort beside the carved faces. It should be more detailed and
-      look better. How is still open.
+      midwinter. It reaches farther down the hollow of each face than along the spurs beside it
+      and on down the gullies in pointed tongues, thins out along its edge, and lingers in streaks
+      below it; ribs of rock run down through it from partway up each face. It is drawn as the
+      rock is: its edge carved, raked with fine flutes down its fall lines, lit where the sun or
+      the moon falls on a face and blue in shade, hatched with the rock's hatching, deepening down
+      the face, and warm with the glow of sunrise and sunset. By night only the faces the moon
+      lights are pale, and the rest fall dark with the rock, so the snow never glows of itself.
 - [x] Rolling hills with wildflower meadows between the meadow and its mountains, sliding past at
       their own distances as the view pans, as a wildflower meadow over chalk downs looks: broad
       rounded hills in rows, paler and hazier the farther off; their grass in fresh and olive
