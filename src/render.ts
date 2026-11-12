@@ -24,6 +24,7 @@ import {
 } from "./flowers";
 import type { Limb } from "./limb";
 import { barnShape, drawBarn } from "./barn";
+import { drawFarmhouse, farmhouseShape } from "./farmhouse";
 import { Rays } from "./rays";
 import { Mountains } from "./mountains";
 import { PALETTE } from "./palette";
@@ -117,8 +118,8 @@ const STARS = { count: 170, bright: 14 } as const;
 const STARLIGHT: Rgb = [240, 236, 222];
 const MOONLIGHT: Rgb = [238, 233, 214];
 /**
- * How thick fog shows over what lies far off, the mountains and the barn, and again over
- * everything, the tree as well, as fractions of how thick it is.
+ * How thick fog shows over what lies far off, the mountains and the farm's buildings, and again
+ * over everything, the tree as well, as fractions of how thick it is.
  */
 const FOG = { far: 0.75, near: 0.3 } as const;
 /** How strongly raindrops show, and their width, in CSS pixels. */
@@ -145,10 +146,12 @@ const SNOW_THINNEST_PX = 0.3;
 
 /** Everything drawn in one frame. */
 export interface Scene {
-  /** Where the tree grows: the lie of its ground, and whether the barn stands there. */
+  /** Where the tree grows: the lie of its ground, and whether the barn and the farmhouse stand there. */
   level: Level;
   /** Which way the barn's weathervane points, in radians from straight right, turning back away from the view. */
   vane: number;
+  /** The wind blowing past the farmhouse's chimney, in meters a second, positive to the right. */
+  draft: number;
   /** Whether mountains line the horizon. */
   mountains: boolean;
   /**
@@ -437,6 +440,18 @@ export class Renderer {
       );
     }
     const world = camera.worldTransform();
+    if (scene.level.farmhouse) {
+      drawFarmhouse(
+        this.ctx,
+        camera,
+        world,
+        scene.light,
+        scene.season,
+        lyingSnow(scene.weather.cover),
+        scene.clock,
+        scene.draft,
+      );
+    }
     if (scene.level.barn) {
       drawBarn(
         this.ctx,
@@ -588,14 +603,17 @@ export class Renderer {
     }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
-    // Rays of light from the sun or the moon, broken by the mountains, the barn, the wood and the
-    // ground.
+    // Rays of light from the sun or the moon, broken by the mountains, the farm's buildings, the
+    // wood and the ground.
     const blocking = [ink];
     if (scene.mountains) {
       blocking.push(this.mountains.silhouette(camera));
     }
     if (scene.level.barn) {
       blocking.push(barnShape(world));
+    }
+    if (scene.level.farmhouse) {
+      blocking.push(farmhouseShape(world));
     }
     this.rays.draw(
       this.ctx,

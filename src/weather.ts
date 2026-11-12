@@ -1,5 +1,6 @@
 import { barnTopAt, barnWalls } from "./barn";
 import type { Camera } from "./camera";
+import { farmhouseTopAt, farmhouseWalls } from "./farmhouse";
 import { type Level, lowestBetween } from "./level";
 import type { Rgb } from "./sky";
 import { at, clamp, lerp, Rng } from "./util";
@@ -572,15 +573,15 @@ function inZone(zone: Zone, x: number, y: number): boolean {
 }
 
 /**
- * Snow lying on the ground and on the barn, as its depth over each narrow strip. It settles no
- * steeper than it can stand, sliding down roofs and hillsides and falling off their edges in
- * chunks.
+ * Snow lying on the ground and on the farm's buildings, as its depth over each narrow strip. It
+ * settles no steeper than it can stand, sliding down roofs and hillsides and falling off their
+ * edges in chunks.
  */
 export class SnowCover {
   readonly from = COVER.from;
   readonly step = COVER.step;
   readonly count = Math.round((COVER.to - COVER.from) / COVER.step);
-  /** Height of what the snow lies on over each strip: the ground, or the top of the barn. */
+  /** Height of what the snow lies on over each strip: the ground, or the top of the barn or the farmhouse. */
   readonly base: readonly number[];
   /** Depth of the snow lying on each strip, in meters. */
   readonly depth: number[];
@@ -590,14 +591,19 @@ export class SnowCover {
 
   constructor(level: Level) {
     this.level = level;
-    // Snow lies on the roof between the barn's walls. Beyond them it lies on the ground, under
-    // the eaves too, since none would stay on their steep pitch.
-    const walls = barnWalls();
+    // Snow lies on the roofs between the walls of the barn and of the farmhouse. Beyond them it
+    // lies on the ground, under the eaves too, since none would stay on their steep pitch.
+    const barn = barnWalls();
+    const house = farmhouseWalls();
     this.base = Array.from({ length: this.count }, (_, i) => {
       const x = this.middle(i);
-      return level.barn && x > walls.left && x < walls.right
-        ? barnTopAt(x)
-        : level.groundAt(x);
+      if (level.barn && x > barn.left && x < barn.right) {
+        return barnTopAt(x);
+      }
+      if (level.farmhouse && x > house.left && x < house.right) {
+        return farmhouseTopAt(x);
+      }
+      return level.groundAt(x);
     });
     this.depth = new Array<number>(this.count).fill(0);
     this.overhang = new Array<number>(this.count).fill(0);

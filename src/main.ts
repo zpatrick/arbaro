@@ -1,5 +1,6 @@
 import "./style.css";
 import { Weathervane } from "./barn";
+import { FLUE } from "./farmhouse";
 import { Camera } from "./camera";
 import { Clouds } from "./clouds";
 import { Debris } from "./debris";
@@ -150,6 +151,7 @@ let blockedBefore: Obstacle | undefined;
 const BLOCKED: Record<Obstacle, string> = {
   ground: "The ground is in the way",
   barn: "The barn is in the way",
+  house: "The farmhouse is in the way",
   fence: "The fence is in the way",
   edge: "The edge of the level is in the way",
 };
@@ -625,7 +627,12 @@ function step(dt: number, controls: Controls): void {
     ],
     sea,
   );
-  clouds.update(dt, wind, camera, skyAt(panel.time.timeOfDay, panel.time.season));
+  clouds.update(
+    dt,
+    wind,
+    camera,
+    skyAt(panel.time.timeOfDay, panel.time.season),
+  );
   if (tree !== undefined && growth.mode === "flow") {
     dots.update(dt, tree, growth.flowRate, DOT_SPEED_PX / camera.scale);
   } else {
@@ -928,6 +935,7 @@ function frame(now: number): void {
   renderer.draw(camera, {
     level,
     vane: vane.heading,
+    draft: wind.at(FLUE.x, FLUE.y, 0).x,
     mountains: panel.world.mountains,
     grass,
     grassColors: panel.world.grassColors,

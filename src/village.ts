@@ -1141,7 +1141,10 @@ const SMOKE = {
 const FRAME = 0.12;
 
 /** A window pane by day and by night, before the sky's light on it. */
-export const PANE = { day: [62, 70, 80] as Rgb, night: [24, 26, 36] as Rgb } as const;
+export const PANE = {
+  day: [62, 70, 80] as Rgb,
+  night: [24, 26, 36] as Rgb,
+} as const;
 
 /**
  * A lamp behind a window: how dark it grows before each is lit, from full day at 0 to deep night
@@ -1789,7 +1792,12 @@ function folds(
  * How far the spot (`x`, `z`) lies on the walk along `ground`'s harbor wall: 1 on it, easing to 0
  * `ease` meters off it.
  */
-function walkAt(ground: GroundSpec, x: number, z: number, ease: number): number {
+function walkAt(
+  ground: GroundSpec,
+  x: number,
+  z: number,
+  ease: number,
+): number {
   const harbor = ground.harbor;
   if (harbor === undefined) {
     return 0;
@@ -2299,7 +2307,10 @@ function carveShore(
   rng: Rng,
 ): number[] {
   const seed = rng.next() * 1000;
-  const cut = (points: readonly Point[], weight: (t: number) => number): void => {
+  const cut = (
+    points: readonly Point[],
+    weight: (t: number) => number,
+  ): void => {
     for (let i = 0; i + 1 < points.length; i += 1) {
       const t = (i + 0.5) / (points.length - 1);
       const width = weight(t);
@@ -2460,7 +2471,8 @@ function carveShore(
       if (reach > 0.4) {
         const start = downTo(along, y0);
         const y1 = y0 - reach;
-        const x1 = start.x + (fromRight ? -1 : 1) * reach * rng.range(0.3, 0.65);
+        const x1 =
+          start.x + (fromRight ? -1 : 1) * reach * rng.range(0.3, 0.65);
         if (fits(x1, y1)) {
           cut(lineDown(start.x, y0, x1, y1, 0.06, seed + y0 * 5.3), CUTS.fork);
         }
@@ -4246,14 +4258,21 @@ function drawBrink(
       ),
     ),
   );
-  const green = paint(mix(look.green, look.snow, SNOW_COVERS.green * look.snowy));
+  const green = paint(
+    mix(look.green, look.snow, SNOW_COVERS.green * look.snowy),
+  );
   const blades = css(
-    mix(paint(mix(look.scrub, look.snow, SNOW_COVERS.scrub * look.snowy)), green, 0.35),
+    mix(
+      paint(mix(look.scrub, look.snow, SNOW_COVERS.scrub * look.snowy)),
+      green,
+      0.35,
+    ),
     smoothstep(...TUFTS.shows, FRINGE.long[1] * meter),
   );
   const widest =
     clamp(CUT_WIDTH.meters * meter, CUT_WIDTH.px[0], CUT_WIDTH.px[1]) * px;
-  const cuts = CUT_WIDTH.alpha * lerp(0.45, 1, smoothstep(...ROCK_DETAIL.cuts, meter));
+  const cuts =
+    CUT_WIDTH.alpha * lerp(0.45, 1, smoothstep(...ROCK_DETAIL.cuts, meter));
   ctx.lineCap = "round";
   for (const stretch of shown) {
     const crag = stretch.crag;
@@ -4951,7 +4970,7 @@ function drawHouse(
  * comes on: puffs rising one after another, growing and thinning as they go, wavering, and bent
  * over by the wind.
  */
-function drawSmoke(
+export function drawSmoke(
   ctx: CanvasRenderingContext2D,
   flue: { top: Point; phase: number },
   look: Look,
@@ -4981,8 +5000,7 @@ function drawSmoke(
       p *
       Math.sin(look.clock * 0.9 + flue.phase * 20 + p * 7 + i * 1.3);
     const r = lerp(SMOKE.wide[0], SMOKE.wide[1], p) / 2;
-    const alpha =
-      SMOKE.alpha * strength * (1 - p) * smoothstep(0, 0.08, p);
+    const alpha = SMOKE.alpha * strength * (1 - p) * smoothstep(0, 0.08, p);
     if (alpha < 0.01) {
       continue;
     }

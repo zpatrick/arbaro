@@ -61,8 +61,12 @@ export interface Level {
   description: string;
   /** Height of the ground at `x`: 0 where the tree is planted. */
   groundAt(x: number): number;
-  /** Whether the barn stands beside the tree, and mountains line the horizon. */
+  /**
+   * Whether the barn stands beside the tree to its right, the farmhouse to its left, and mountains
+   * line the horizon.
+   */
   barn: boolean;
+  farmhouse: boolean;
   mountains: boolean;
   /** Whether a fishing village stands on the far shore across the sea. */
   village: boolean;
@@ -118,6 +122,7 @@ const MEADOW: Level = {
     "Long, gentle swells of meadow, a long rail fence along the rise to the right of the tree where a path runs through, and mountains along the horizon. Bears come from either side.",
   groundAt: (x) => meadowRaw(x) - meadowRaw(0),
   barn: false,
+  farmhouse: false,
   mountains: true,
   village: false,
   mountainScale: 1,
@@ -147,15 +152,15 @@ const MEADOW: Level = {
 
 /**
  * The farm's land: a few long, gentle swells, as the meadow's, each with its height, its length and
- * where it starts along the land; level from `yard.from` to `yard.to`, where the tree and the barn
- * stand, the swells easing in over `ease` meters either side. All in meters.
+ * where it starts along the land; level from `yard.from` to `yard.to`, where the farmhouse, the
+ * tree and the barn stand, the swells easing in over `ease` meters either side. All in meters.
  */
 const FARM_LAND = {
   swells: [
     { height: 0.7, length: 48, phase: -2.094 },
     { height: 0.35, length: 105, phase: 0 },
   ],
-  yard: { from: -5, to: 13 },
+  yard: { from: -25, to: 13 },
   ease: 7,
 } as const;
 
@@ -173,9 +178,10 @@ const FARM_LEVEL: Level = {
   id: "farm",
   name: "Farm",
   description:
-    "Long, gentle swells of farmland, the barn beside the tree, and a rail fence along the rise beyond it. Bears come from either side.",
+    "Long, gentle swells of farmland, the farmhouse to the left of the tree and the barn to its right, and a rail fence along the rise beyond the barn. Bears come from either side.",
   groundAt: farmLand,
   barn: true,
+  farmhouse: true,
   mountains: true,
   village: false,
   mountainScale: 1,
@@ -194,7 +200,7 @@ const FARM_LEVEL: Level = {
   bearsFrom: [-1, 1],
   horizon: 0,
   depth: 0,
-  lead: 12,
+  lead: 22,
   reach: 14,
   shore: undefined,
 };
@@ -299,6 +305,7 @@ const CLIFF_LEVEL: Level = {
     "A hill that rolls off steeply into the sea, with the tree on the brink of its cliff, an old rail fence along the land behind it, and a fishing village on the far shore to the right. The land ends at the cliff, so bears come only from the left. The sea's waves, swell and tide are on the Sea page.",
   groundAt: (x) => cliffRaw(x + PLANTED) - cliffRaw(PLANTED),
   barn: false,
+  farmhouse: false,
   mountains: false,
   village: true,
   mountainScale: 1,

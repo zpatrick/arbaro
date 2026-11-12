@@ -1,4 +1,5 @@
 import { barnAhead } from "./barn";
+import { farmhouseAhead } from "./farmhouse";
 import { fenceAhead } from "./fence";
 import type { Contact, Piece } from "./debris";
 import type { Level } from "./level";
@@ -73,14 +74,14 @@ const MAX_CONTACTS = 90;
 /** A piece rests on its stump if the wood at the cut points within 60 degrees of straight up. */
 const HINGE_UPRIGHTNESS = Math.sin(Math.PI / 6);
 
-/** A growing tip stops this far short of the ground or the barn, in world units. */
+/** A growing tip stops this far short of the ground or the farm's buildings, in world units. */
 const CLEARANCE = 0.03;
 
 /** Steer mode grows the selected limb while a key is held; flow mode grows every tip from the roots. */
 export type GrowthMode = "steer" | "flow";
 
 /** What a growing tip can run into. */
-export type Obstacle = "ground" | "barn" | "fence" | "edge";
+export type Obstacle = "ground" | "barn" | "house" | "fence" | "edge";
 
 export interface Growth {
   mode: GrowthMode;
@@ -96,7 +97,7 @@ export interface Bounds {
 
 /**
  * How far the tip of `limb` may grow on the way it heads before it comes within `CLEARANCE` of
- * `level`'s ground or its barn, and which of them it would meet first.
+ * `level`'s ground or its buildings, and which of them it would meet first.
  */
 function roomAhead(
   limb: Limb,
@@ -108,8 +109,8 @@ function roomAhead(
 
 /**
  * How far a tip at (x, y), heading `heading` radians counterclockwise from +x, may grow before it
- * comes within `CLEARANCE` of `level`'s ground, its barn, its fence or its edge, and which of them
- * it would meet first.
+ * comes within `CLEARANCE` of `level`'s ground, its barn, its farmhouse, its fence or its edge, and
+ * which of them it would meet first.
  */
 function roomFrom(
   level: Level,
@@ -119,9 +120,10 @@ function roomFrom(
 ): { room: number; obstacle: Obstacle } {
   const ground = groundAhead(level, x, y, heading);
   const barn = level.barn ? barnAhead(x, y, heading) : Infinity;
+  const house = level.farmhouse ? farmhouseAhead(x, y, heading) : Infinity;
   const fence = fenceAhead(level, x, y, heading);
   const edge = edgeAhead(level, x, y, heading);
-  const nearest = Math.min(ground, barn, fence, edge);
+  const nearest = Math.min(ground, barn, house, fence, edge);
   return {
     room: Math.max(0, nearest - CLEARANCE),
     obstacle:
@@ -129,9 +131,11 @@ function roomFrom(
         ? "ground"
         : nearest === barn
           ? "barn"
-          : nearest === fence
-            ? "fence"
-            : "edge",
+          : nearest === house
+            ? "house"
+            : nearest === fence
+              ? "fence"
+              : "edge",
   };
 }
 

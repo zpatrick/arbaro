@@ -1,6 +1,17 @@
+import {
+  aheadOf,
+  bandAlong,
+  box,
+  clipToBox,
+  disc,
+  line,
+  onPage,
+  RECEDE,
+  topOf,
+} from "./building";
 import type { Camera } from "./camera";
 import { css, lit, mix, type Rgb, type SkyLight } from "./sky";
-import { at, invariant, lerp, smoothstep, valueNoise, wrapAngle } from "./util";
+import { at, lerp, smoothstep, valueNoise, wrapAngle } from "./util";
 import {
   hatchGap,
   LAMPLIGHT,
@@ -23,16 +34,15 @@ import type { Wind } from "./wind";
 /**
  * A red barn standing on the ground beside the tree, true to size, so there is something to judge
  * the tree's height by. It is drawn as the village's houses are, its faces lit and shaded by the
- * sun or the moon, but seen from the ground at eye level: its gable end, with its great doors,
- * toward the view, and its long side running back to the right, every meter it runs back lying
- * `recede` meters farther right on the page. All sizes are in meters, x is from the tree's roots,
- * and the barn runs `length` meters back from its gable end.
+ * sun or the moon, but seen from the ground at eye level as all the farm's buildings are: its gable
+ * end, with its great doors, toward the view, and its long side running back to the right. All
+ * sizes are in meters, x is from the tree's roots, and the barn runs `length` meters back from its
+ * gable end.
  */
 const BARN = {
   x: 7.5,
   width: 7,
   length: 10,
-  recede: 0.3,
   /** Height of the walls at the eaves, of the break where the roof's pitch eases, and of the ridge. */
   eaves: 3,
   break: 4.6,
@@ -99,7 +109,10 @@ const LOFT_DOOR = {
  * How wide the white casing round a window is; how far its sill reaches past the casing either
  * side, and how deep it is; and how deep the shadow under the sill is.
  */
-const CASING = { width: 0.1, sill: { past: 0.06, deep: 0.07, shadow: 0.05 } } as const;
+const CASING = {
+  width: 0.1,
+  sill: { past: 0.06, deep: 0.07, shadow: 0.05 },
+} as const;
 
 /**
  * The cupola's louvered sides: how far in from its corners, its top and the ridge the louvers are
@@ -133,7 +146,10 @@ const SHADOW = {
  * How dark it grows before each of the barn's windows is lit, from full day at 0 to deep night
  * at 1, those along its side first; and the lantern over its doors.
  */
-const LIGHTS = { windows: [0.36, 0.48, 0.42, 0.6, 0.55], lantern: 0.3 } as const;
+const LIGHTS = {
+  windows: [0.36, 0.48, 0.42, 0.6, 0.55],
+  lantern: 0.3,
+} as const;
 
 /**
  * The lantern over the doors, hung from a bracket on the wall: how far above the doors its hook
@@ -151,11 +167,6 @@ const LANTERN = {
 
 /** Width of the lines drawn on the barn, at least, in meters. */
 const LEAST_LINE = 0.012;
-
-/** A point of the barn, `x` along the ground, `y` up and `z` back from its gable end, on the page. */
-function onPage(x: number, y: number, z: number): Point {
-  return { x: x + BARN.recede * z, y };
-}
 
 const L = BARN.x - BARN.width / 2;
 const R = BARN.x + BARN.width / 2;
@@ -251,16 +262,13 @@ function underAt(x: number): number {
 }
 
 /** Corners of the barn's outline on the page, its foot sunk a little into the ground. */
-const OUTLINE: readonly (readonly [number, number])[] = outlinePoints();
+const OUTLINE: readonly Point[] = outlinePoints();
 
-function outlinePoints(): [number, number][] {
+function outlinePoints(): Point[] {
   const { eaves, ridge, breakIn, overhang, dip, cupola } = BARN;
   const middle = D / 2;
   const capTop = ridge + cupola.height + cupola.cap;
-  const p = (x: number, y: number, z: number): [number, number] => {
-    const q = onPage(x, y, z);
-    return [q.x, q.y];
-  };
+  const p = onPage;
   return [
     p(L, -0.2, 0),
     p(L, eaves, 0),
@@ -296,30 +304,7 @@ function outlinePoints(): [number, number][] {
  * meets the barn, in meters: 0 from inside it, and Infinity if it misses.
  */
 export function barnAhead(x: number, y: number, heading: number): number {
-  const dx = Math.cos(heading);
-  const dy = Math.sin(heading);
-  let nearest = Infinity;
-  let crossings = 0;
-  for (let i = 0; i < OUTLINE.length; i += 1) {
-    const [ax, ay] = at(OUTLINE, i);
-    const [bx, by] = at(OUTLINE, (i + 1) % OUTLINE.length);
-    // Whether a line from (x, y) out to the right crosses this edge, to tell if it starts inside.
-    if (ay > y !== by > y && x < ax + ((y - ay) * (bx - ax)) / (by - ay)) {
-      crossings += 1;
-    }
-    const ex = bx - ax;
-    const ey = by - ay;
-    const across = dx * ey - dy * ex;
-    if (across === 0) {
-      continue;
-    }
-    const t = ((ax - x) * ey - (ay - y) * ex) / across;
-    const u = ((ax - x) * dy - (ay - y) * dx) / across;
-    if (t >= 0 && u >= 0 && u <= 1) {
-      nearest = Math.min(nearest, t);
-    }
-  }
-  return crossings % 2 === 1 ? 0 : nearest;
+  return aheadOf([OUTLINE], x, y, heading);
 }
 
 /** Where the barn's walls stand on the page, in meters along the ground. */
@@ -329,22 +314,14 @@ export function barnWalls(): { left: number; right: number } {
 
 /** Height of the top of the barn above `x`, in meters: its roof, or 0 beside it. */
 export function barnTopAt(x: number): number {
-  let top = 0;
-  for (let i = 0; i < OUTLINE.length; i += 1) {
-    const [ax, ay] = at(OUTLINE, i);
-    const [bx, by] = at(OUTLINE, (i + 1) % OUTLINE.length);
-    if (ax !== bx && (x - ax) * (x - bx) <= 0) {
-      top = Math.max(top, ay + ((x - ax) * (by - ay)) / (bx - ax));
-    }
-  }
-  return top;
+  return topOf([OUTLINE], x);
 }
 
 let shape: Path2D | undefined;
 
 /** The barn's outline in device pixels, placed by `world`, for what stands against the light. */
 export function barnShape(world: DOMMatrix): Path2D {
-  shape ??= shapeOf(OUTLINE.map(([x, y]) => ({ x, y })));
+  shape ??= shapeOf(OUTLINE);
   const placed = new Path2D();
   placed.addPath(shape, world);
   return placed;
@@ -744,7 +721,9 @@ function drawLantern(
   const pane = paint(mix(PANE.day, PANE.night, look.darkness));
   ctx.fillStyle = css(mix(pane, LAMPLIGHT.pane, burning));
   ctx.fill(lantern.glass);
-  ctx.fillStyle = css(mix(mix(pane, look.ink, 0.3), LAMPLIGHT.pane, 0.7 * burning));
+  ctx.fillStyle = css(
+    mix(mix(pane, look.ink, 0.3), LAMPLIGHT.pane, 0.7 * burning),
+  );
   ctx.fill(lantern.sideGlass);
   if (burning > 0) {
     ctx.fillStyle = css(LAMPLIGHT.heart, burning);
@@ -801,7 +780,12 @@ function buildBarn(): Built {
   }
   let lights = 0;
   for (let z = BARN.window.apart; z < D - 1; z += BARN.window.apart) {
-    windowOn(side, sideOn, z, at(LIGHTS.windows, lights % LIGHTS.windows.length));
+    windowOn(
+      side,
+      sideOn,
+      z,
+      at(LIGHTS.windows, lights % LIGHTS.windows.length),
+    );
     lights += 1;
   }
   side.outline.addPath(side.wall.path);
@@ -863,7 +847,12 @@ function buildBarn(): Built {
     ]),
   );
   for (const x of [(L + d0) / 2, (d1 + R) / 2]) {
-    windowOn(gable, gableOn, x, at(LIGHTS.windows, lights % LIGHTS.windows.length));
+    windowOn(
+      gable,
+      gableOn,
+      x,
+      at(LIGHTS.windows, lights % LIGHTS.windows.length),
+    );
     lights += 1;
   }
 
@@ -1011,23 +1000,6 @@ function buildBarn(): Built {
   };
 }
 
-/** The corners of a box from (`u0`, `v0`) to (`u1`, `v1`) on a wall, placed on the page by `on`. */
-function box(
-  on: (u: number, v: number) => Point,
-  u0: number,
-  v0: number,
-  u1: number,
-  v1: number,
-): Point[] {
-  return [on(u0, v0), on(u1, v0), on(u1, v1), on(u0, v1)];
-}
-
-/** Adds a line from `from` to `to` to `path`. */
-function line(path: Path2D, from: Point, to: Point): void {
-  path.moveTo(from.x, from.y);
-  path.lineTo(to.x, to.y);
-}
-
 /**
  * The joints between the foundation's stones along a wall from `u0` to `u1`, placed by `on`: one
  * along the middle, and between the stones of each course, the upper course's set half a stone on.
@@ -1143,56 +1115,6 @@ function leaf(
   }
 }
 
-/** A band `width` wide along the line from `from` to `to`, running on past either end. */
-function bandAlong(from: Point, to: Point, width: number): Point[] {
-  const length = Math.hypot(to.x - from.x, to.y - from.y);
-  const ux = (to.x - from.x) / length;
-  const uy = (to.y - from.y) / length;
-  const nx = (-uy * width) / 2;
-  const ny = (ux * width) / 2;
-  const start = { x: from.x - ux * width, y: from.y - uy * width };
-  const end = { x: to.x + ux * width, y: to.y + uy * width };
-  return [
-    { x: start.x + nx, y: start.y + ny },
-    { x: end.x + nx, y: end.y + ny },
-    { x: end.x - nx, y: end.y - ny },
-    { x: start.x - nx, y: start.y - ny },
-  ];
-}
-
-/** The part of the convex shape `points` inside `box`. */
-function clipToBox(
-  points: readonly Point[],
-  box: { left: number; right: number; bottom: number; top: number },
-): Point[] {
-  let kept = [...points];
-  const sides: ((p: Point) => number)[] = [
-    (p) => p.x - box.left,
-    (p) => box.right - p.x,
-    (p) => p.y - box.bottom,
-    (p) => box.top - p.y,
-  ];
-  for (const inside of sides) {
-    const next: Point[] = [];
-    for (let i = 0; i < kept.length; i += 1) {
-      const a = at(kept, i);
-      const b = at(kept, (i + 1) % kept.length);
-      const da = inside(a);
-      const db = inside(b);
-      if (da >= 0) {
-        next.push(a);
-      }
-      if (da >= 0 !== db >= 0) {
-        const f = da / (da - db);
-        next.push({ x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f) });
-      }
-    }
-    kept = next;
-  }
-  invariant(kept.length >= 3, "A brace must cross the door it braces.");
-  return kept;
-}
-
 /**
  * An iron strap hinge on a door whose edge is at `x`, `y` up, reaching `long` in across it toward
  * `inward` and `deep` deep at the edge, tapering to a round end, added to `iron`.
@@ -1217,17 +1139,6 @@ function strap(
   iron.addPath(shapeOf(disc({ x: end, y }, deep * 0.45)));
 }
 
-/** A round shape about `middle`, `radius` across, as a polygon of `corners` corners. */
-function disc(middle: Point, radius: number, corners = 14): Point[] {
-  return Array.from({ length: corners }, (_, i) => {
-    const angle = (i / corners) * Math.PI * 2;
-    return {
-      x: middle.x + Math.cos(angle) * radius,
-      y: middle.y + Math.sin(angle) * radius,
-    };
-  });
-}
-
 /**
  * The lantern over the doors. It hangs from a ring on an arm reaching out from a plate on the wall:
  * under its little roof and the vent atop it, a box of glass, wider at the top, framed in iron and
@@ -1237,20 +1148,30 @@ function disc(middle: Point, radius: number, corners = 14): Point[] {
 function buildLantern(): Lantern {
   const hookAt = BARN.door.height + LANTERN.hook;
   const hook = onPage(X, hookAt, -LANTERN.out);
-  const side = BARN.recede * LANTERN.deep;
+  const side = RECEDE * LANTERN.deep;
   const by = (dx: number, dy: number): Point => ({
     x: hook.x + dx,
     y: hook.y + dy,
   });
   // A band across the lantern from `top` down to `bottom`, `upper` and then `lower` either side of
   // its middle; and that band's side, running back from its right edge.
-  const band = (top: number, upper: number, bottom: number, lower: number): Point[] => [
+  const band = (
+    top: number,
+    upper: number,
+    bottom: number,
+    lower: number,
+  ): Point[] => [
     by(-upper, top),
     by(upper, top),
     by(lower, bottom),
     by(-lower, bottom),
   ];
-  const flank = (top: number, upper: number, bottom: number, lower: number): Point[] => [
+  const flank = (
+    top: number,
+    upper: number,
+    bottom: number,
+    lower: number,
+  ): Point[] => [
     by(upper, top),
     by(upper + side, top),
     by(lower + side, bottom),
@@ -1279,10 +1200,20 @@ function buildLantern(): Lantern {
   iron.addPath(shapeOf(band(top, upper, top - 0.018, upper - 0.003)));
   iron.addPath(shapeOf(band(bottom + 0.016, lower + 0.002, bottom, lower)));
   iron.addPath(
-    shapeOf([by(-upper, top), by(-upper + post, top), by(-lower + post, bottom), by(-lower, bottom)]),
+    shapeOf([
+      by(-upper, top),
+      by(-upper + post, top),
+      by(-lower + post, bottom),
+      by(-lower, bottom),
+    ]),
   );
   iron.addPath(
-    shapeOf([by(upper - post, top), by(upper, top), by(lower, bottom), by(lower - post, bottom)]),
+    shapeOf([
+      by(upper - post, top),
+      by(upper, top),
+      by(lower, bottom),
+      by(lower - post, bottom),
+    ]),
   );
   sides.addPath(
     shapeOf([
@@ -1295,14 +1226,23 @@ function buildLantern(): Lantern {
   // Its base, the drip under it, and the burner the flame rises from.
   iron.addPath(shapeOf(band(bottom, 0.11, bottom - 0.03, 0.075)));
   sides.addPath(shapeOf(flank(bottom, 0.11, bottom - 0.03, 0.075)));
-  iron.addPath(shapeOf([by(-0.04, bottom - 0.03), by(0.04, bottom - 0.03), by(0, bottom - 0.08)]));
+  iron.addPath(
+    shapeOf([
+      by(-0.04, bottom - 0.03),
+      by(0.04, bottom - 0.03),
+      by(0, bottom - 0.08),
+    ]),
+  );
   iron.addPath(shapeOf(band(-0.385, 0.022, -0.41, 0.03)));
   const flame = shapeOf(
     Array.from({ length: 16 }, (_, i) => {
       const angle = (i / 16) * Math.PI * 2;
       // Fuller below and drawn to a point above, as a candle's flame.
       const sharp = Math.sin(angle) > 0 ? 1 - 0.45 * Math.sin(angle) : 1;
-      return by(0.022 * Math.cos(angle) * sharp, -0.31 + 0.045 * Math.sin(angle));
+      return by(
+        0.022 * Math.cos(angle) * sharp,
+        -0.31 + 0.045 * Math.sin(angle),
+      );
     }),
   );
   const wires = new Path2D();
@@ -1321,7 +1261,14 @@ function buildLantern(): Lantern {
   ]);
   const arm = new Path2D();
   arm.moveTo(X, hookAt + 0.1);
-  arm.bezierCurveTo(X - 0.02, hookAt + 0.15, hook.x + 0.01, hookAt + 0.13, hook.x, hookAt + 0.05);
+  arm.bezierCurveTo(
+    X - 0.02,
+    hookAt + 0.15,
+    hook.x + 0.01,
+    hookAt + 0.13,
+    hook.x,
+    hookAt + 0.05,
+  );
   line(arm, { x: X, y: hookAt - 0.03 }, { x: X - 0.045, y: hookAt + 0.12 });
   arm.moveTo(hook.x + 0.018, hookAt + 0.01);
   arm.arc(hook.x, hookAt + 0.01, 0.018, 0, Math.PI * 2);
@@ -1345,7 +1292,12 @@ function buildLantern(): Lantern {
  * slats, and white boards up its corners; and its cap, a little roof with a white gable.
  */
 function buildCupola(
-  face: (points: Point[], normal: Vec3, paint: keyof typeof PAINT, snowy?: boolean) => Face,
+  face: (
+    points: Point[],
+    normal: Vec3,
+    paint: keyof typeof PAINT,
+    snowy?: boolean,
+  ) => Face,
 ): Cupola {
   const { ridge } = BARN;
   const { cupola } = BARN;
@@ -1623,7 +1575,7 @@ function drawVane(
   const thin = Math.max(LEAST_LINE, 0.8 * px);
   // A point `u` right of the rod, `v` up from its foot and `w` back from the view.
   const point = (u: number, v: number, w: number): Point => ({
-    x: foot.x + u + BARN.recede * w,
+    x: foot.x + u + RECEDE * w,
     y: foot.y + v - VANE.drop * w,
   });
   ctx.fillStyle = iron;
@@ -1633,7 +1585,9 @@ function drawVane(
   const { rod, arms, letters } = VANE;
   ctx.fillRect(foot.x - rod.thick / 2, foot.y, rod.thick, rod.tall);
   for (const ball of VANE.balls) {
-    ctx.fill(shapeOf(disc({ x: foot.x, y: foot.y + ball.at }, ball.radius, 18)));
+    ctx.fill(
+      shapeOf(disc({ x: foot.x, y: foot.y + ball.at }, ball.radius, 18)),
+    );
   }
   ctx.lineWidth = Math.max(thin, arms.thick);
   ctx.beginPath();
@@ -1678,7 +1632,9 @@ function drawVane(
   ctx.lineWidth = thin;
   for (const outline of [...ARROW, ROOSTER]) {
     const path = shapeOf(
-      outline.map(([along, up]) => point(along * c, VANE.arrow + up, along * s)),
+      outline.map(([along, up]) =>
+        point(along * c, VANE.arrow + up, along * s),
+      ),
     );
     ctx.fill(path);
     ctx.stroke(path);

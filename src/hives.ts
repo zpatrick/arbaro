@@ -1,5 +1,6 @@
 import { barnTopAt } from "./barn";
 import { type Contact, Debris, type Piece } from "./debris";
+import { farmhouseTopAt } from "./farmhouse";
 import type { Limb } from "./limb";
 import type { Load } from "./physics";
 import type { Tree } from "./tree";
@@ -129,7 +130,13 @@ const BEE = {
 } as const;
 
 type Doing =
-  "inside" | "out" | "visiting" | "home" | "building" | "diving" | "regrouping";
+  | "inside"
+  | "out"
+  | "visiting"
+  | "home"
+  | "building"
+  | "diving"
+  | "regrouping";
 
 interface Bee {
   x: number;
@@ -555,7 +562,7 @@ export class Hives {
 
   /**
    * Whether a finished hive, hanging `s` along `limb`, would hang in open air: clear of any other
-   * wood, the ground, and the barn if there is one.
+   * wood, the ground, and the farm's buildings if there are any.
    */
   private open(tree: Tree, limb: Limb, s: number): boolean {
     const anchor = anchorOn(limb, s);
@@ -578,7 +585,8 @@ export class Hives {
         }
         if (
           p.y < tree.level.groundAt(p.x) ||
-          (tree.level.barn && p.y < barnTopAt(p.x))
+          (tree.level.barn && p.y < barnTopAt(p.x)) ||
+          (tree.level.farmhouse && p.y < farmhouseTopAt(p.x))
         ) {
           return false;
         }

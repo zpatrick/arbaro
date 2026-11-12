@@ -48,8 +48,9 @@ art and tree-of-life drawings.
       arch out and over ever further as they lengthen until they weep; they can be steered down
       further than a cherry's, well past level.
 - [ ] Plant the seed by clicking the ground. Roots grow down while the trunk grows up.
-- [x] Growth stops at the ground, the barn and the fence: a tip grows up to just short of any of
-      them and halts there, with a short message, and grows on once it is steered clear.
+- [x] Growth stops at the ground, the barn, the farmhouse and the fence: a tip grows up to just
+      short of any of them and halts there, with a short message, and grows on once it is steered
+      clear.
 - [ ] Growth is blocked by rocks, other solid obstacles and other limbs.
 
 ### Offshoots
@@ -383,9 +384,9 @@ Three kinds of grass, each after its photo:
       unless the debug panel puts them back. A fishing village stands on the far shore to the
       right.
 - [x] A third level, the farm: long, gentle swells of farmland like the meadow's, level through the
-      yard where the tree and the barn stand, with a rail fence along the rise beyond the barn and
-      mountains along the horizon. Wildflower and meadow grass grow toward the left, and wheat grass
-      beyond the barn. Bears come from either side.
+      yard where the farmhouse, the tree and the barn stand, with a rail fence along the rise beyond
+      the barn and mountains along the horizon. Wildflower and meadow grass grow toward the left,
+      and wheat grass beyond the barn. Bears come from either side.
 - [x] The sea along the cliff, drawn as the old prints draw it: shorter and steeper waves than any
       real sea's, so several crests roll in across the view at once. Far off it is a band of fine
       lines crowding toward the horizon, broken by the glitter of the sun or moon below it and,
@@ -447,9 +448,9 @@ Three kinds of grass, each after its photo:
       to 15:50 at midwinter.
 - [x] The sun is a plain disc, after the minimal sun of reference 10.
 - [x] Rays of light stream from the sun by day and the moon by night, as shafts through the haze
-      that turn slowly, broken where the mountains, the barn, the wood and the ground stand against
-      the light. How strong they are is set in the debug panel, from none to very intense; at the
-      usual setting they are faint.
+      that turn slowly, broken where the mountains, the barn, the farmhouse, the wood and the ground
+      stand against the light. How strong they are is set in the debug panel, from none to very
+      intense; at the usual setting they are faint.
 - [x] A range of mountains on the horizon behind the tree, after reference 10: ridgelines up to
       sharp peaks, in a far row and a lower near row with a saddle behind the tree. Spurs, forks
       and creases carved down their fronts part each peak into faces, with narrow bands along the
@@ -491,19 +492,36 @@ Three kinds of grass, each after its photo:
 - [x] A weathervane stands on the barn's cupola: a rooster on an arrow over the arms of a compass
       lettered N, E, S and W. It swings round to point the way the wind blows, overshooting a little,
       wanders in light air, and holds where it was when the air is calm.
+- [x] A white farmhouse stands on the farm to the left of the tree, true to size (its front 11.8 m
+      long, its ridge at 7.5 m), after the modern farmhouses of the references, and drawn as the
+      barn is: its front toward the view and its right gable end running back to the right.
+      Board-and-batten walls under steep charcoal shingle roofs; a stone wing at its left end,
+      gabled toward the view, with a great black-framed window under a cedar header; a deep porch
+      along the rest of its front on cedar posts, stone piers and a cedar beam, under a standing-seam
+      metal roof, with a gable over its stone steps; cedar trusses in both gables; two dormers in the
+      roof; a stone chimney by the ridge under a black cap; black-framed windows and glass double
+      doors with a lantern either side; two rocking chairs on the porch; and boxwood, lavender,
+      hydrangeas and ornamental grass along its foot, each turning with the seasons.
+- [x] The farmhouse is lit as the barn is: faces turned from the light are toned and hatched, the
+      roofs' edges throw their shadows down the gables, and the porch throws its shadow on the wall
+      behind it, the wall in shade at midday and the light reaching in under the beam, striped by
+      the posts, as the sun sinks. Its rooms light one by one as the evening comes on, downstairs
+      first and the bedrooms in the dormers later, and most go dark late in the night, a few coming
+      on again before dawn; the lanterns by the door burn all night, pooling warm light on the
+      wall. Snow whitens its roofs and lies along its ridge, smoke rises from its chimney once the
+      cold comes on and bends with the wind, and it stands against the rays of the sun and the moon.
 - [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
       by the wind, and stop at the ground.
 - [x] Every chunk of falling snow is a body of its own, carried by the wind, and settles on the
-      first thing it meets: a flower, which catches its share and whitens; the barn; or the
-      ground. The snow belongs to the world rather than the view: there are as many flakes to
-      each square meter of air wherever the view pans or zooms, and air coming into view is
-      already snowing. Wood lets it by. Snow landing on a roof too steep to hold it rolls down and
-      falls from the edge, and snow blown against a wall slides down it. Lying snow slides until
-      it stands no steeper than snow can, so it slides off the barn's roof and drops from the
-      eaves in chunks that fall all the way to the ground, and drifts pile against the walls the
-      wind drives it into. The snow on the flowers weighs their
-      limbs down, so a heavy fall bends them. Lying snow melts at a rate the player sets, faster
-      in rain.
+      first thing it meets: a flower, which catches its share and whitens; the barn or the
+      farmhouse; or the ground. The snow belongs to the world rather than the view: there are as
+      many flakes to each square meter of air wherever the view pans or zooms, and air coming into
+      view is already snowing. Wood lets it by. Snow landing on a roof too steep to hold it rolls
+      down and falls from the edge, and snow blown against a wall slides down it. Lying snow slides
+      until it stands no steeper than snow can, so it slides off the roofs and drops from the eaves
+      in chunks that fall all the way to the ground, and drifts pile against the walls the wind
+      drives it into. The snow on the flowers weighs their limbs down, so a heavy fall bends them.
+      Lying snow melts at a rate the player sets, faster in rain.
 - [x] Clouds drift across the sky with the wind: banks of layers like brushstrokes, after the
       banded clouds of old prints rather than puffs, each with a round head and a long tail
       tapering to a point, stacked with their heads together, streaming with the wind so their
@@ -514,7 +532,8 @@ Three kinds of grass, each after its photo:
       passing over the sun or moon takes away the direct light, so the mountains' shading fades
       and comes back. On a broken day the banks cast soft shadows across the mountains. A thick
       cover hides the sun, the moon and the stars.
-- [x] Low cloud lies over the scene as fog, thickest over the distant mountains and the barn.
+- [x] Low cloud lies over the scene as fog, thickest over the distant mountains and the farm's
+      buildings.
 - [ ] Sunlight travels across the scene as rays. Flowers absorb them; the ground and solid
       obstacles block them.
 - [ ] Branches shade one another. Flowers and leaves flourish in open light.
