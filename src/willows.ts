@@ -225,9 +225,17 @@ const DRIFT = {
 
 /**
  * How a strand moves once it comes off the tree: the seconds it lies on the ground or floats before
- * it starts to fade, and how fast, in meters per second, it must strike the water to splash.
+ * it starts to fade, the most seconds it can be off the tree before it fades whether or not it has
+ * settled, how long it takes to fade, and how fast, in meters per second, it must strike the water
+ * to splash.
  */
-const FALLEN = { linger: 6, floating: 14, fade: 3, splash: 1.6 } as const;
+const FALLEN = {
+  linger: 6,
+  floating: 14,
+  longest: 15,
+  fade: 3,
+  splash: 1.6,
+} as const;
 
 /** Ground steeper than this, as its rise over its run, is too steep for a fallen leaf to rest on. */
 const STEEP = 1;
@@ -346,6 +354,8 @@ interface Fallen {
   readonly nodes: Node[];
   /** Seconds it has lain on the ground or floated. */
   resting: number;
+  /** Seconds since it came off the tree, settled or not. */
+  since: number;
   floating: boolean;
   alpha: number;
 }
@@ -1363,6 +1373,7 @@ export class Willows {
       root: rootOf(strand.limb, strand),
       nodes,
       resting: 0,
+      since: 0,
       floating: false,
       alpha: 1,
     });
@@ -1913,8 +1924,10 @@ function settleFallen(
   if (wet + down >= count / 2) {
     strand.resting += dt;
   }
+  strand.since += dt;
   const linger = wet > down ? FALLEN.floating : FALLEN.linger;
-  if (strand.resting > linger) {
+  // A strand caught half in the water and half in the air never settles, so it fades anyway.
+  if (strand.resting > linger || strand.since > FALLEN.longest) {
     strand.alpha = Math.max(0, strand.alpha - dt / FALLEN.fade);
   }
 }

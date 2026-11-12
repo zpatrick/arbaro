@@ -192,8 +192,8 @@ const HUNT = {
    * than `rootShare` of what the roots hold, so a bear rocks a sapling rather than uproots it.
    */
   shove: 1.6,
-  shoveForce: 2500,
-  rootShare: 0.3,
+  shoveForce: 7500,
+  rootShare: 0.6,
   /** Each time a bear is angered, it shoves this much harder. */
   angerForce: 0.4,
   /**
@@ -1965,8 +1965,7 @@ function legOutline(
   // thigh under the belly.
   const closed = clamp(-2 * along, 0, 1);
   const leaves = (side: 1 | -1): Point => {
-    const width =
-      side > 0 ? lerp(shape.root, shape.upper, closed) : shape.root;
+    const width = side > 0 ? lerp(shape.root, shape.upper, closed) : shape.root;
     const edge = offset(root, leaving, (side * width) / 2);
     return rise === undefined ? into(edge, 0.06) : offset(edge, rise, 0.04);
   };

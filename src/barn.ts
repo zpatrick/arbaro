@@ -1472,8 +1472,8 @@ const VANE_FOOT = onPage(
 );
 
 /**
- * The arrow the vane turns on, pointing into the wind, in meters along it from the rod and up from
- * its middle: its shaft, its head, and the broad tail the wind pushes round.
+ * The arrow the vane turns on, pointing the way the wind blows, in meters along it from the rod
+ * and up from its middle: its shaft, its head, and the broad tail the wind pushes round.
  */
 const ARROW: readonly (readonly (readonly [number, number])[])[] = [
   [
@@ -1501,7 +1501,7 @@ const ARROW: readonly (readonly (readonly [number, number])[])[] = [
 ];
 
 /**
- * The cock standing on the arrow, facing along it into the wind, in meters along the arrow and up
+ * The cock standing on the arrow, facing the way the wind blows, in meters along the arrow and up
  * from it: its foot on the shaft, its breast, the wattle and beak and comb of its head, its back,
  * the sickle feathers of its tail, and back down its leg.
  */
@@ -1694,13 +1694,13 @@ function drawVane(
 const SWING = { rate: 0.4, most: 5, damping: 0.3, friction: 0.5 } as const;
 const VEER = { light: 0.6, strong: 0.15, seconds: 7 } as const;
 
-/** The weathervane on the barn's cupola, swinging round to point into the wind. */
+/** The weathervane on the barn's cupola, swinging round to point the way the wind blows. */
 export class Weathervane {
   /** Which way its arrow points, in radians from straight right, turning back away from the view. */
   heading = Math.PI;
   private spin = 0;
   private time = 0;
-  /** Which way the wind comes from, kept through a calm. */
+  /** Which way the wind blows, kept through a calm. */
   private from = Math.PI;
 
   /** Swings the vane on by `dt` seconds in `wind`. */
@@ -1712,11 +1712,11 @@ export class Weathervane {
       const veer =
         lerp(VEER.light, VEER.strong, smoothstep(2, 16, speed)) *
         valueNoise(this.time / VEER.seconds, 977);
-      this.from = (air > 0 ? Math.PI : 0) + veer;
+      this.from = (air > 0 ? 0 : Math.PI) + veer;
     }
     const rate = Math.min(SWING.most, SWING.rate * speed);
     const off = wrapAngle(this.from - this.heading);
-    // A vane with the wind behind it is balanced on a knife's edge, and comes round one way or
+    // A vane pointing into the wind is balanced on a knife's edge, and comes round one way or
     // the other.
     const push =
       Math.sin(off) + 0.5 * Math.sign(off) * Math.max(0, -Math.cos(off));

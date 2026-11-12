@@ -9,9 +9,10 @@ const LINGER = 6;
 const FADE = 4;
 /**
  * Seconds after it came off that a piece starts to fade even if it never reached the ground, such
- * as one left balancing on its stump.
+ * as one left balancing on its stump. One that has fallen in the water fades after `inWater`
+ * instead: riding the waves never counts as settling, so the usual timer would not reach it.
  */
-const LONGEST = 30;
+const LONGEST = { ground: 30, inWater: 15 } as const;
 /** Simulation steps per second while a piece is moving. */
 const STEPS_PER_SECOND = 240;
 /** Passes over the contacts each step; more makes resting contact firmer. */
@@ -232,7 +233,7 @@ export class Debris {
     if (
       this.fading ||
       (this.landed ?? 0) >= linger ||
-      this.age >= LONGEST + (this.floated ? FLOAT_LINGER : 0)
+      this.age >= (this.floated ? LONGEST.inWater : LONGEST.ground)
     ) {
       this.alpha = Math.max(0, this.alpha - dt / FADE);
     }

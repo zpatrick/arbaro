@@ -44,8 +44,11 @@ export const SNOW = {
   chunkResponse: 1.2,
   /** How fast a flake flutters from side to side, at most, in meters per second. */
   flutter: 0.35,
-  /** Most snow a flower holds, in kilograms per square meter of its size squared. */
-  flowerHold: 1.5,
+  /**
+   * Most snow a flower or strand holds, in kilograms per square meter of its size squared. A usual
+   * one, about 28 cm across, holds about 50 g: a heavy fall bows the thin wood, and does not snap it.
+   */
+  flowerHold: 0.6,
   /** Seconds the weight of the snow a flower catches takes to settle onto its limb. */
   settling: 1,
   /** Deepest snow lies anywhere, in meters. */

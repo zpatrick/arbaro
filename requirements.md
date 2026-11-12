@@ -234,6 +234,9 @@ switched on in the debug panel beside the original steer-and-grow controls:
       Stems vary at random, grow stronger on limbs that get more of the flow in flow mode, and
       weaken in autumn. As with the wood, brief gusts are survived and sustained overload is not.
 - [x] A flower falls when the wood it grows on is cut or breaks off, or the tree falls.
+- [ ] Flowers grow larger over time, with the time of year and with the maturity of the tree. A
+      young tree early in the year carries small ones; they enlarge through spring and summer, and
+      a mature tree's grow larger still. A willow's strands lengthen the same way.
 - [ ] Flowers start small and grow larger with light, up to a maximum size.
 - [ ] Larger flowers cost more to maintain, so flowers end up at varied, organic sizes: the ones
       getting the most light grow largest, and an older flower is not necessarily a large one.
@@ -295,8 +298,9 @@ Three kinds of grass, each after its photo:
 ### Wind, snow and weight
 
 - [x] Grass sways in the wind, and gusts travel across a field as they do across the scene.
-- [x] Snow settles on grass as it does on flowers, and its weight bends the blades over. A heavy
-      fall lays a field down; as the snow melts, the grass stands up again.
+- [x] Snow settles on grass as it does on flowers.
+- _Open._ Snow should not compact the grass. Laid flat under a fall, it looks wrong. The grass
+  might die back under the snow, or stay as it is, with the snow lying over it. Not decided.
 - [x] Fallen wood, hives and other pieces that land on grass crush it under their weight: the blades
       beneath bend flat.
 - [x] Once the weight is gone, the grass slowly springs back to upright, however long it was
@@ -467,6 +471,9 @@ Three kinds of grass, each after its photo:
       midwinter. It reaches farther down the hollow of each face than along the spurs beside it,
       and is shaded and hatched as the rock is, blue in shade, warm with the glow of sunrise and
       sunset, and pale by moonlight.
+- [ ] The snow on the peaks needs another pass. As drawn it is a flat fill above the snowline,
+      and it reads as minimal effort beside the carved faces. It should be more detailed and
+      look better. How is still open.
 - [ ] Rolling hills with wildflower meadows between the meadow and its mountains, sliding past at
       their own distances as the view pans.
 - [x] A red barn stands on the farm beside the tree, true to size (7 m wide and 10 m long, its
@@ -482,8 +489,8 @@ Three kinds of grass, each after its photo:
       on, and the lantern over its doors, hung on a bracket, lights and throws a pool of warm light
       on them. Snow whitens its roof, and it stands against the rays of the sun and the moon.
 - [x] A weathervane stands on the barn's cupola: a rooster on an arrow over the arms of a compass
-      lettered N, E, S and W. It swings round to point into the wind, overshooting a little, wanders
-      in light air, and holds where it was when the air is calm.
+      lettered N, E, S and W. It swings round to point the way the wind blows, overshooting a little,
+      wanders in light air, and holds where it was when the air is calm.
 - [x] Rain and snow, each set from none to a downpour or a blizzard, fall across the scene, carried
       by the wind, and stop at the ground.
 - [x] Every chunk of falling snow is a body of its own, carried by the wind, and settles on the
