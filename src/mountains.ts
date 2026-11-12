@@ -324,9 +324,12 @@ export class Mountains {
       }
     }
 
-    // The carving lies over them, kept from the last time the light moved far enough to show.
+    // The carving lies over them, kept from the last time the light moved far enough to show. It
+    // reaches up to the tallest summit, which stands higher by however far the bases are raised.
     const above = Math.ceil(
-      (TALLEST * peakScale * camera.groundY + CARVING_MARGIN) * camera.dpr,
+      ((TALLEST * peakScale - Math.min(drop, 0)) * camera.groundY +
+        CARVING_MARGIN) *
+        camera.dpr,
     );
     const key = [
       ctx.canvas.width,

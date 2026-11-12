@@ -26,6 +26,7 @@ import type { Limb } from "./limb";
 import { barnShape, drawBarn } from "./barn";
 import { drawFarmhouse, farmhouseShape } from "./farmhouse";
 import { Rays } from "./rays";
+import { Hills } from "./hills";
 import { Mountains } from "./mountains";
 import { PALETTE } from "./palette";
 import { PHYSICS } from "./physics";
@@ -351,6 +352,7 @@ export class Renderer {
   private resized = false;
   private readonly stars: Star[];
   private readonly mountains = new Mountains();
+  private readonly hills = new Hills();
   private readonly rays = new Rays();
   private readonly fences = new Map<Level, Path2D>();
   private readonly villages = new Map<Level, Village>();
@@ -434,6 +436,8 @@ export class Renderer {
       scene.mountains,
       scene.level.mountainScale,
       scene.level.mountainDrop,
+      scene.level,
+      lyingSnow(scene.weather.cover),
     );
     if (scene.sea.present) {
       drawFarSea(this.ctx, camera, scene.sea, scene.light);
@@ -613,11 +617,14 @@ export class Renderer {
     }
     scene.clouds.drawFog(this.ctx, camera, scene.light, FOG.near);
     this.drawFalling(camera, scene.weather, scene.light, snowColor);
-    // Rays of light from the sun or the moon, broken by the mountains, the farm's buildings, the
-    // wood and the ground.
+    // Rays of light from the sun or the moon, broken by the mountains, the hills, the farm's
+    // buildings, the wood and the ground.
     const blocking = [ink];
     if (scene.mountains) {
       blocking.push(this.mountains.silhouette(camera));
+    }
+    if (scene.level.hills) {
+      blocking.push(this.hills.silhouette());
     }
     if (scene.level.barn) {
       blocking.push(barnShape(world));
@@ -725,7 +732,8 @@ export class Renderer {
   /**
    * Fills the sky for the time of day, down behind the ground: a glow over the middle of the
    * horizon, the stars, moon and sun, the mountains in front of them if there are any, snowy as
-   * far as `season` brings the snow down, and warm light on the sun's side at sunrise and sunset.
+   * far as `season` brings the snow down, the hills before them if `level` has them, with `snow`
+   * lying on them, and warm light on the sun's side at sunrise and sunset.
    */
   private drawSky(
     camera: Camera,
@@ -736,6 +744,8 @@ export class Renderer {
     mountains: boolean,
     mountainScale: number,
     mountainDrop: number,
+    level: Level,
+    snow: number,
   ): void {
     const ctx = this.ctx;
     const width = this.canvas.width;
@@ -807,6 +817,9 @@ export class Renderer {
         clouds.shadows(camera, light, banks),
         light.ink,
       );
+    }
+    if (level.hills) {
+      this.hills.draw(ctx, camera, light, season, snow, level.edges);
     }
     clouds.draw(ctx, camera, light, banks);
 

@@ -70,6 +70,8 @@ export interface Level {
   mountains: boolean;
   /** Whether a fishing village stands on the far shore across the sea. */
   village: boolean;
+  /** Whether rolling hills of wildflower meadow lie between its land and the mountains. */
+  hills: boolean;
   /**
    * How tall the mountains are compared with the usual range, and how far their bases sit below the
    * horizon, as a fraction of the sky, so they meet the ground.
@@ -125,8 +127,10 @@ const MEADOW: Level = {
   farmhouse: false,
   mountains: true,
   village: false,
+  hills: true,
   mountainScale: 1,
-  mountainDrop: 0,
+  // The hills stand above the horizon, so the range sits a little higher than on the farm.
+  mountainDrop: -0.08,
   fence: {
     posts: [
       4.2, 6.9, 9.4, 12.2, 14.8, 17.5, 20.1, 22.7, 24.5, 26.2, 28.8, 31.5, 34.2,
@@ -190,6 +194,7 @@ const FARM_LEVEL: Level = {
   farmhouse: true,
   mountains: true,
   village: false,
+  hills: false,
   mountainScale: 1,
   mountainDrop: 0,
   fence: {
@@ -314,6 +319,7 @@ const CLIFF_LEVEL: Level = {
   farmhouse: false,
   mountains: false,
   village: true,
+  hills: false,
   mountainScale: 1,
   mountainDrop: 0,
   fence: {

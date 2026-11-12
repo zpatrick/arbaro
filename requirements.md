@@ -481,8 +481,16 @@ Three kinds of grass, each after its photo:
 - [ ] The snow on the peaks needs another pass. As drawn it is a flat fill above the snowline,
       and it reads as minimal effort beside the carved faces. It should be more detailed and
       look better. How is still open.
-- [ ] Rolling hills with wildflower meadows between the meadow and its mountains, sliding past at
-      their own distances as the view pans.
+- [x] Rolling hills with wildflower meadows between the meadow and its mountains, sliding past at
+      their own distances as the view pans, as a wildflower meadow over chalk downs looks: broad
+      rounded hills in rows, paler and hazier the farther off; their grass in fresh and olive
+      patches, drying toward straw on the tops and lusher in the hollows, lit on the flanks turned
+      toward the sun; buttercups, daisies, knapweed and poppies in drifts along the slopes; and
+      copses in the dips, hedgerows down the slopes and trees standing alone. Being far off, they
+      keep their size as the view zooms, as the mountains do. The flowers go over and the grass
+      dries to straw through late summer, the trees turn in fall and stand bare in winter, lying
+      snow whitens them, and they darken under the night sky and take the glow of sunrise and
+      sunset.
 - [x] A red barn stands on the farm beside the tree, true to size (7 m wide and 10 m long, its
       ridge at 5.8 m), so the tree's height can be judged by it. It is drawn as the village's
       houses are, seen from the ground: its gable end toward the view and its long side running
